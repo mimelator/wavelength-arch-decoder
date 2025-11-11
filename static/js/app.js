@@ -51,8 +51,18 @@ function setupAuth() {
             try {
                 const result = await api.register(email, password);
                 resultDiv.className = 'auth-result success';
-                resultDiv.textContent = 'Registration successful!';
-                showApiKey(result.api_key || 'API key received');
+                resultDiv.textContent = 'Registration successful! Redirecting to dashboard...';
+                setTimeout(() => {
+                    showPage('dashboard');
+                    document.querySelectorAll('.nav-link').forEach(l => {
+                        if (l.getAttribute('data-page') === 'dashboard') {
+                            l.classList.add('active');
+                        } else {
+                            l.classList.remove('active');
+                        }
+                    });
+                    loadDashboard();
+                }, 1000);
             } catch (error) {
                 resultDiv.className = 'auth-result error';
                 // Provide more helpful error messages
@@ -80,8 +90,18 @@ function setupAuth() {
             try {
                 const result = await api.login(email, password);
                 resultDiv.className = 'auth-result success';
-                resultDiv.textContent = 'Login successful!';
-                showApiKey(result.api_key || 'API key received');
+                resultDiv.textContent = 'Login successful! Redirecting to dashboard...';
+                setTimeout(() => {
+                    showPage('dashboard');
+                    document.querySelectorAll('.nav-link').forEach(l => {
+                        if (l.getAttribute('data-page') === 'dashboard') {
+                            l.classList.add('active');
+                        } else {
+                            l.classList.remove('active');
+                        }
+                    });
+                    loadDashboard();
+                }, 1000);
             } catch (error) {
                 resultDiv.className = 'auth-result error';
                 // Provide more helpful error messages
@@ -133,21 +153,16 @@ function showApiKey(apiKey) {
 }
 
 function checkAuthStatus() {
-    const apiKey = localStorage.getItem('wavelength_api_key');
-    if (apiKey) {
-        api.setApiKey(apiKey);
-        document.getElementById('nav-login').textContent = 'Logout';
-    } else {
-        // Show login page if no API key
-        showPage('login');
-        document.querySelectorAll('.nav-link').forEach(link => {
-            if (link.getAttribute('data-page') === 'login') {
-                link.classList.add('active');
-            } else {
-                link.classList.remove('active');
-            }
-        });
-    }
+    // API keys removed - no authentication check needed
+    // Just show dashboard directly
+    showPage('dashboard');
+    document.querySelectorAll('.nav-link').forEach(link => {
+        if (link.getAttribute('data-page') === 'dashboard') {
+            link.classList.add('active');
+        } else {
+            link.classList.remove('active');
+        }
+    });
 }
 
 // Update navigation to handle logout
@@ -160,8 +175,7 @@ function setupNavigation() {
             
             // Handle logout
             if (link.id === 'nav-login' && link.textContent === 'Logout') {
-                localStorage.removeItem('wavelength_api_key');
-                api.setApiKey('');
+                // API keys removed - just redirect to login page
                 link.textContent = 'Login';
                 showPage('login');
                 document.querySelectorAll('.nav-link').forEach(l => {
@@ -240,19 +254,10 @@ async function loadDashboard() {
         
         // If API key is invalid, redirect to login
         if (error.message && error.message.includes('API key')) {
-            localStorage.removeItem('wavelength_api_key');
-            api.setApiKey('');
-            showPage('login');
-            document.querySelectorAll('.nav-link').forEach(link => {
-                if (link.getAttribute('data-page') === 'login') {
-                    link.classList.add('active');
-                } else {
-                    link.classList.remove('active');
-                }
-            });
-            showError('Your API key is invalid or expired. Please login again.');
+            // API keys removed - just show error
+            showError('Failed to load dashboard: ' + error.message);
         } else {
-            showError('Failed to load dashboard. Please check your API key.');
+            showError('Failed to load dashboard. ' + error.message);
         }
     }
 }

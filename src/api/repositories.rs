@@ -2,7 +2,6 @@ use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use serde::{Deserialize, Serialize};
 use base64::{Engine as _, engine::general_purpose};
 use crate::api::{ApiState, ErrorResponse};
-use crate::api::extract_api_key;
 use crate::storage::{RepositoryRepository, DependencyRepository};
 use crate::ingestion::{RepositoryCrawler, RepositoryCredentials, AuthType};
 use crate::analysis::DependencyExtractor;
@@ -29,31 +28,10 @@ pub struct AnalyzeRepositoryRequest {
 // Repository endpoints
 pub async fn create_repository(
     state: web::Data<ApiState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     body: web::Json<CreateRepositoryRequest>,
 ) -> impl Responder {
-    // Validate API key
-    let _api_key = match extract_api_key(&req) {
-        Ok(key) => key,
-        Err(resp) => return resp,
-    };
-
-    let key_info = match state.auth_service.validate_api_key(&_api_key) {
-        Ok(info) => info,
-        Err(e) => {
-            return HttpResponse::Unauthorized().json(ErrorResponse {
-                error: e.to_string(),
-            });
-        }
-    };
-
-    // Check write scope
-    if !key_info.scopes.contains(&"write".to_string()) && !key_info.scopes.contains(&"admin".to_string()) {
-        return HttpResponse::Forbidden().json(ErrorResponse {
-            error: "Write scope required".to_string(),
-        });
-    }
-
+    // API key validation removed for local tool simplicity
     match state.repo_repo.create(
         &body.name,
         &body.url,
@@ -70,23 +48,9 @@ pub async fn create_repository(
 
 pub async fn list_repositories(
     state: web::Data<ApiState>,
-    req: HttpRequest,
+    _req: HttpRequest,
 ) -> impl Responder {
-    // Validate API key
-    let _api_key = match extract_api_key(&req) {
-        Ok(key) => key,
-        Err(resp) => return resp,
-    };
-
-    match state.auth_service.validate_api_key(&_api_key) {
-        Ok(_) => {},
-        Err(e) => {
-            return HttpResponse::Unauthorized().json(ErrorResponse {
-                error: e.to_string(),
-            });
-        }
-    }
-
+    // API key validation removed for local tool simplicity
     match state.repo_repo.list_all() {
         Ok(repos) => HttpResponse::Ok().json(repos),
         Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
@@ -97,24 +61,10 @@ pub async fn list_repositories(
 
 pub async fn get_repository(
     state: web::Data<ApiState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     path: web::Path<String>,
 ) -> impl Responder {
-    // Validate API key
-    let _api_key = match extract_api_key(&req) {
-        Ok(key) => key,
-        Err(resp) => return resp,
-    };
-
-    match state.auth_service.validate_api_key(&_api_key) {
-        Ok(_) => {},
-        Err(e) => {
-            return HttpResponse::Unauthorized().json(ErrorResponse {
-                error: e.to_string(),
-            });
-        }
-    }
-
+    // API key validation removed for local tool simplicity
     match state.repo_repo.find_by_id(&path.into_inner()) {
         Ok(Some(repo)) => HttpResponse::Ok().json(repo),
         Ok(None) => HttpResponse::NotFound().json(ErrorResponse {
@@ -128,31 +78,10 @@ pub async fn get_repository(
 
 pub async fn analyze_repository(
     state: web::Data<ApiState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     body: web::Json<AnalyzeRepositoryRequest>,
 ) -> impl Responder {
-    // Validate API key
-    let _api_key = match extract_api_key(&req) {
-        Ok(key) => key,
-        Err(resp) => return resp,
-    };
-
-    let key_info = match state.auth_service.validate_api_key(&_api_key) {
-        Ok(info) => info,
-        Err(e) => {
-            return HttpResponse::Unauthorized().json(ErrorResponse {
-                error: e.to_string(),
-            });
-        }
-    };
-
-    // Check write scope
-    if !key_info.scopes.contains(&"write".to_string()) && !key_info.scopes.contains(&"admin".to_string()) {
-        return HttpResponse::Forbidden().json(ErrorResponse {
-            error: "Write scope required".to_string(),
-        });
-    }
-
+    // API key validation removed for local tool simplicity
     // Get repository
     let repo = match state.repo_repo.find_by_id(&body.repository_id) {
         Ok(Some(repo)) => repo,
@@ -366,24 +295,10 @@ pub async fn analyze_repository(
 
 pub async fn get_dependencies(
     state: web::Data<ApiState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     path: web::Path<String>,
 ) -> impl Responder {
-    // Validate API key
-    let _api_key = match extract_api_key(&req) {
-        Ok(key) => key,
-        Err(resp) => return resp,
-    };
-
-    match state.auth_service.validate_api_key(&_api_key) {
-        Ok(_) => {},
-        Err(e) => {
-            return HttpResponse::Unauthorized().json(ErrorResponse {
-                error: e.to_string(),
-            });
-        }
-    }
-
+    // API key validation removed for local tool simplicity
     match state.dep_repo.get_by_repository(&path.into_inner()) {
         Ok(deps) => HttpResponse::Ok().json(deps),
         Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
@@ -394,24 +309,10 @@ pub async fn get_dependencies(
 
 pub async fn search_dependencies(
     state: web::Data<ApiState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     query: web::Query<std::collections::HashMap<String, String>>,
 ) -> impl Responder {
-    // Validate API key
-    let _api_key = match extract_api_key(&req) {
-        Ok(key) => key,
-        Err(resp) => return resp,
-    };
-
-    match state.auth_service.validate_api_key(&_api_key) {
-        Ok(_) => {},
-        Err(e) => {
-            return HttpResponse::Unauthorized().json(ErrorResponse {
-                error: e.to_string(),
-            });
-        }
-    }
-
+    // API key validation removed for local tool simplicity
     if let Some(package_name) = query.get("name") {
         match state.dep_repo.get_by_package_name(package_name) {
             Ok(deps) => HttpResponse::Ok().json(deps),

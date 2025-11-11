@@ -1,7 +1,6 @@
 use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use serde::{Deserialize, Serialize};
 use crate::api::{ApiState, ErrorResponse};
-use crate::api::extract_api_key;
 use crate::crawler::{JobProcessor, AnalysisJob, JobType, ScheduledJob};
 
 #[derive(Debug, Deserialize)]
@@ -27,23 +26,9 @@ pub struct BatchAnalyzeRequest {
 /// Create a new analysis job
 pub async fn create_job(
     state: web::Data<ApiState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     body: web::Json<CreateJobRequest>,
 ) -> impl Responder {
-    // Validate API key
-    let _api_key = match extract_api_key(&req) {
-        Ok(key) => key,
-        Err(resp) => return resp,
-    };
-
-    match state.auth_service.validate_api_key(&_api_key) {
-        Ok(_) => {},
-        Err(e) => {
-            return HttpResponse::Unauthorized().json(ErrorResponse {
-                error: e.to_string(),
-            });
-        }
-    }
 
     let job_type = match body.job_type.as_str() {
         "analyze_repository" => JobType::AnalyzeRepository,
@@ -74,23 +59,9 @@ pub async fn create_job(
 /// Get job status
 pub async fn get_job_status(
     state: web::Data<ApiState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     path: web::Path<String>,
 ) -> impl Responder {
-    // Validate API key
-    let _api_key = match extract_api_key(&req) {
-        Ok(key) => key,
-        Err(resp) => return resp,
-    };
-
-    match state.auth_service.validate_api_key(&_api_key) {
-        Ok(_) => {},
-        Err(e) => {
-            return HttpResponse::Unauthorized().json(ErrorResponse {
-                error: e.to_string(),
-            });
-        }
-    }
 
     let job_id = path.into_inner();
     
@@ -106,23 +77,9 @@ pub async fn get_job_status(
 /// List jobs
 pub async fn list_jobs(
     state: web::Data<ApiState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     query: web::Query<std::collections::HashMap<String, String>>,
 ) -> impl Responder {
-    // Validate API key
-    let _api_key = match extract_api_key(&req) {
-        Ok(key) => key,
-        Err(resp) => return resp,
-    };
-
-    match state.auth_service.validate_api_key(&_api_key) {
-        Ok(_) => {},
-        Err(e) => {
-            return HttpResponse::Unauthorized().json(ErrorResponse {
-                error: e.to_string(),
-            });
-        }
-    }
 
     // Get job processor from app data
     // For now, return empty list
@@ -132,23 +89,9 @@ pub async fn list_jobs(
 /// Create a scheduled job
 pub async fn create_scheduled_job(
     state: web::Data<ApiState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     body: web::Json<CreateScheduledJobRequest>,
 ) -> impl Responder {
-    // Validate API key
-    let _api_key = match extract_api_key(&req) {
-        Ok(key) => key,
-        Err(resp) => return resp,
-    };
-
-    match state.auth_service.validate_api_key(&_api_key) {
-        Ok(_) => {},
-        Err(e) => {
-            return HttpResponse::Unauthorized().json(ErrorResponse {
-                error: e.to_string(),
-            });
-        }
-    }
 
     let job_type = match body.job_type.as_str() {
         "analyze_repository" => JobType::AnalyzeRepository,
@@ -179,23 +122,9 @@ pub async fn create_scheduled_job(
 /// Batch analyze repositories
 pub async fn batch_analyze(
     state: web::Data<ApiState>,
-    req: HttpRequest,
+    _req: HttpRequest,
     body: web::Json<BatchAnalyzeRequest>,
 ) -> impl Responder {
-    // Validate API key
-    let _api_key = match extract_api_key(&req) {
-        Ok(key) => key,
-        Err(resp) => return resp,
-    };
-
-    match state.auth_service.validate_api_key(&_api_key) {
-        Ok(_) => {},
-        Err(e) => {
-            return HttpResponse::Unauthorized().json(ErrorResponse {
-                error: e.to_string(),
-            });
-        }
-    }
 
     let job_ids: Vec<String> = body.repository_ids.iter().map(|repo_id| {
         let job = AnalysisJob::new(

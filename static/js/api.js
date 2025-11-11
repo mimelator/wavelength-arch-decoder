@@ -17,10 +17,7 @@ class WavelengthAPI {
             ...options.headers,
         };
 
-        if (this.apiKey) {
-            headers['Authorization'] = `Bearer ${this.apiKey}`;
-        }
-
+        // API keys removed - no authentication needed for local tool
         try {
             const response = await fetch(url, {
                 ...options,
@@ -29,17 +26,6 @@ class WavelengthAPI {
 
             if (!response.ok) {
                 const error = await response.json().catch(() => ({ error: response.statusText }));
-                
-                // If unauthorized (401), clear invalid API key
-                if (response.status === 401) {
-                    console.warn('API key invalid or expired, clearing from storage');
-                    this.setApiKey('');
-                    localStorage.removeItem('wavelength_api_key');
-                    
-                    // Show user-friendly error
-                    throw new Error('Your API key is invalid or expired. Please login again.');
-                }
-                
                 throw new Error(error.error || `HTTP ${response.status}`);
             }
 
@@ -50,15 +36,13 @@ class WavelengthAPI {
         }
     }
 
-    // Auth
+    // Auth - simplified, no API keys needed
     async register(email, password) {
         const result = await this.request('/auth/register', {
             method: 'POST',
             body: JSON.stringify({ email, password }),
         });
-        if (result.api_key) {
-            this.setApiKey(result.api_key);
-        }
+        // API keys removed - just return success
         return result;
     }
 
@@ -67,9 +51,7 @@ class WavelengthAPI {
             method: 'POST',
             body: JSON.stringify({ email, password }),
         });
-        if (result.api_key) {
-            this.setApiKey(result.api_key);
-        }
+        // API keys removed - just return success
         return result;
     }
 
