@@ -2,6 +2,8 @@ mod api;
 mod auth;
 mod config;
 mod storage;
+mod ingestion;
+mod parsers;
 
 use api::server::start_server;
 use config::Config;
