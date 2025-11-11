@@ -6,19 +6,158 @@ document.addEventListener('DOMContentLoaded', () => {
 function initializeApp() {
     setupNavigation();
     setupModals();
+    setupAuth();
+    checkAuthStatus();
     loadDashboard();
     setupSearch();
     setupGraph();
     setupRepositories();
 }
 
-// Navigation
+// Authentication
+function setupAuth() {
+    // Tab switching
+    const tabs = document.querySelectorAll('.auth-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const targetTab = tab.getAttribute('data-tab');
+            
+            // Update tab states
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            // Update form visibility
+            document.querySelectorAll('.auth-form').forEach(form => {
+                form.classList.remove('active');
+            });
+            
+            if (targetTab === 'register') {
+                document.getElementById('register-form').classList.add('active');
+            } else {
+                document.getElementById('login-form').classList.add('active');
+            }
+        });
+    });
+    
+    // Register form
+    const registerForm = document.getElementById('form-register');
+    if (registerForm) {
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('register-email').value;
+            const password = document.getElementById('register-password').value;
+            const resultDiv = document.getElementById('register-result');
+            
+            try {
+                const result = await api.register(email, password);
+                resultDiv.className = 'auth-result success';
+                resultDiv.textContent = 'Registration successful!';
+                showApiKey(result.api_key || 'API key received');
+            } catch (error) {
+                resultDiv.className = 'auth-result error';
+                resultDiv.textContent = 'Registration failed: ' + error.message;
+            }
+        });
+    }
+    
+    // Login form
+    const loginForm = document.getElementById('form-login');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            const resultDiv = document.getElementById('login-result');
+            
+            try {
+                const result = await api.login(email, password);
+                resultDiv.className = 'auth-result success';
+                resultDiv.textContent = 'Login successful!';
+                showApiKey(result.api_key || 'API key received');
+            } catch (error) {
+                resultDiv.className = 'auth-result error';
+                resultDiv.textContent = 'Login failed: ' + error.message;
+            }
+        });
+    }
+    
+    // Copy API key button
+    const copyBtn = document.getElementById('btn-copy-key');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+            const apiKey = document.getElementById('api-key-value').textContent;
+            navigator.clipboard.writeText(apiKey).then(() => {
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy';
+                }, 2000);
+            });
+        });
+    }
+    
+    // Continue button
+    const continueBtn = document.getElementById('btn-continue');
+    if (continueBtn) {
+        continueBtn.addEventListener('click', () => {
+            document.getElementById('api-key-display').style.display = 'none';
+            showPage('dashboard');
+            document.querySelector('[data-page="dashboard"]').classList.add('active');
+            document.querySelector('[data-page="login"]').classList.remove('active');
+            document.getElementById('nav-login').textContent = 'Logout';
+            loadDashboard();
+        });
+    }
+}
+
+function showApiKey(apiKey) {
+    document.getElementById('api-key-value').textContent = apiKey;
+    document.getElementById('api-key-display').style.display = 'block';
+    // Scroll to API key display
+    document.getElementById('api-key-display').scrollIntoView({ behavior: 'smooth' });
+}
+
+function checkAuthStatus() {
+    const apiKey = localStorage.getItem('wavelength_api_key');
+    if (apiKey) {
+        api.setApiKey(apiKey);
+        document.getElementById('nav-login').textContent = 'Logout';
+    } else {
+        // Show login page if no API key
+        showPage('login');
+        document.querySelectorAll('.nav-link').forEach(link => {
+            if (link.getAttribute('data-page') === 'login') {
+                link.classList.add('active');
+            } else {
+                link.classList.remove('active');
+            }
+        });
+    }
+}
+
+// Update navigation to handle logout
 function setupNavigation() {
     const navLinks = document.querySelectorAll('.nav-link');
     navLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
             const page = link.getAttribute('data-page');
+            
+            // Handle logout
+            if (link.id === 'nav-login' && link.textContent === 'Logout') {
+                localStorage.removeItem('wavelength_api_key');
+                api.setApiKey('');
+                link.textContent = 'Login';
+                showPage('login');
+                document.querySelectorAll('.nav-link').forEach(l => {
+                    if (l.getAttribute('data-page') === 'login') {
+                        l.classList.add('active');
+                    } else {
+                        l.classList.remove('active');
+                    }
+                });
+                return;
+            }
+            
             showPage(page);
             
             // Update active state
