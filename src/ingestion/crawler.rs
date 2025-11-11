@@ -51,7 +51,7 @@ impl RepositoryCrawler {
 
     /// Clone a repository
     fn clone_repository(&self, url: &str, path: &Path, branch: &str, credentials: Option<&RepositoryCredentials>) -> Result<()> {
-        log::info!("Cloning repository: {} to {}", url, path.display());
+        log::info!("Cloning repository: {} to {} (branch: {})", url, path.display(), branch);
         
         let mut fetch_options = FetchOptions::new();
         fetch_options.download_tags(git2::AutotagOption::All);
@@ -65,10 +65,6 @@ impl RepositoryCrawler {
 
         fetch_options.remote_callbacks(callbacks);
 
-        let mut builder = git2::build::RepoBuilder::new();
-        builder.fetch_options(fetch_options);
-        builder.branch(branch);
-        
         // Handle HTTPS URLs with tokens by embedding them in the URL
         let final_url = if let Some(creds) = credentials {
             Self::embed_credentials_in_url(url, creds)?
@@ -76,10 +72,45 @@ impl RepositoryCrawler {
             url.to_string()
         };
         
-        builder.clone(&final_url, path)?;
+        let mut builder = git2::build::RepoBuilder::new();
+        builder.fetch_options(fetch_options);
         
-        log::info!("Successfully cloned repository to {}", path.display());
-        Ok(())
+        // Try cloning with the specified branch, but don't fail if it doesn't exist
+        // We'll checkout the correct branch after cloning
+        match builder.branch(branch).clone(&final_url, path) {
+            Ok(_) => {
+                log::info!("Successfully cloned repository to {}", path.display());
+                Ok(())
+            }
+            Err(e) if e.code() == git2::ErrorCode::NotFound => {
+                // Branch not found, clone without specifying branch and checkout default
+                log::warn!("Branch '{}' not found, cloning default branch instead", branch);
+                builder = git2::build::RepoBuilder::new();
+                builder.fetch_options(fetch_options);
+                builder.clone(&final_url, path)?;
+                
+                // Try to checkout the requested branch or fallback to main/master
+                let repo = Repository::open(path)?;
+                let branches_to_try = if branch == "main" { vec!["main", "master"] } else { vec![branch, "main", "master"] };
+                
+                for branch_name in branches_to_try {
+                    let branch_ref = format!("refs/remotes/origin/{}", branch_name);
+                    if let Ok(oid) = repo.refname_to_id(&branch_ref) {
+                        let object = repo.find_object(oid, None)?;
+                        repo.checkout_tree(&object, None)?;
+                        let local_ref = format!("refs/heads/{}", branch_name);
+                        repo.branch(branch_name, &object, false)?;
+                        repo.set_head(&local_ref)?;
+                        log::info!("Checked out branch '{}'", branch_name);
+                        return Ok(());
+                    }
+                }
+                
+                log::warn!("Could not checkout any branch, repository cloned but may be in detached HEAD state");
+                Ok(())
+            }
+            Err(e) => Err(anyhow::anyhow!("Failed to clone repository: {}", e)),
+        }
     }
 
     /// Update an existing repository
@@ -99,19 +130,51 @@ impl RepositoryCrawler {
             Self::get_credentials(url_str, username_from_url, allowed_types, creds.as_ref())
         });
         fetch_options.remote_callbacks(callbacks);
+
+        // Fetch all branches to ensure we have the latest refs
+        remote.fetch(&["refs/heads/*:refs/remotes/origin/*"], Some(&mut fetch_options), None)?;
         
-        remote.fetch(&[branch], Some(&mut fetch_options), None)?;
+        // Try to find the branch, fallback to main/master if not found
+        let branch_ref = format!("refs/remotes/origin/{}", branch);
+        let actual_branch = if repo.refname_to_id(&branch_ref).is_ok() {
+            branch.to_string()
+        } else {
+            // Try alternative branch names
+            let alternatives = if branch == "main" { vec!["master", "main"] } else { vec!["main", "master", branch] };
+            let mut found_branch = None;
+            for alt in alternatives {
+                let alt_ref = format!("refs/remotes/origin/{}", alt);
+                if repo.refname_to_id(&alt_ref).is_ok() {
+                    found_branch = Some(alt.to_string());
+                    log::info!("Branch '{}' not found, using '{}' instead", branch, alt);
+                    break;
+                }
+            }
+            found_branch.ok_or_else(|| anyhow::anyhow!("Could not find branch '{}' or alternatives (main/master)", branch))?
+        };
         
         // Checkout the branch
-        let reference = format!("refs/remotes/origin/{}", branch);
+        let reference = format!("refs/remotes/origin/{}", actual_branch);
         let oid = repo.refname_to_id(&reference)?;
         let object = repo.find_object(oid, None)?;
         repo.checkout_tree(&object, None)?;
         
-        // Update HEAD
-        repo.set_head(&reference)?;
+        // Update HEAD to point to local branch
+        let local_branch_ref = format!("refs/heads/{}", actual_branch);
+        match repo.find_reference(&local_branch_ref) {
+            Ok(mut r) => {
+                r.set_target(oid, "Updated branch")?;
+            }
+            Err(_) => {
+                // Create local branch if it doesn't exist
+                repo.branch(&actual_branch, &repo.find_object(oid, None)?, false)?;
+            }
+        }
         
-        log::info!("Successfully updated repository");
+        // Set HEAD to the branch
+        repo.set_head(&local_branch_ref)?;
+        
+        log::info!("Successfully updated repository to branch '{}'", actual_branch);
         Ok(())
     }
 
