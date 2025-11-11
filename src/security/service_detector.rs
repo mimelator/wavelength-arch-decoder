@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use crate::ingestion::{FileIndexer, FileType};
+use crate::ingestion::FileType;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ServiceType {
@@ -88,26 +88,69 @@ impl ServiceDetector {
     pub fn detect_services(&self, repo_path: &Path) -> Result<Vec<DetectedService>> {
         let mut services = Vec::new();
         
-        let indexer = FileIndexer::new(
-            crate::ingestion::RepositoryCrawler::new(&crate::config::StorageConfig {
-                repository_cache_path: "./cache".to_string(),
-                max_cache_size: "10GB".to_string(),
-            }).unwrap()
-        );
+        // Use direct directory walking instead of FileIndexer
+        use walkdir::WalkDir;
         
-        let files = indexer.index_repository(repo_path.to_str().unwrap())?;
-        
-        for file in files {
-            // Detect services in configuration files
-            if file.file_type == FileType::Config || file.file_type == FileType::Infrastructure {
-                let detected = self.detect_in_file(&file.path, &file.file_type)?;
-                services.extend(detected);
+        for entry in WalkDir::new(repo_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            let file_name = path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            
+            // Skip hidden files and common ignore patterns
+            if file_name.starts_with('.') || 
+               path.to_string_lossy().contains("node_modules") ||
+               path.to_string_lossy().contains("target") ||
+               path.to_string_lossy().contains(".git") {
+                continue;
             }
             
-            // Detect services in code files
-            if file.file_type == FileType::Code {
-                let detected = self.detect_in_code(&file.path, &file.language)?;
-                services.extend(detected);
+            // Determine file type
+            let file_type = if file_name.contains("terraform") || 
+                             file_name.contains("cloudformation") ||
+                             file_name.ends_with(".tf") ||
+                             file_name.ends_with(".tfvars") {
+                FileType::Infrastructure
+            } else if file_name.ends_with(".json") ||
+                      file_name.ends_with(".yaml") ||
+                      file_name.ends_with(".yml") ||
+                      file_name.ends_with(".toml") ||
+                      file_name.ends_with(".env") ||
+                      file_name.contains("config") {
+                FileType::Config
+            } else if file_name.ends_with(".js") ||
+                      file_name.ends_with(".ts") ||
+                      file_name.ends_with(".jsx") ||
+                      file_name.ends_with(".tsx") ||
+                      file_name.ends_with(".py") ||
+                      file_name.ends_with(".rs") ||
+                      file_name.ends_with(".go") {
+                FileType::Code
+            } else {
+                continue;
+            };
+            
+            // Detect services based on file type
+            match file_type {
+                FileType::Config | FileType::Infrastructure => {
+                    if let Ok(detected) = self.detect_in_file(path, &file_type) {
+                        services.extend(detected);
+                    }
+                }
+                FileType::Code => {
+                    let language = path.extension()
+                        .and_then(|e| e.to_str())
+                        .map(|s| s.to_string());
+                    if let Ok(detected) = self.detect_in_code(path, language.as_deref()) {
+                        services.extend(detected);
+                    }
+                }
+                _ => {}
             }
         }
         
