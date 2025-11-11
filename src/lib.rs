@@ -5,4 +5,5 @@ pub mod storage;
 pub mod ingestion;
 pub mod parsers;
 pub mod analysis;
+pub mod security;
 

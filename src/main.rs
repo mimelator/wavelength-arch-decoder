@@ -5,6 +5,7 @@ mod storage;
 mod ingestion;
 mod parsers;
 mod analysis;
+mod security;
 
 use api::server::start_server;
 use config::Config;

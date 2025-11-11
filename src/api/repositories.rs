@@ -1,13 +1,12 @@
 use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use serde::{Deserialize, Serialize};
 use crate::api::{ApiState, ErrorResponse};
+use crate::api::extract_api_key;
 use crate::storage::{RepositoryRepository, DependencyRepository};
 use crate::ingestion::RepositoryCrawler;
 use crate::analysis::DependencyExtractor;
+use crate::security::ServiceDetector;
 use crate::config::StorageConfig;
-
-// Re-export extract_api_key for use in this module
-use crate::api::extract_api_key;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateRepositoryRequest {
@@ -205,6 +204,24 @@ pub async fn analyze_repository(
         }
     }
 
+    // Detect services
+    let detector = ServiceDetector::new();
+    let services = match detector.detect_services(&repo_path) {
+        Ok(s) => s,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to detect services: {}", e),
+            });
+        }
+    };
+
+    // Store services
+    if let Err(e) = state.service_repo.store_services(&repo.id, &services) {
+        return HttpResponse::InternalServerError().json(ErrorResponse {
+            error: format!("Failed to store services: {}", e),
+        });
+    }
+
     // Update last analyzed timestamp
     if let Err(e) = state.repo_repo.update_last_analyzed(&repo.id) {
         return HttpResponse::InternalServerError().json(ErrorResponse {
@@ -215,7 +232,8 @@ pub async fn analyze_repository(
     HttpResponse::Ok().json(serde_json::json!({
         "message": "Repository analyzed successfully",
         "manifests_found": manifests.len(),
-        "total_dependencies": manifests.iter().map(|m| m.dependencies.len()).sum::<usize>()
+        "total_dependencies": manifests.iter().map(|m| m.dependencies.len()).sum::<usize>(),
+        "services_found": services.len()
     }))
 }
 

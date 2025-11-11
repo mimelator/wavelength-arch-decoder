@@ -6,8 +6,10 @@ use crate::config::DatabaseConfig;
 
 pub mod repositories;
 pub mod repository_repo;
+pub mod service_repo;
 pub use repositories::{UserRepository, ApiKeyRepository};
 pub use repository_repo::{RepositoryRepository, DependencyRepository, Repository, StoredDependency};
+pub use service_repo::{ServiceRepository, StoredService};
 
 #[derive(Clone)]
 pub struct Database {
@@ -122,6 +124,24 @@ impl Database {
             [],
         )?;
 
+        // Services table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS services (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                service_type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                configuration TEXT,
+                file_path TEXT NOT NULL,
+                line_number INTEGER,
+                confidence REAL NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id)
+            )",
+            [],
+        )?;
+
         // Create indexes
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id)",
@@ -153,6 +173,18 @@ impl Database {
         )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_dependencies_package_manager ON dependencies(package_manager)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_services_repository ON services(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_services_provider ON services(provider)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_services_type ON services(service_type)",
             [],
         )?;
 

@@ -4,9 +4,10 @@ use crate::api::repositories::{
     create_repository, list_repositories, get_repository,
     analyze_repository, get_dependencies, search_dependencies,
 };
+use crate::api::services::{get_services, search_services_by_provider};
 use crate::auth::AuthService;
 use crate::config::Config;
-use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository};
+use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository};
 
 pub async fn start_server(config: Config) -> std::io::Result<()> {
     // Initialize database
@@ -17,7 +18,8 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
     let user_repo = UserRepository::new(db.clone());
     let api_key_repo = ApiKeyRepository::new(db.clone());
     let repo_repo = RepositoryRepository::new(db.clone());
-    let dep_repo = DependencyRepository::new(db);
+    let dep_repo = DependencyRepository::new(db.clone());
+    let service_repo = ServiceRepository::new(db);
     
     // Initialize auth service
     let auth_service = AuthService::new(
@@ -31,6 +33,7 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
         auth_service,
         repo_repo,
         dep_repo,
+        service_repo,
     });
 
     // Start HTTP server
@@ -52,6 +55,9 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     .route("/repositories/{id}/dependencies", web::get().to(get_dependencies))
                     // Dependency search
                     .route("/dependencies/search", web::get().to(search_dependencies))
+                    // Service endpoints
+                    .route("/repositories/{id}/services", web::get().to(get_services))
+                    .route("/services/search", web::get().to(search_services_by_provider))
             )
     })
     .bind(format!("{}:{}", config.server.host, config.server.port))?
