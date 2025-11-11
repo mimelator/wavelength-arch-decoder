@@ -71,10 +71,17 @@ class WavelengthAPI {
         return this.request(`/repositories/${id}`);
     }
 
-    async createRepository(name, url, branch = 'main') {
+    async createRepository(name, url, branch = 'main', authType = undefined, authValue = undefined) {
+        const body = { name, url, branch };
+        if (authType) {
+            body.auth_type = authType;
+        }
+        if (authValue) {
+            body.auth_value = authValue;
+        }
         return this.request('/repositories', {
             method: 'POST',
-            body: JSON.stringify({ name, url, branch }),
+            body: JSON.stringify(body),
         });
     }
 

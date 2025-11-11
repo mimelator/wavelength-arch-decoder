@@ -12,6 +12,8 @@ pub struct Repository {
     pub name: String,
     pub url: String,
     pub branch: String,
+    pub auth_type: Option<String>,
+    pub auth_value: Option<String>,
     pub last_analyzed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -40,7 +42,7 @@ impl RepositoryRepository {
         RepositoryRepository { db }
     }
 
-    pub fn create(&self, name: &str, url: &str, branch: Option<&str>) -> Result<Repository> {
+    pub fn create(&self, name: &str, url: &str, branch: Option<&str>, auth_type: Option<&str>, auth_value: Option<&str>) -> Result<Repository> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let branch = branch.unwrap_or("main");
@@ -49,16 +51,27 @@ impl RepositoryRepository {
         let conn = conn.lock().unwrap();
         
         conn.execute(
-            "INSERT INTO repositories (id, name, url, branch, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, name, url, branch, now.to_rfc3339(), now.to_rfc3339()],
+            "INSERT INTO repositories (id, name, url, branch, auth_type, auth_value, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                id,
+                name,
+                url,
+                branch,
+                auth_type,
+                auth_value,
+                now.to_rfc3339(),
+                now.to_rfc3339()
+            ],
         )?;
-
+        
         Ok(Repository {
             id,
             name: name.to_string(),
             url: url.to_string(),
             branch: branch.to_string(),
+            auth_type: auth_type.map(|s| s.to_string()),
+            auth_value: auth_value.map(|s| s.to_string()),
             last_analyzed_at: None,
             created_at: now,
             updated_at: now,
@@ -70,7 +83,7 @@ impl RepositoryRepository {
         let conn = conn.lock().unwrap();
         
         let mut stmt = conn.prepare(
-            "SELECT id, name, url, branch, last_analyzed_at, created_at, updated_at
+            "SELECT id, name, url, branch, auth_type, auth_value, last_analyzed_at, created_at, updated_at
              FROM repositories WHERE id = ?1"
         )?;
         
@@ -80,13 +93,16 @@ impl RepositoryRepository {
                 name: row.get(1)?,
                 url: row.get(2)?,
                 branch: row.get(3)?,
-                last_analyzed_at: row.get::<_, Option<String>>(4)?
-                    .map(|s| DateTime::parse_from_rfc3339(&s).unwrap().with_timezone(&Utc)),
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                    .unwrap()
+                auth_type: row.get::<_, Option<String>>(4)?,
+                auth_value: row.get::<_, Option<String>>(5)?,
+                last_analyzed_at: row.get::<_, Option<String>>(6)?
+                    .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+                    .map(|dt| dt.with_timezone(&Utc)),
+                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
+                    .map_err(|_| rusqlite::Error::InvalidColumnType(7, "created_at".to_string(), rusqlite::types::Type::Text))?
                     .with_timezone(&Utc),
-                updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(6)?)
-                    .unwrap()
+                updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+                    .map_err(|_| rusqlite::Error::InvalidColumnType(8, "updated_at".to_string(), rusqlite::types::Type::Text))?
                     .with_timezone(&Utc),
             })
         });
@@ -103,7 +119,7 @@ impl RepositoryRepository {
         let conn = conn.lock().unwrap();
         
         let mut stmt = conn.prepare(
-            "SELECT id, name, url, branch, last_analyzed_at, created_at, updated_at
+            "SELECT id, name, url, branch, auth_type, auth_value, last_analyzed_at, created_at, updated_at
              FROM repositories ORDER BY created_at DESC"
         )?;
         
@@ -113,13 +129,16 @@ impl RepositoryRepository {
                 name: row.get(1)?,
                 url: row.get(2)?,
                 branch: row.get(3)?,
-                last_analyzed_at: row.get::<_, Option<String>>(4)?
-                    .map(|s| DateTime::parse_from_rfc3339(&s).unwrap().with_timezone(&Utc)),
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                    .unwrap()
+                auth_type: row.get::<_, Option<String>>(4)?,
+                auth_value: row.get::<_, Option<String>>(5)?,
+                last_analyzed_at: row.get::<_, Option<String>>(6)?
+                    .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+                    .map(|dt| dt.with_timezone(&Utc)),
+                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
+                    .map_err(|_| rusqlite::Error::InvalidColumnType(7, "created_at".to_string(), rusqlite::types::Type::Text))?
                     .with_timezone(&Utc),
-                updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(6)?)
-                    .unwrap()
+                updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+                    .map_err(|_| rusqlite::Error::InvalidColumnType(8, "updated_at".to_string(), rusqlite::types::Type::Text))?
                     .with_timezone(&Utc),
             })
         })?

@@ -479,16 +479,66 @@ function setupModals() {
     // Form submission
     const form = document.getElementById('form-add-repo');
     if (form) {
+        // Show/hide auth value field based on auth type
+        const authTypeSelect = document.getElementById('repo-auth-type');
+        const authValueGroup = document.getElementById('auth-value-group');
+        const authValueInput = document.getElementById('repo-auth-value');
+        const authHint = document.getElementById('auth-hint');
+        
+        if (authTypeSelect) {
+            authTypeSelect.addEventListener('change', () => {
+                const authType = authTypeSelect.value;
+                if (authType) {
+                    authValueGroup.style.display = 'block';
+                    authValueInput.required = true;
+                    switch(authType) {
+                        case 'token':
+                            authHint.textContent = 'Enter your personal access token (GitHub/GitLab/Bitbucket)';
+                            authValueInput.type = 'password';
+                            authValueInput.placeholder = 'ghp_xxxxxxxxxxxxx';
+                            break;
+                        case 'ssh_key':
+                            authHint.textContent = 'Enter the path to your SSH private key file';
+                            authValueInput.type = 'text';
+                            authValueInput.placeholder = '/path/to/id_rsa';
+                            break;
+                        case 'username_password':
+                            authHint.textContent = 'Enter username:password (will be base64 encoded)';
+                            authValueInput.type = 'password';
+                            authValueInput.placeholder = 'username:password';
+                            break;
+                    }
+                } else {
+                    authValueGroup.style.display = 'none';
+                    authValueInput.required = false;
+                }
+            });
+        }
+        
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const name = document.getElementById('repo-name').value;
             const url = document.getElementById('repo-url').value;
             const branch = document.getElementById('repo-branch').value || 'main';
+            const authType = document.getElementById('repo-auth-type').value;
+            let authValue = document.getElementById('repo-auth-value').value;
+            
+            // Encode username:password as base64
+            if (authType === 'username_password' && authValue) {
+                authValue = btoa(authValue);
+            }
             
             try {
-                await api.createRepository(name, url, branch);
+                await api.createRepository(
+                    name,
+                    url,
+                    branch,
+                    authType || undefined,
+                    authValue || undefined
+                );
                 modal.classList.remove('active');
                 form.reset();
+                authValueGroup.style.display = 'none';
                 loadRepositories();
                 showPage('repositories');
             } catch (error) {

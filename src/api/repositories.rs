@@ -1,9 +1,10 @@
 use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use serde::{Deserialize, Serialize};
+use base64::{Engine as _, engine::general_purpose};
 use crate::api::{ApiState, ErrorResponse};
 use crate::api::extract_api_key;
 use crate::storage::{RepositoryRepository, DependencyRepository};
-use crate::ingestion::RepositoryCrawler;
+use crate::ingestion::{RepositoryCrawler, RepositoryCredentials, AuthType};
 use crate::analysis::DependencyExtractor;
 use crate::security::ServiceDetector;
 use crate::security::analyzer::SecurityAnalyzer;
@@ -16,6 +17,8 @@ pub struct CreateRepositoryRequest {
     pub name: String,
     pub url: String,
     pub branch: Option<String>,
+    pub auth_type: Option<String>,  // "ssh_key", "token", "username_password"
+    pub auth_value: Option<String>,  // SSH key path, token, or base64(username:password)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,7 +54,13 @@ pub async fn create_repository(
         });
     }
 
-    match state.repo_repo.create(&body.name, &body.url, body.branch.as_deref()) {
+    match state.repo_repo.create(
+        &body.name,
+        &body.url,
+        body.branch.as_deref(),
+        body.auth_type.as_deref(),
+        body.auth_value.as_deref(),
+    ) {
         Ok(repo) => HttpResponse::Created().json(repo),
         Err(e) => HttpResponse::BadRequest().json(ErrorResponse {
             error: e.to_string(),
@@ -174,7 +183,39 @@ pub async fn analyze_repository(
         }
     };
 
-    let repo_path = match crawler.clone_or_update(&repo.url, Some(&repo.branch)) {
+    let credentials = repo.auth_type.as_ref().and_then(|auth_type| {
+        repo.auth_value.as_ref().map(|auth_value| {
+            match auth_type.as_str() {
+                "ssh_key" => RepositoryCredentials {
+                    auth_type: AuthType::SshKey(auth_value.clone()),
+                },
+                "token" => RepositoryCredentials {
+                    auth_type: AuthType::Token(auth_value.clone()),
+                },
+                "username_password" => {
+                    // Decode base64(username:password)
+                    let decoded = general_purpose::STANDARD.decode(auth_value).unwrap_or_default();
+                    let creds_str = String::from_utf8(decoded).unwrap_or_default();
+                    let parts: Vec<&str> = creds_str.splitn(2, ':').collect();
+                    RepositoryCredentials {
+                        auth_type: AuthType::UsernamePassword(
+                            parts[0].to_string(),
+                            parts.get(1).unwrap_or(&"").to_string(),
+                        ),
+                    }
+                }
+                _ => RepositoryCredentials {
+                    auth_type: AuthType::Token(auth_value.clone()),
+                },
+            }
+        })
+    });
+    
+    let repo_path = match crawler.clone_or_update(
+        &repo.url,
+        Some(&repo.branch),
+        credentials.as_ref(),
+    ) {
         Ok(path) => path,
         Err(e) => {
             return HttpResponse::InternalServerError().json(ErrorResponse {

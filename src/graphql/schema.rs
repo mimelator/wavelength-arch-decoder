@@ -264,7 +264,7 @@ impl MutationRoot {
         branch: Option<String>,
     ) -> GraphQLResult<RepositoryType> {
         let state = ctx.data::<ApiState>()?;
-        let repo = state.repo_repo.create(&name, &url, branch.as_deref())?;
+                let repo = state.repo_repo.create(&name, &url, branch.as_deref(), None, None)?;
         Ok(RepositoryType::from(repo))
     }
 

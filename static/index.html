@@ -285,12 +285,37 @@
                     <input type="text" id="repo-name" required>
                 </div>
                 <div class="form-group">
-                    <label for="repo-url">URL</label>
-                    <input type="url" id="repo-url" required>
+                    <label for="repo-url">Repository URL</label>
+                    <input type="url" id="repo-url" required placeholder="https://github.com/user/repo.git">
+                    <small style="color: var(--text-secondary); font-size: 0.875rem; display: block; margin-top: 0.5rem;">
+                        Enter a Git repository URL (e.g., GitHub, GitLab, Bitbucket). Examples:<br>
+                        • https://github.com/user/repo.git<br>
+                        • https://gitlab.com/user/repo.git<br>
+                        • git@github.com:user/repo.git (SSH)
+                    </small>
                 </div>
                 <div class="form-group">
                     <label for="repo-branch">Branch</label>
                     <input type="text" id="repo-branch" value="main">
+                </div>
+                <div class="form-group">
+                    <label for="repo-auth-type">Authentication (for private repos)</label>
+                    <select id="repo-auth-type" class="select-input">
+                        <option value="">None (public repository)</option>
+                        <option value="token">Personal Access Token</option>
+                        <option value="ssh_key">SSH Key Path</option>
+                        <option value="username_password">Username/Password</option>
+                    </select>
+                    <small style="color: var(--text-secondary); font-size: 0.875rem; display: block; margin-top: 0.5rem;">
+                        Select authentication method for private repositories
+                    </small>
+                </div>
+                <div class="form-group" id="auth-value-group" style="display: none;">
+                    <label for="repo-auth-value">Authentication Value</label>
+                    <input type="text" id="repo-auth-value" placeholder="Token, SSH key path, or username:password">
+                    <small style="color: var(--text-secondary); font-size: 0.875rem; display: block; margin-top: 0.5rem;">
+                        <span id="auth-hint"></span>
+                    </small>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary modal-close">Cancel</button>

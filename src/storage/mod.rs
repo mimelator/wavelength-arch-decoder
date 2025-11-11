@@ -75,6 +75,8 @@ impl Database {
                 name TEXT NOT NULL,
                 url TEXT NOT NULL,
                 branch TEXT DEFAULT 'main',
+                auth_type TEXT,
+                auth_value TEXT,
                 last_analyzed_at TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL

@@ -3290,6 +3290,7 @@ dependencies = [
  "anyhow",
  "async-graphql",
  "async-graphql-actix-web",
+ "base64 0.21.7",
  "bcrypt",
  "chrono",
  "config",
