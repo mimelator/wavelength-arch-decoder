@@ -44,7 +44,8 @@ pub struct LoggingConfig {
 
 impl Config {
     pub fn from_env() -> Result<Self, anyhow::Error> {
-        // Load .env file if it exists
+        // Load .env.local first (local overrides), then .env
+        dotenv::from_filename(".env.local").ok();
         dotenv::dotenv().ok();
 
         Ok(Config {
