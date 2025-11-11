@@ -73,7 +73,7 @@ impl RepositoryCrawler {
         };
         
         let mut builder = git2::build::RepoBuilder::new();
-        builder.fetch_options(fetch_options);
+        builder.fetch_options(fetch_options.clone());
         
         // Try cloning with the specified branch, but don't fail if it doesn't exist
         // We'll checkout the correct branch after cloning
