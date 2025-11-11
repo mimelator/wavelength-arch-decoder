@@ -1,5 +1,7 @@
 use actix_web::{web, App, HttpServer};
+use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse};
 use crate::api::{ApiState, health, register, login, create_api_key};
+use crate::graphql::GraphQLSchema;
 use crate::api::repositories::{
     create_repository, list_repositories, get_repository,
     analyze_repository, get_dependencies, search_dependencies,
@@ -36,18 +38,46 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
     // Create API state
     let api_state = web::Data::new(ApiState {
         auth_service,
-        repo_repo,
-        dep_repo,
-        service_repo,
-        code_repo,
-        security_repo,
+        repo_repo: repo_repo.clone(),
+        dep_repo: dep_repo.clone(),
+        service_repo: service_repo.clone(),
+        code_repo: code_repo.clone(),
+        security_repo: security_repo.clone(),
     });
+
+    // Create GraphQL schema
+    let schema = GraphQLSchema::build(
+        crate::graphql::QueryRoot,
+        crate::graphql::MutationRoot,
+        async_graphql::EmptySubscription,
+    )
+    .data(api_state.clone())
+    .finish();
+    let schema = web::Data::new(schema);
+
+    // GraphQL handler
+    async fn graphql_handler(
+        schema: web::Data<GraphQLSchema>,
+        req: GraphQLRequest,
+    ) -> GraphQLResponse {
+        schema.execute(req.into_inner()).await.into()
+    }
+    
+    // GraphiQL handler
+    async fn graphiql_handler() -> impl actix_web::Responder {
+        actix_web::HttpResponse::Ok()
+            .content_type("text/html; charset=utf-8")
+            .body(async_graphql::http::GraphiQLSource::build().endpoint("/graphql").finish())
+    }
 
     // Start HTTP server
     HttpServer::new(move || {
         App::new()
             .app_data(api_state.clone())
+            .app_data(schema.clone())
             .route("/health", web::get().to(health))
+            .route("/graphql", web::post().to(graphql_handler))
+            .route("/graphiql", web::get().to(graphiql_handler))
             .service(
                 web::scope("/api/v1")
                     // Auth endpoints

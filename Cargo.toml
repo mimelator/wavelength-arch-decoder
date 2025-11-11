@@ -64,9 +64,9 @@ chrono = { version = "0.4", features = ["serde"] }
 # UUID generation
 uuid = { version = "1.6", features = ["v4", "serde"] }
 
-# GraphQL (for future implementation)
-# async-graphql = "5.0"
-# async-graphql-actix-web = "5.0"
+# GraphQL
+async-graphql = "5.0"
+async-graphql-actix-web = "5.0"
 
 [dev-dependencies]
 # Testing

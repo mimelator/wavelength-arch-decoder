@@ -7,4 +7,5 @@ pub mod parsers;
 pub mod analysis;
 pub mod security;
 pub mod graph;
+pub mod graphql;
 

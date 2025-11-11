@@ -7,6 +7,7 @@ mod parsers;
 mod analysis;
 mod security;
 mod graph;
+mod graphql;
 
 use api::server::start_server;
 use config::Config;
