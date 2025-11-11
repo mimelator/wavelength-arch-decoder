@@ -11,6 +11,7 @@ use crate::api::services::{get_services, search_services_by_provider};
 use crate::api::graph::{get_graph, get_graph_statistics, get_node_neighbors};
 use crate::api::code::{get_code_elements, get_code_calls};
 use crate::api::security::{get_security_entities, get_security_relationships, get_security_vulnerabilities};
+use crate::api::entity_details::get_entity_details;
 use crate::api::jobs::{create_job, get_job_status, list_jobs, create_scheduled_job, batch_analyze};
 use crate::crawler::webhooks::{handle_github_webhook, handle_gitlab_webhook};
 use crate::auth::AuthService;
@@ -123,6 +124,8 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     .route("/repositories/{id}/security/entities", web::get().to(get_security_entities))
                     .route("/repositories/{id}/security/relationships", web::get().to(get_security_relationships))
                     .route("/repositories/{id}/security/vulnerabilities", web::get().to(get_security_vulnerabilities))
+                    // Entity details endpoints
+                    .route("/repositories/{repo_id}/entities/{entity_type}/{entity_id}", web::get().to(get_entity_details))
                     // Job endpoints (Phase 8)
                     .route("/jobs", web::post().to(create_job))
                     .route("/jobs", web::get().to(list_jobs))

@@ -1187,7 +1187,7 @@ async function loadDependencies(repoId) {
                 <h4>${escapeHtml(pm)}</h4>
                 <div class="detail-items">
                     ${depsList.map(dep => `
-                        <div class="detail-item">
+                        <div class="detail-item clickable" onclick="showEntityDetail('${repoId}', 'dependency', '${dep.id}')">
                             <div class="detail-item-header">
                                 <strong>${escapeHtml(dep.name)}</strong>
                                 <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
@@ -1228,7 +1228,7 @@ async function loadServices(repoId) {
                 <h4>${escapeHtml(provider)}</h4>
                 <div class="detail-items">
                     ${svcList.map(svc => `
-                        <div class="detail-item">
+                        <div class="detail-item clickable" onclick="showEntityDetail('${repoId}', 'service', '${svc.id}')">
                             <div class="detail-item-header">
                                 <strong>${escapeHtml(svc.name)}</strong>
                                 <span class="detail-badge">${escapeHtml(svc.service_type || 'service')}</span>
@@ -1250,6 +1250,7 @@ let allCodeElements = [];
 let currentCodeGroupBy = 'type';
 
 async function loadCodeElements(repoId) {
+    currentRepoId = repoId;
     const container = document.getElementById('code-list');
     container.innerHTML = '<p class="loading-text">Loading code structure...</p>';
     
@@ -1395,7 +1396,7 @@ function renderCodeElementsList(elements, showAll = false) {
     
     let html = '<div class="detail-items">';
     html += displayElements.map(el => `
-        <div class="detail-item" data-code-name="${escapeHtml(el.name.toLowerCase())}">
+        <div class="detail-item clickable" data-code-name="${escapeHtml(el.name.toLowerCase())}" onclick="showEntityDetail('${currentRepoId || ''}', 'code_element', '${el.id}')">
             <div class="detail-item-header">
                 <strong>${escapeHtml(el.name)}</strong>
                 <span class="detail-badge">${escapeHtml(el.language || 'unknown')}</span>
@@ -1442,47 +1443,312 @@ window.loadMoreCodeElements = function() {
     filterAndRenderCode();
 };
 
+// Store security data for filtering
+let allSecurityEntities = [];
+let allSecurityVulnerabilities = [];
+let securityVulnMap = {};
+let currentSecurityGroupBy = 'type';
+
 async function loadSecurity(repoId) {
+    currentRepoId = repoId;
     const container = document.getElementById('security-list');
     container.innerHTML = '<p class="loading-text">Loading security information...</p>';
     
     try {
         const entities = await api.getSecurityEntities(repoId);
+        const vulnerabilities = await api.getSecurityVulnerabilities(repoId);
+        
+        allSecurityEntities = entities;
+        allSecurityVulnerabilities = vulnerabilities;
+        
+        // Create vulnerability map by entity_id
+        securityVulnMap = {};
+        vulnerabilities.forEach(vuln => {
+            if (!securityVulnMap[vuln.entity_id]) securityVulnMap[vuln.entity_id] = [];
+            securityVulnMap[vuln.entity_id].push(vuln);
+        });
         
         if (entities.length === 0) {
             container.innerHTML = '<p>No security entities found. Run analysis first.</p>';
             return;
         }
         
-        // Group by type
-        const grouped = {};
-        entities.forEach(entity => {
-            const type = entity.entity_type || 'unknown';
-            if (!grouped[type]) grouped[type] = [];
-            grouped[type].push(entity);
-        });
+        // Setup filters
+        setupSecurityFilters(entities, vulnerabilities);
         
-        container.innerHTML = Object.entries(grouped).map(([type, entityList]) => `
-            <div class="detail-section">
-                <h4>${escapeHtml(type)}</h4>
-                <div class="detail-items">
-                    ${entityList.map(entity => `
-                        <div class="detail-item">
-                            <div class="detail-item-header">
-                                <strong>${escapeHtml(entity.name)}</strong>
-                                ${entity.provider ? `<span class="detail-badge">${escapeHtml(entity.provider)}</span>` : ''}
-                            </div>
-                            ${entity.arn ? `<p class="detail-meta">ARN: ${escapeHtml(entity.arn)}</p>` : ''}
-                            ${entity.file_path ? `<p class="detail-meta">Found in: ${escapeHtml(entity.file_path)}</p>` : ''}
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `).join('');
+        // Render security entities
+        renderSecurityEntities(entities);
     } catch (error) {
         container.innerHTML = `<p class="error-text">Failed to load security entities: ${escapeHtml(error.message)}</p>`;
     }
 }
+
+function setupSecurityFilters(entities, vulnerabilities) {
+    // Populate type filter
+    const typeFilter = document.getElementById('security-filter-type');
+    const types = [...new Set(entities.map(e => e.entity_type || 'unknown'))].sort();
+    typeFilter.innerHTML = '<option value="">All Types</option>' + 
+        types.map(type => {
+            const label = type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            return `<option value="${escapeHtml(type)}">${escapeHtml(label)}</option>`;
+        }).join('');
+    
+    // Populate provider filter
+    const providerFilter = document.getElementById('security-filter-provider');
+    const providers = [...new Set(entities.map(e => e.provider || 'unknown'))].sort();
+    providerFilter.innerHTML = '<option value="">All Providers</option>' + 
+        providers.map(provider => `<option value="${escapeHtml(provider)}">${escapeHtml(provider)}</option>`).join('');
+    
+    // Setup event listeners
+    const searchInput = document.getElementById('security-search');
+    const groupBySelect = document.getElementById('security-group-by');
+    
+    searchInput.addEventListener('input', () => filterAndRenderSecurity());
+    typeFilter.addEventListener('change', () => filterAndRenderSecurity());
+    providerFilter.addEventListener('change', () => filterAndRenderSecurity());
+    document.getElementById('security-filter-severity').addEventListener('change', () => filterAndRenderSecurity());
+    groupBySelect.addEventListener('change', () => {
+        currentSecurityGroupBy = groupBySelect.value;
+        filterAndRenderSecurity();
+    });
+}
+
+function filterAndRenderSecurity() {
+    const searchTerm = document.getElementById('security-search').value.toLowerCase();
+    const typeFilter = document.getElementById('security-filter-type').value;
+    const providerFilter = document.getElementById('security-filter-provider').value;
+    const severityFilter = document.getElementById('security-filter-severity').value;
+    
+    let filtered = allSecurityEntities.filter(entity => {
+        // Search filter
+        const matchesSearch = !searchTerm || 
+            entity.name.toLowerCase().includes(searchTerm) ||
+            (entity.file_path && entity.file_path.toLowerCase().includes(searchTerm)) ||
+            (entity.arn && entity.arn.toLowerCase().includes(searchTerm));
+        
+        // Type filter
+        const matchesType = !typeFilter || entity.entity_type === typeFilter;
+        
+        // Provider filter
+        const matchesProvider = !providerFilter || entity.provider === providerFilter;
+        
+        // Severity filter (check if entity has vulnerabilities with matching severity)
+        let matchesSeverity = true;
+        if (severityFilter) {
+            const entityVulns = securityVulnMap[entity.id] || [];
+            matchesSeverity = entityVulns.some(v => v.severity.toLowerCase() === severityFilter);
+        }
+        
+        return matchesSearch && matchesType && matchesProvider && matchesSeverity;
+    });
+    
+    // Update filter info
+    const infoDiv = document.getElementById('security-filter-info');
+    if (filtered.length !== allSecurityEntities.length) {
+        infoDiv.textContent = `Showing ${filtered.length} of ${allSecurityEntities.length} security entities`;
+        infoDiv.style.display = 'block';
+    } else {
+        infoDiv.style.display = 'none';
+    }
+    
+    renderSecurityEntities(filtered);
+}
+
+function renderSecurityEntities(entities) {
+    const container = document.getElementById('security-list');
+    
+    if (entities.length === 0) {
+        container.innerHTML = '<p>No security entities match the current filters.</p>';
+        return;
+    }
+    
+    let html = '';
+    
+    if (currentSecurityGroupBy === 'none') {
+        // No grouping - show all in a single list with pagination
+        html = renderSecurityEntitiesList(entities, false);
+    } else {
+        // Group entities
+        const grouped = {};
+        entities.forEach(entity => {
+            let key;
+            if (currentSecurityGroupBy === 'type') {
+                key = entity.entity_type || 'unknown';
+            } else if (currentSecurityGroupBy === 'provider') {
+                key = entity.provider || 'unknown';
+            } else if (currentSecurityGroupBy === 'file') {
+                key = entity.file_path ? entity.file_path.split('/').slice(0, -1).join('/') || 'root' : 'unknown';
+            } else if (currentSecurityGroupBy === 'severity') {
+                const entityVulns = securityVulnMap[entity.id] || [];
+                if (entityVulns.length === 0) {
+                    key = 'none';
+                } else {
+                    // Use highest severity
+                    const severities = ['critical', 'high', 'medium', 'low', 'info'];
+                    const highestSeverity = severities.find(s => 
+                        entityVulns.some(v => v.severity.toLowerCase() === s)
+                    ) || 'info';
+                    key = highestSeverity;
+                }
+            }
+            
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(entity);
+        });
+        
+        // Sort groups
+        const sortedGroups = Object.entries(grouped).sort((a, b) => {
+            if (currentSecurityGroupBy === 'severity') {
+                const severityOrder = { 'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4, 'none': 5 };
+                return (severityOrder[a[0]] || 99) - (severityOrder[b[0]] || 99);
+            }
+            return a[0].localeCompare(b[0]);
+        });
+        
+        html = sortedGroups.map(([groupKey, entityList]) => {
+            let groupTitle;
+            if (currentSecurityGroupBy === 'type') {
+                groupTitle = groupKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            } else if (currentSecurityGroupBy === 'severity') {
+                groupTitle = groupKey === 'none' ? 'No Vulnerabilities' : 
+                    groupKey.charAt(0).toUpperCase() + groupKey.slice(1) + ' Severity';
+            } else if (currentSecurityGroupBy === 'file') {
+                groupTitle = groupKey === 'root' ? 'Root Directory' : groupKey;
+            } else {
+                groupTitle = groupKey;
+            }
+            const count = entityList.length;
+            return `
+                <div class="detail-section collapsible-section">
+                    <h4 class="section-header" onclick="toggleSection(this)">
+                        <span class="section-toggle">▼</span>
+                        ${escapeHtml(groupTitle)} <span class="section-count">(${count})</span>
+                    </h4>
+                    <div class="section-content">
+                        ${renderSecurityEntitiesList(entityList, true)}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    container.innerHTML = html;
+}
+
+function renderSecurityEntitiesList(entities, showAll = false) {
+    // Sort entities by name
+    const sorted = [...entities].sort((a, b) => a.name.localeCompare(b.name));
+    
+    // If showing all and there are many, limit initial display
+    const maxInitial = 50;
+    const shouldPaginate = !showAll && sorted.length > maxInitial;
+    const displayEntities = shouldPaginate ? sorted.slice(0, maxInitial) : sorted;
+    
+    let html = '<div class="detail-items">';
+    html += displayEntities.map(entity => {
+        // Parse configuration if it's a string
+        let config = entity.configuration;
+        if (typeof config === 'string') {
+            try {
+                config = JSON.parse(config);
+            } catch (e) {
+                config = {};
+            }
+        }
+        
+        const entityVulns = securityVulnMap[entity.id] || [];
+        const hasVulns = entityVulns.length > 0;
+        const type = entity.entity_type || 'unknown';
+        
+        // Special handling for API keys
+        if (type === 'ApiKey') {
+            const keyName = config.key_name || entity.name;
+            const keyType = config.key_type || 'unknown';
+            const provider = config.provider || entity.provider || 'generic';
+            const usedByCount = config.used_by_count || 0;
+            const serviceCount = config.service_count || 0;
+            const usedByElements = config.used_by_elements || [];
+            const relatedServices = config.related_services || [];
+            const valuePreview = config.value_preview;
+            
+            return `
+            <div class="detail-item clickable ${hasVulns ? 'has-vulnerability' : ''}" onclick="showEntityDetail('${currentRepoId || ''}', 'security_entity', '${entity.id}')">
+                <div class="detail-item-header">
+                    <strong>${escapeHtml(keyName)}</strong>
+                    <span class="detail-badge ${keyType === 'hardcoded' ? 'badge-critical' : 'badge-info'}">${escapeHtml(keyType)}</span>
+                    <span class="detail-badge">${escapeHtml(provider)}</span>
+                    ${hasVulns ? '<span class="detail-badge badge-warning">⚠ Vulnerable</span>' : ''}
+                </div>
+                <div class="detail-meta">
+                    ${entity.file_path ? `<p><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}</p>` : ''}
+                    ${valuePreview ? `<p><strong>Value Preview:</strong> <code>${escapeHtml(valuePreview)}</code></p>` : ''}
+                    ${usedByCount > 0 ? `<p><strong>Used by:</strong> ${usedByCount} code element(s)</p>` : ''}
+                    ${serviceCount > 0 ? `<p><strong>Related Services:</strong> ${serviceCount}</p>` : ''}
+                    ${usedByElements.length > 0 ? `<p class="detail-small"><strong>Code Elements:</strong> ${usedByElements.slice(0, 5).map(id => `<code>${escapeHtml(id.substring(0, 8))}...</code>`).join(', ')}${usedByElements.length > 5 ? ' ...' : ''}</p>` : ''}
+                    ${relatedServices.length > 0 ? `<p class="detail-small"><strong>Services:</strong> ${relatedServices.slice(0, 5).map(s => escapeHtml(s)).join(', ')}${relatedServices.length > 5 ? ' ...' : ''}</p>` : ''}
+                </div>
+                ${hasVulns ? `
+                <div class="vulnerability-list">
+                    ${entityVulns.map(v => `
+                        <div class="vulnerability-item severity-${v.severity.toLowerCase()}">
+                            <strong>${escapeHtml(v.vulnerability_type)}</strong>
+                            <p>${escapeHtml(v.description)}</p>
+                            <p class="vulnerability-recommendation">💡 ${escapeHtml(v.recommendation)}</p>
+                        </div>
+                    `).join('')}
+                </div>
+                ` : ''}
+            </div>
+            `;
+        }
+        
+        // Default rendering for other entity types
+        return `
+        <div class="detail-item clickable ${hasVulns ? 'has-vulnerability' : ''}" onclick="showEntityDetail('${currentRepoId || ''}', 'security_entity', '${entity.id}')">
+            <div class="detail-item-header">
+                <strong>${escapeHtml(entity.name)}</strong>
+                ${entity.provider ? `<span class="detail-badge">${escapeHtml(entity.provider)}</span>` : ''}
+                ${hasVulns ? '<span class="detail-badge badge-warning">⚠ Vulnerable</span>' : ''}
+            </div>
+            ${entity.arn ? `<p class="detail-meta"><strong>ARN:</strong> <code>${escapeHtml(entity.arn)}</code></p>` : ''}
+            ${entity.file_path ? `<p class="detail-meta"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}</p>` : ''}
+            ${hasVulns ? `
+            <div class="vulnerability-list">
+                ${entityVulns.map(v => `
+                    <div class="vulnerability-item severity-${v.severity.toLowerCase()}">
+                        <strong>${escapeHtml(v.vulnerability_type)}</strong>
+                        <p>${escapeHtml(v.description)}</p>
+                        <p class="vulnerability-recommendation">💡 ${escapeHtml(v.recommendation)}</p>
+                    </div>
+                `).join('')}
+            </div>
+            ` : ''}
+        </div>
+        `;
+    }).join('');
+    html += '</div>';
+    
+    if (shouldPaginate) {
+        html += `
+            <div class="pagination-controls">
+                <p style="text-align: center; color: var(--text-secondary); margin-top: 1rem;">
+                    Showing ${maxInitial} of ${sorted.length} entities
+                </p>
+                <button class="btn btn-secondary" onclick="loadMoreSecurityEntities()" style="width: 100%; margin-top: 0.5rem;">
+                    Show All ${sorted.length} Entities
+                </button>
+            </div>
+        `;
+    }
+    
+    return html;
+}
+
+window.loadMoreSecurityEntities = function() {
+    currentSecurityGroupBy = 'none';
+    document.getElementById('security-group-by').value = 'none';
+    filterAndRenderSecurity();
+};
 
 async function loadRepositoryGraph(repoId) {
     const container = document.getElementById('repo-graph-container');
@@ -1502,4 +1768,255 @@ async function loadRepositoryGraph(repoId) {
         container.innerHTML = `<p class="error-text">Failed to load graph: ${escapeHtml(error.message)}</p>`;
     }
 }
+
+// Entity Detail Modal Functions
+// currentRepoId is declared earlier in the file
+
+function showEntityDetail(repoId, entityType, entityId) {
+    currentRepoId = repoId;
+    const modal = document.getElementById('entity-detail-modal');
+    const title = document.getElementById('entity-detail-title');
+    const body = document.getElementById('entity-detail-body');
+    
+    modal.style.display = 'flex';
+    title.textContent = 'Loading...';
+    body.innerHTML = '<p class="loading-text">Loading entity details...</p>';
+    
+    api.getEntityDetails(repoId, entityType, entityId)
+        .then(details => {
+            title.textContent = getEntityTitle(entityType, details.entity);
+            body.innerHTML = renderEntityDetails(entityType, details);
+        })
+        .catch(error => {
+            title.textContent = 'Error';
+            body.innerHTML = `<p class="error-text">Failed to load entity details: ${escapeHtml(error.message)}</p>`;
+        });
+}
+
+function closeEntityDetailModal() {
+    document.getElementById('entity-detail-modal').style.display = 'none';
+}
+
+function getEntityTitle(entityType, entity) {
+    if (!entity) return 'Entity Details';
+    
+    switch (entityType) {
+        case 'dependency':
+            return `${entity.name} (${entity.version})`;
+        case 'service':
+            return `${entity.name} (${entity.provider})`;
+        case 'code_element':
+            return `${entity.name} (${entity.element_type})`;
+        case 'security_entity':
+            return `${entity.name} (${entity.entity_type})`;
+        default:
+            return 'Entity Details';
+    }
+}
+
+function renderEntityDetails(entityType, details) {
+    const entity = details.entity;
+    if (!entity) return '<p>Entity not found</p>';
+    
+    let html = '<div class="entity-detail-content">';
+    
+    // Render entity metadata
+    html += '<div class="detail-section">';
+    html += '<h3>Details</h3>';
+    html += '<div class="detail-grid">';
+    
+    switch (entityType) {
+        case 'dependency':
+            html += renderDependencyDetails(entity, details);
+            break;
+        case 'service':
+            html += renderServiceDetails(entity, details);
+            break;
+        case 'code_element':
+            html += renderCodeElementDetails(entity, details);
+            break;
+        case 'security_entity':
+            html += renderSecurityEntityDetails(entity, details);
+            break;
+    }
+    
+    html += '</div></div>';
+    
+    // Render relationships
+    html += renderRelationships(entityType, details);
+    
+    html += '</div>';
+    return html;
+}
+
+function renderDependencyDetails(entity, details) {
+    let html = '';
+    html += `<div class="detail-item"><strong>Name:</strong> ${escapeHtml(entity.name)}</div>`;
+    html += `<div class="detail-item"><strong>Version:</strong> <code>${escapeHtml(entity.version)}</code></div>`;
+    html += `<div class="detail-item"><strong>Package Manager:</strong> ${escapeHtml(entity.package_manager)}</div>`;
+    html += `<div class="detail-item"><strong>Dev Dependency:</strong> ${entity.is_dev ? 'Yes' : 'No'}</div>`;
+    html += `<div class="detail-item"><strong>Optional:</strong> ${entity.is_optional ? 'Yes' : 'No'}</div>`;
+    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code></div>`;
+    return html;
+}
+
+function renderServiceDetails(entity, details) {
+    let html = '';
+    html += `<div class="detail-item"><strong>Name:</strong> ${escapeHtml(entity.name)}</div>`;
+    html += `<div class="detail-item"><strong>Provider:</strong> ${escapeHtml(entity.provider)}</div>`;
+    html += `<div class="detail-item"><strong>Type:</strong> ${escapeHtml(entity.service_type)}</div>`;
+    html += `<div class="detail-item"><strong>Confidence:</strong> ${(entity.confidence * 100).toFixed(1)}%</div>`;
+    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}</div>`;
+    if (entity.configuration) {
+        try {
+            const config = typeof entity.configuration === 'string' ? JSON.parse(entity.configuration) : entity.configuration;
+            html += `<div class="detail-item"><strong>Configuration:</strong><pre>${escapeHtml(JSON.stringify(config, null, 2))}</pre></div>`;
+        } catch (e) {
+            html += `<div class="detail-item"><strong>Configuration:</strong> ${escapeHtml(entity.configuration)}</div>`;
+        }
+    }
+    return html;
+}
+
+function renderCodeElementDetails(entity, details) {
+    let html = '';
+    html += `<div class="detail-item"><strong>Name:</strong> ${escapeHtml(entity.name)}</div>`;
+    html += `<div class="detail-item"><strong>Type:</strong> ${escapeHtml(entity.element_type)}</div>`;
+    html += `<div class="detail-item"><strong>Language:</strong> ${escapeHtml(entity.language)}</div>`;
+    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>:${entity.line_number}</div>`;
+    if (entity.signature) html += `<div class="detail-item"><strong>Signature:</strong> <code>${escapeHtml(entity.signature)}</code></div>`;
+    if (entity.visibility) html += `<div class="detail-item"><strong>Visibility:</strong> ${escapeHtml(entity.visibility)}</div>`;
+    if (entity.parameters && entity.parameters.length > 0) {
+        html += `<div class="detail-item"><strong>Parameters:</strong> ${entity.parameters.map(p => `<code>${escapeHtml(p)}</code>`).join(', ')}</div>`;
+    }
+    if (entity.return_type) html += `<div class="detail-item"><strong>Return Type:</strong> <code>${escapeHtml(entity.return_type)}</code></div>`;
+    if (entity.doc_comment) html += `<div class="detail-item"><strong>Documentation:</strong><pre>${escapeHtml(entity.doc_comment)}</pre></div>`;
+    return html;
+}
+
+function renderSecurityEntityDetails(entity, details) {
+    let html = '';
+    html += `<div class="detail-item"><strong>Name:</strong> ${escapeHtml(entity.name)}</div>`;
+    html += `<div class="detail-item"><strong>Type:</strong> ${escapeHtml(entity.entity_type)}</div>`;
+    html += `<div class="detail-item"><strong>Provider:</strong> ${escapeHtml(entity.provider)}</div>`;
+    if (entity.arn) html += `<div class="detail-item"><strong>ARN:</strong> <code>${escapeHtml(entity.arn)}</code></div>`;
+    if (entity.region) html += `<div class="detail-item"><strong>Region:</strong> ${escapeHtml(entity.region)}</div>`;
+    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}</div>`;
+    if (entity.configuration) {
+        try {
+            const config = typeof entity.configuration === 'string' ? JSON.parse(entity.configuration) : entity.configuration;
+            html += `<div class="detail-item"><strong>Configuration:</strong><pre>${escapeHtml(JSON.stringify(config, null, 2))}</pre></div>`;
+        } catch (e) {
+            html += `<div class="detail-item"><strong>Configuration:</strong> ${escapeHtml(entity.configuration)}</div>`;
+        }
+    }
+    return html;
+}
+
+function renderRelationships(entityType, details) {
+    let html = '';
+    
+    // Dependencies
+    if (details.related_dependencies && details.related_dependencies.length > 0) {
+        html += '<div class="detail-section"><h3>Related Dependencies</h3><div class="related-items">';
+        details.related_dependencies.forEach(dep => {
+            html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'dependency', '${dep.id}')">
+                <strong>${escapeHtml(dep.name)}</strong> <code>${escapeHtml(dep.version)}</code>
+            </div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    // Services
+    if (details.related_services && details.related_services.length > 0) {
+        html += '<div class="detail-section"><h3>Related Services</h3><div class="related-items">';
+        details.related_services.forEach(svc => {
+            html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'service', '${svc.id}')">
+                <strong>${escapeHtml(svc.name)}</strong> (${escapeHtml(svc.provider)})
+            </div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    // Code Elements
+    if (details.callers && details.callers.length > 0) {
+        html += '<div class="detail-section"><h3>Callers</h3><div class="related-items">';
+        details.callers.forEach(caller => {
+            html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'code_element', '${caller.id}')">
+                <strong>${escapeHtml(caller.name)}</strong> <code>${escapeHtml(caller.file_path)}</code>:${caller.line_number}
+            </div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    if (details.callees && details.callees.length > 0) {
+        html += '<div class="detail-section"><h3>Callees</h3><div class="related-items">';
+        details.callees.forEach(callee => {
+            html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'code_element', '${callee.id}')">
+                <strong>${escapeHtml(callee.name)}</strong> <code>${escapeHtml(callee.file_path)}</code>:${callee.line_number}
+            </div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    if (details.related_elements && details.related_elements.length > 0) {
+        html += '<div class="detail-section"><h3>Related Elements (Same File)</h3><div class="related-items">';
+        details.related_elements.forEach(el => {
+            html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'code_element', '${el.id}')">
+                <strong>${escapeHtml(el.name)}</strong> (${escapeHtml(el.element_type)})
+            </div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    // Security Entities
+    if (details.relationships && details.relationships.length > 0) {
+        html += '<div class="detail-section"><h3>Security Relationships</h3><div class="related-items">';
+        details.relationships.forEach(rel => {
+            html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'security_entity', '${rel.entity.id}')">
+                <strong>${escapeHtml(rel.entity.name)}</strong> - ${escapeHtml(rel.relationship_type)}
+                ${rel.permissions && rel.permissions.length > 0 ? `<br><small>Permissions: ${rel.permissions.join(', ')}</small>` : ''}
+            </div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    if (details.vulnerabilities && details.vulnerabilities.length > 0) {
+        html += '<div class="detail-section"><h3>Vulnerabilities</h3><div class="related-items">';
+        details.vulnerabilities.forEach(vuln => {
+            html += `<div class="related-item vulnerability-item severity-${vuln.severity.toLowerCase()}">
+                <strong>${escapeHtml(vuln.vulnerability_type)}</strong>
+                <p>${escapeHtml(vuln.description)}</p>
+                <p class="vulnerability-recommendation">💡 ${escapeHtml(vuln.recommendation)}</p>
+            </div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    if (details.related_entities && details.related_entities.length > 0) {
+        html += '<div class="detail-section"><h3>Related Entities (Same Provider)</h3><div class="related-items">';
+        details.related_entities.forEach(e => {
+            html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'security_entity', '${e.id}')">
+                <strong>${escapeHtml(e.name)}</strong> (${escapeHtml(e.entity_type)})
+            </div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    if (details.related_security_entities && details.related_security_entities.length > 0) {
+        html += '<div class="detail-section"><h3>Related Security Entities</h3><div class="related-items">';
+        details.related_security_entities.forEach(e => {
+            html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'security_entity', '${e.id}')">
+                <strong>${escapeHtml(e.name)}</strong> (${escapeHtml(e.entity_type)})
+            </div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    return html;
+}
+
+// Make functions globally available
+window.showEntityDetail = showEntityDetail;
+window.closeEntityDetailModal = closeEntityDetailModal;
 

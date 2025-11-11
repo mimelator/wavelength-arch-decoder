@@ -105,6 +105,10 @@ class WavelengthAPI {
         return this.request(`/repositories/${repoId}/security/entities`);
     }
 
+    async getSecurityVulnerabilities(repoId) {
+        return this.request(`/repositories/${repoId}/security/vulnerabilities`);
+    }
+
     // Jobs
     async createJob(repositoryId, jobType = 'analyze_repository') {
         return this.request('/jobs', {
@@ -132,6 +136,10 @@ class WavelengthAPI {
 
     async searchServices(provider) {
         return this.request(`/services/search?provider=${encodeURIComponent(provider)}`);
+    }
+
+    async getEntityDetails(repoId, entityType, entityId) {
+        return this.request(`/repositories/${repoId}/entities/${entityType}/${entityId}`);
     }
 }
 

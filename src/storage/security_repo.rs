@@ -303,6 +303,10 @@ impl SecurityRepository {
             SecurityEntityType::Ec2Instance => "ec2_instance",
             SecurityEntityType::RdsInstance => "rds_instance",
             SecurityEntityType::ApiGateway => "api_gateway",
+            SecurityEntityType::FirebaseRules => "firebase_rules",
+            SecurityEntityType::EnvironmentConfig => "environment_config",
+            SecurityEntityType::SecurityConfig => "security_config",
+            SecurityEntityType::ApiKey => "api_key",
         }.to_string()
     }
 
@@ -318,6 +322,10 @@ impl SecurityRepository {
             "ec2_instance" => SecurityEntityType::Ec2Instance,
             "rds_instance" => SecurityEntityType::RdsInstance,
             "api_gateway" => SecurityEntityType::ApiGateway,
+            "firebase_rules" => SecurityEntityType::FirebaseRules,
+            "environment_config" => SecurityEntityType::EnvironmentConfig,
+            "security_config" => SecurityEntityType::SecurityConfig,
+            "api_key" => SecurityEntityType::ApiKey,
             _ => SecurityEntityType::IamRole,
         }
     }

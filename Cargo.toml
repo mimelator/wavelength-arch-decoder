@@ -67,6 +67,9 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 # Base64 encoding
 base64 = "0.21"
 
+# Regex for pattern matching
+regex = "1.10"
+
 # GraphQL
 async-graphql = "5.0"
 async-graphql-actix-web = "5.0"

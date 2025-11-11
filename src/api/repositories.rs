@@ -308,7 +308,7 @@ pub async fn analyze_repository(
     // Analyze security configuration
     log::info!("Step 8/8: Analyzing security configuration...");
     let security_analyzer = SecurityAnalyzer::new();
-    let security_analysis = match security_analyzer.analyze_repository(&repo_path) {
+    let security_analysis = match security_analyzer.analyze_repository(&repo_path, Some(&code_structure), Some(&services)) {
         Ok(analysis) => {
             log::info!("✓ Security analysis complete: {} entities, {} relationships, {} vulnerabilities", 
                 analysis.entities.len(), analysis.relationships.len(), analysis.vulnerabilities.len());

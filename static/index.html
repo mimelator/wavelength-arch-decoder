@@ -151,6 +151,32 @@
                         </div>
                     </div>
                     <div id="tab-security" class="repo-tab-content">
+                        <div class="code-filters">
+                            <div class="filter-row">
+                                <input type="text" id="security-search" placeholder="Search security entities..." class="search-input" style="flex: 1;">
+                                <select id="security-group-by" class="select-input">
+                                    <option value="type">Group by Type</option>
+                                    <option value="provider">Group by Provider</option>
+                                    <option value="file">Group by File</option>
+                                    <option value="severity">Group by Severity</option>
+                                    <option value="none">No Grouping</option>
+                                </select>
+                                <select id="security-filter-type" class="select-input">
+                                    <option value="">All Types</option>
+                                </select>
+                                <select id="security-filter-provider" class="select-input">
+                                    <option value="">All Providers</option>
+                                </select>
+                                <select id="security-filter-severity" class="select-input">
+                                    <option value="">All Severities</option>
+                                    <option value="critical">Critical</option>
+                                    <option value="high">High</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="low">Low</option>
+                                </select>
+                            </div>
+                            <div class="filter-info" id="security-filter-info"></div>
+                        </div>
                         <div id="security-list" class="detail-list">
                             <p class="loading-text">Loading security information...</p>
                         </div>
@@ -418,6 +444,19 @@
                     <button type="submit" class="btn btn-primary">Add Repository</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Entity Detail Modal -->
+    <div id="entity-detail-modal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2 id="entity-detail-title">Entity Details</h2>
+                <button class="modal-close" onclick="closeEntityDetailModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="entity-detail-body">
+                <p class="loading-text">Loading entity details...</p>
+            </div>
         </div>
     </div>
 
