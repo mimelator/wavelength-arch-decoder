@@ -700,6 +700,19 @@ function highlightNodeInTab(tabName, nodeName) {
     const tabContent = document.getElementById(`tab-${tabName}`);
     if (!tabContent) return;
     
+    // For code tab, expand all sections first
+    if (tabName === 'code') {
+        const sections = tabContent.querySelectorAll('.collapsible-section');
+        sections.forEach(section => {
+            const content = section.querySelector('.section-content');
+            const toggle = section.querySelector('.section-toggle');
+            if (content && content.style.display === 'none') {
+                content.style.display = 'block';
+                if (toggle) toggle.textContent = '▼';
+            }
+        });
+    }
+    
     // Find the item that matches the node name
     const items = tabContent.querySelectorAll('.detail-item');
     for (const item of items) {
