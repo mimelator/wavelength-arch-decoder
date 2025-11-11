@@ -1,4 +1,5 @@
 use actix_web::{web, App, HttpServer};
+use actix_files::Files;
 use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse};
 use crate::api::{ApiState, health, register, login, create_api_key};
 use crate::graphql::GraphQLSchema;
@@ -15,6 +16,16 @@ use crate::crawler::webhooks::{handle_github_webhook, handle_gitlab_webhook};
 use crate::auth::AuthService;
 use crate::config::Config;
 use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, SecurityRepository};
+use actix_web::HttpResponse;
+use std::fs;
+
+async fn index_handler() -> actix_web::Result<HttpResponse> {
+    let content = fs::read_to_string("./static/index.html")
+        .unwrap_or_else(|_| "<h1>UI not found</h1>".to_string());
+    Ok(HttpResponse::Ok()
+        .content_type("text/html")
+        .body(content))
+}
 
 pub async fn start_server(config: Config) -> std::io::Result<()> {
     // Initialize database
@@ -80,6 +91,10 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
             .route("/health", web::get().to(health))
             .route("/graphql", web::post().to(graphql_handler))
             .route("/graphiql", web::get().to(graphiql_handler))
+            // Serve static files for UI
+            .service(Files::new("/static", "./static").show_files_listing())
+            // Serve index.html for root path
+            .service(web::resource("/").route(web::get().to(index_handler)))
             .service(
                 web::scope("/api/v1")
                     // Auth endpoints

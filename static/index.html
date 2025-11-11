@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wavelength Architecture Decoder</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h1>🌊 Wavelength</h1>
+                <span class="subtitle">Architecture Decoder</span>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="#dashboard" class="nav-link active" data-page="dashboard">Dashboard</a></li>
+                <li><a href="#repositories" class="nav-link" data-page="repositories">Repositories</a></li>
+                <li><a href="#graph" class="nav-link" data-page="graph">Graph</a></li>
+                <li><a href="#search" class="nav-link" data-page="search">Search</a></li>
+                <li><a href="#api-docs" class="nav-link" data-page="api-docs">API Docs</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <!-- Dashboard Page -->
+        <div id="dashboard" class="page active">
+            <div class="page-header">
+                <h2>Dashboard</h2>
+                <p>Overview of your architecture analysis</p>
+            </div>
+            <div class="dashboard-grid">
+                <div class="stat-card">
+                    <h3 id="stat-repositories">0</h3>
+                    <p>Repositories</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="stat-dependencies">0</h3>
+                    <p>Dependencies</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="stat-services">0</h3>
+                    <p>Services</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="stat-security">0</h3>
+                    <p>Security Entities</p>
+                </div>
+            </div>
+            <div class="dashboard-section">
+                <h3>Recent Repositories</h3>
+                <div id="recent-repos" class="repo-list"></div>
+            </div>
+        </div>
+
+        <!-- Repositories Page -->
+        <div id="repositories" class="page">
+            <div class="page-header">
+                <h2>Repositories</h2>
+                <button class="btn btn-primary" id="btn-add-repo">Add Repository</button>
+            </div>
+            <div class="repo-filters">
+                <input type="text" id="repo-search" placeholder="Search repositories..." class="search-input">
+            </div>
+            <div id="repositories-list" class="repo-list"></div>
+        </div>
+
+        <!-- Graph Visualization Page -->
+        <div id="graph" class="page">
+            <div class="page-header">
+                <h2>Knowledge Graph</h2>
+                <div class="graph-controls">
+                    <select id="graph-repo-select" class="select-input">
+                        <option value="">Select Repository</option>
+                    </select>
+                    <button class="btn btn-secondary" id="btn-load-graph">Load Graph</button>
+                </div>
+            </div>
+            <div id="graph-container" class="graph-container">
+                <div class="graph-placeholder">
+                    <p>Select a repository to visualize its knowledge graph</p>
+                </div>
+            </div>
+            <div id="graph-info" class="graph-info"></div>
+        </div>
+
+        <!-- Search Page -->
+        <div id="search" class="page">
+            <div class="page-header">
+                <h2>Search</h2>
+            </div>
+            <div class="search-container">
+                <div class="search-box">
+                    <input type="text" id="search-query" placeholder="Search dependencies, services, code elements..." class="search-input-large">
+                    <button class="btn btn-primary" id="btn-search">Search</button>
+                </div>
+                <div class="search-filters">
+                    <label>
+                        <input type="checkbox" id="filter-dependencies" checked> Dependencies
+                    </label>
+                    <label>
+                        <input type="checkbox" id="filter-services" checked> Services
+                    </label>
+                    <label>
+                        <input type="checkbox" id="filter-code" checked> Code Elements
+                    </label>
+                    <label>
+                        <input type="checkbox" id="filter-security" checked> Security
+                    </label>
+                </div>
+                <div id="search-results" class="search-results"></div>
+            </div>
+        </div>
+
+        <!-- API Documentation Page -->
+        <div id="api-docs" class="page">
+            <div class="page-header">
+                <h2>API Documentation</h2>
+            </div>
+            <div class="api-docs-content">
+                <div class="api-section">
+                    <h3>Authentication</h3>
+                    <p>All API requests require authentication via API key in the Authorization header:</p>
+                    <pre><code>Authorization: Bearer YOUR_API_KEY</code></pre>
+                </div>
+                <div class="api-section">
+                    <h3>Endpoints</h3>
+                    <div class="endpoint-list">
+                        <div class="endpoint-item">
+                            <span class="method get">GET</span>
+                            <code>/api/v1/repositories</code>
+                            <p>List all repositories</p>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="method post">POST</span>
+                            <code>/api/v1/repositories</code>
+                            <p>Create a new repository</p>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="method get">GET</span>
+                            <code>/api/v1/repositories/{id}</code>
+                            <p>Get repository details</p>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="method post">POST</span>
+                            <code>/api/v1/repositories/{id}/analyze</code>
+                            <p>Analyze a repository</p>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="method get">GET</span>
+                            <code>/api/v1/repositories/{id}/dependencies</code>
+                            <p>Get repository dependencies</p>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="method get">GET</span>
+                            <code>/api/v1/repositories/{id}/services</code>
+                            <p>Get repository services</p>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="method get">GET</span>
+                            <code>/api/v1/repositories/{id}/graph</code>
+                            <p>Get knowledge graph</p>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="method get">GET</span>
+                            <code>/api/v1/repositories/{id}/code/elements</code>
+                            <p>Get code elements</p>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="method get">GET</span>
+                            <code>/api/v1/repositories/{id}/security/entities</code>
+                            <p>Get security entities</p>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="method post">POST</span>
+                            <code>/api/v1/jobs</code>
+                            <p>Create analysis job</p>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="method get">GET</span>
+                            <code>/api/v1/jobs</code>
+                            <p>List jobs</p>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="method post">POST</span>
+                            <code>/api/v1/webhooks/github</code>
+                            <p>GitHub webhook handler</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="api-section">
+                    <h3>GraphQL API</h3>
+                    <p>Access the GraphQL API at <code>/graphql</code> or use the interactive GraphiQL interface at <code>/graphiql</code>.</p>
+                    <p>Example query:</p>
+                    <pre><code>query {
+  repository(id: "repo-id") {
+    name
+    dependencies {
+      name
+      version
+    }
+    services {
+      name
+      provider
+    }
+  }
+}</code></pre>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Add Repository Modal -->
+    <div id="modal-add-repo" class="modal">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h2>Add Repository</h2>
+            <form id="form-add-repo">
+                <div class="form-group">
+                    <label for="repo-name">Name</label>
+                    <input type="text" id="repo-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="repo-url">URL</label>
+                    <input type="url" id="repo-url" required>
+                </div>
+                <div class="form-group">
+                    <label for="repo-branch">Branch</label>
+                    <input type="text" id="repo-branch" value="main">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary modal-close">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Repository</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
+

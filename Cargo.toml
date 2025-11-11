@@ -68,6 +68,9 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 async-graphql = "5.0"
 async-graphql-actix-web = "5.0"
 
+# Static file serving
+actix-files = "0.6"
+
 [dev-dependencies]
 # Testing
 mockito = "1.2"
