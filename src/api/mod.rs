@@ -1,11 +1,15 @@
 use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use serde::{Deserialize, Serialize};
 use crate::auth::{AuthService, RegisterRequest, LoginRequest, CreateApiKeyRequest};
+use crate::storage::{RepositoryRepository, DependencyRepository};
 
 pub mod server;
+pub mod repositories;
 
 pub struct ApiState {
     pub auth_service: AuthService,
+    pub repo_repo: RepositoryRepository,
+    pub dep_repo: DependencyRepository,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -89,7 +93,7 @@ pub async fn create_api_key(
 }
 
 // Helper function to extract API key from request
-fn extract_api_key(req: &HttpRequest) -> Result<String, HttpResponse> {
+pub fn extract_api_key(req: &HttpRequest) -> Result<String, HttpResponse> {
     req.headers()
         .get("Authorization")
         .and_then(|h| h.to_str().ok())

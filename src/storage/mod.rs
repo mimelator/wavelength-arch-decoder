@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex};
 use crate::config::DatabaseConfig;
 
 pub mod repositories;
+pub mod repository_repo;
 pub use repositories::{UserRepository, ApiKeyRepository};
+pub use repository_repo::{RepositoryRepository, DependencyRepository, Repository, StoredDependency};
 
 #[derive(Clone)]
 pub struct Database {
@@ -103,6 +105,23 @@ impl Database {
             [],
         )?;
 
+        // Dependencies table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS dependencies (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                version TEXT NOT NULL,
+                package_manager TEXT NOT NULL,
+                is_dev INTEGER NOT NULL DEFAULT 0,
+                is_optional INTEGER NOT NULL DEFAULT 0,
+                file_path TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id)
+            )",
+            [],
+        )?;
+
         // Create indexes
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id)",
@@ -122,6 +141,18 @@ impl Database {
         )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target_node_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dependencies_repository ON dependencies(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dependencies_name ON dependencies(name)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dependencies_package_manager ON dependencies(package_manager)",
             [],
         )?;
 

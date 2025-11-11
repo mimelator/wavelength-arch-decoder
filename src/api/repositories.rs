@@ -1,0 +1,283 @@
+use actix_web::{web, HttpResponse, Responder, HttpRequest};
+use serde::{Deserialize, Serialize};
+use crate::api::{ApiState, ErrorResponse};
+use crate::storage::{RepositoryRepository, DependencyRepository};
+use crate::ingestion::RepositoryCrawler;
+use crate::analysis::DependencyExtractor;
+use crate::config::StorageConfig;
+
+// Re-export extract_api_key for use in this module
+use crate::api::extract_api_key;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateRepositoryRequest {
+    pub name: String,
+    pub url: String,
+    pub branch: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AnalyzeRepositoryRequest {
+    pub repository_id: String,
+}
+
+// Repository endpoints
+pub async fn create_repository(
+    state: web::Data<ApiState>,
+    req: HttpRequest,
+    body: web::Json<CreateRepositoryRequest>,
+) -> impl Responder {
+    // Validate API key
+    let _api_key = match extract_api_key(&req) {
+        Ok(key) => key,
+        Err(resp) => return resp,
+    };
+
+    let key_info = match state.auth_service.validate_api_key(&_api_key) {
+        Ok(info) => info,
+        Err(e) => {
+            return HttpResponse::Unauthorized().json(ErrorResponse {
+                error: e.to_string(),
+            });
+        }
+    };
+
+    // Check write scope
+    if !key_info.scopes.contains(&"write".to_string()) && !key_info.scopes.contains(&"admin".to_string()) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            error: "Write scope required".to_string(),
+        });
+    }
+
+    match state.repo_repo.create(&body.name, &body.url, body.branch.as_deref()) {
+        Ok(repo) => HttpResponse::Created().json(repo),
+        Err(e) => HttpResponse::BadRequest().json(ErrorResponse {
+            error: e.to_string(),
+        }),
+    }
+}
+
+pub async fn list_repositories(
+    state: web::Data<ApiState>,
+    req: HttpRequest,
+) -> impl Responder {
+    // Validate API key
+    let _api_key = match extract_api_key(&req) {
+        Ok(key) => key,
+        Err(resp) => return resp,
+    };
+
+    match state.auth_service.validate_api_key(&_api_key) {
+        Ok(_) => {},
+        Err(e) => {
+            return HttpResponse::Unauthorized().json(ErrorResponse {
+                error: e.to_string(),
+            });
+        }
+    }
+
+    match state.repo_repo.list_all() {
+        Ok(repos) => HttpResponse::Ok().json(repos),
+        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
+            error: e.to_string(),
+        }),
+    }
+}
+
+pub async fn get_repository(
+    state: web::Data<ApiState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+) -> impl Responder {
+    // Validate API key
+    let _api_key = match extract_api_key(&req) {
+        Ok(key) => key,
+        Err(resp) => return resp,
+    };
+
+    match state.auth_service.validate_api_key(&_api_key) {
+        Ok(_) => {},
+        Err(e) => {
+            return HttpResponse::Unauthorized().json(ErrorResponse {
+                error: e.to_string(),
+            });
+        }
+    }
+
+    match state.repo_repo.find_by_id(&path.into_inner()) {
+        Ok(Some(repo)) => HttpResponse::Ok().json(repo),
+        Ok(None) => HttpResponse::NotFound().json(ErrorResponse {
+            error: "Repository not found".to_string(),
+        }),
+        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
+            error: e.to_string(),
+        }),
+    }
+}
+
+pub async fn analyze_repository(
+    state: web::Data<ApiState>,
+    req: HttpRequest,
+    body: web::Json<AnalyzeRepositoryRequest>,
+) -> impl Responder {
+    // Validate API key
+    let _api_key = match extract_api_key(&req) {
+        Ok(key) => key,
+        Err(resp) => return resp,
+    };
+
+    let key_info = match state.auth_service.validate_api_key(&_api_key) {
+        Ok(info) => info,
+        Err(e) => {
+            return HttpResponse::Unauthorized().json(ErrorResponse {
+                error: e.to_string(),
+            });
+        }
+    };
+
+    // Check write scope
+    if !key_info.scopes.contains(&"write".to_string()) && !key_info.scopes.contains(&"admin".to_string()) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            error: "Write scope required".to_string(),
+        });
+    }
+
+    // Get repository
+    let repo = match state.repo_repo.find_by_id(&body.repository_id) {
+        Ok(Some(repo)) => repo,
+        Ok(None) => {
+            return HttpResponse::NotFound().json(ErrorResponse {
+                error: "Repository not found".to_string(),
+            });
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: e.to_string(),
+            });
+        }
+    };
+
+    // Clone/update repository
+    let storage_config = StorageConfig {
+        repository_cache_path: "./cache/repos".to_string(),
+        max_cache_size: "10GB".to_string(),
+    };
+    
+    let crawler = match RepositoryCrawler::new(&storage_config) {
+        Ok(c) => c,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to initialize crawler: {}", e),
+            });
+        }
+    };
+
+    let repo_path = match crawler.clone_or_update(&repo.url, Some(&repo.branch)) {
+        Ok(path) => path,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to clone repository: {}", e),
+            });
+        }
+    };
+
+    // Extract dependencies
+    let extractor = DependencyExtractor::new();
+    let manifests = match extractor.extract_from_repository(&repo_path) {
+        Ok(m) => m,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to extract dependencies: {}", e),
+            });
+        }
+    };
+
+    // Store dependencies
+    for manifest in &manifests {
+        if let Err(e) = state.dep_repo.store_dependencies(
+            &repo.id,
+            &manifest.dependencies,
+            &manifest.file_path,
+        ) {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to store dependencies: {}", e),
+            });
+        }
+    }
+
+    // Update last analyzed timestamp
+    if let Err(e) = state.repo_repo.update_last_analyzed(&repo.id) {
+        return HttpResponse::InternalServerError().json(ErrorResponse {
+            error: format!("Failed to update repository: {}", e),
+        });
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "message": "Repository analyzed successfully",
+        "manifests_found": manifests.len(),
+        "total_dependencies": manifests.iter().map(|m| m.dependencies.len()).sum::<usize>()
+    }))
+}
+
+pub async fn get_dependencies(
+    state: web::Data<ApiState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+) -> impl Responder {
+    // Validate API key
+    let _api_key = match extract_api_key(&req) {
+        Ok(key) => key,
+        Err(resp) => return resp,
+    };
+
+    match state.auth_service.validate_api_key(&_api_key) {
+        Ok(_) => {},
+        Err(e) => {
+            return HttpResponse::Unauthorized().json(ErrorResponse {
+                error: e.to_string(),
+            });
+        }
+    }
+
+    match state.dep_repo.get_by_repository(&path.into_inner()) {
+        Ok(deps) => HttpResponse::Ok().json(deps),
+        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
+            error: e.to_string(),
+        }),
+    }
+}
+
+pub async fn search_dependencies(
+    state: web::Data<ApiState>,
+    req: HttpRequest,
+    query: web::Query<std::collections::HashMap<String, String>>,
+) -> impl Responder {
+    // Validate API key
+    let _api_key = match extract_api_key(&req) {
+        Ok(key) => key,
+        Err(resp) => return resp,
+    };
+
+    match state.auth_service.validate_api_key(&_api_key) {
+        Ok(_) => {},
+        Err(e) => {
+            return HttpResponse::Unauthorized().json(ErrorResponse {
+                error: e.to_string(),
+            });
+        }
+    }
+
+    if let Some(package_name) = query.get("name") {
+        match state.dep_repo.get_by_package_name(package_name) {
+            Ok(deps) => HttpResponse::Ok().json(deps),
+            Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        }
+    } else {
+        HttpResponse::BadRequest().json(ErrorResponse {
+            error: "Missing 'name' query parameter".to_string(),
+        })
+    }
+}
+
