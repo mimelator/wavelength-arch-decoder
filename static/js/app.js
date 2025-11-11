@@ -11,7 +11,7 @@ function initializeApp() {
     loadDashboard();
     setupSearch();
     setupGraph();
-    setupRepositories();
+    // setupRepositories removed - not needed
 }
 
 // Authentication

@@ -84,6 +84,23 @@ impl Database {
             [],
         )?;
 
+        // Migration: Add auth_type and auth_value columns if they don't exist
+        // SQLite doesn't support ALTER TABLE ADD COLUMN IF NOT EXISTS, so we check first
+        let table_info: Result<Vec<String>, _> = conn.prepare("PRAGMA table_info(repositories)")?
+            .query_map([], |row| {
+                Ok(row.get::<_, String>(1)?) // Column name is at index 1
+            })?
+            .collect();
+        
+        if let Ok(columns) = table_info {
+            if !columns.iter().any(|c| c == "auth_type") {
+                conn.execute("ALTER TABLE repositories ADD COLUMN auth_type TEXT", [])?;
+            }
+            if !columns.iter().any(|c| c == "auth_value") {
+                conn.execute("ALTER TABLE repositories ADD COLUMN auth_value TEXT", [])?;
+            }
+        }
+
         // Graph nodes table (for knowledge graph)
         conn.execute(
             "CREATE TABLE IF NOT EXISTS graph_nodes (
