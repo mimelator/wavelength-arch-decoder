@@ -341,59 +341,290 @@ async function loadGraph(repoId) {
             return;
         }
         
-        // Prepare data for vis.js
-        const nodes = graphData.nodes.map(node => ({
-            id: node.id,
-            label: node.name || node.id,
-            title: `${node.type}: ${node.name || node.id}`,
-            color: getNodeColor(node.type),
-            shape: getNodeShape(node.type),
-        }));
-        
-        const edges = graphData.edges.map(edge => ({
-            from: edge.source,
-            to: edge.target,
-            label: edge.relationship_type || '',
-            arrows: 'to',
-        }));
-        
-        // Create network
-        const data = { nodes, edges };
-        const options = {
-            nodes: {
-                font: { size: 14 },
-                borderWidth: 2,
-            },
-            edges: {
-                font: { size: 12, align: 'middle' },
-                smooth: { type: 'continuous' },
-            },
-            physics: {
-                enabled: true,
-                stabilization: { iterations: 200 },
-            },
-            interaction: {
-                hover: true,
-                tooltipDelay: 200,
-            },
-        };
-        
-        const network = new vis.Network(container, data, options);
+        // Render enhanced graph
+        renderEnhancedGraph(graphData, container);
         
         // Show graph info
         document.getElementById('graph-info').innerHTML = `
             <strong>Graph Statistics:</strong>
             <ul>
-                <li>Nodes: ${nodes.length}</li>
-                <li>Edges: ${edges.length}</li>
+                <li>Nodes: ${graphData.nodes.length}</li>
+                <li>Edges: ${graphData.edges.length}</li>
                 <li>Repository: ${repoId}</li>
             </ul>
         `;
     } catch (error) {
         console.error('Failed to load graph:', error);
-        document.getElementById('graph-container').innerHTML = 
+        container.innerHTML = 
             '<div class="graph-placeholder"><p>Failed to load graph. Please try again.</p></div>';
     }
+}
+
+function renderEnhancedGraph(graphData, container) {
+    // Map node types to better display names (handle both enum serialization and string formats)
+    const nodeTypeLabels = {
+        'repository': 'Repository',
+        'Repository': 'Repository',
+        'dependency': 'Dependency',
+        'Dependency': 'Dependency',
+        'service': 'Service',
+        'Service': 'Service',
+        'package_manager': 'Package Manager',
+        'PackageManager': 'Package Manager',
+        'service_provider': 'Provider',
+        'ServiceProvider': 'Provider',
+    };
+    
+    // Map edge types to readable labels
+    const edgeTypeLabels = {
+        'DependsOn': 'depends on',
+        'depends_on': 'depends on',
+        'UsesService': 'uses',
+        'uses_service': 'uses',
+        'HasDependency': 'has dependency',
+        'has_dependency': 'has dependency',
+        'UsesPackageManager': 'uses',
+        'uses_package_manager': 'uses',
+        'ProvidedBy': 'provided by',
+        'provided_by': 'provided by',
+        'RelatedTo': 'related to',
+        'related_to': 'related to',
+    };
+    
+    // Prepare nodes with enhanced information
+    const nodes = graphData.nodes.map(node => {
+        // Handle both node_type (from enum) and type (from GraphQL)
+        let nodeType = (node.node_type || node.type || 'unknown').toLowerCase();
+        // Normalize enum serialization (e.g., "Repository" -> "repository")
+        if (nodeTypeLabels[node.node_type || node.type]) {
+            nodeType = (node.node_type || node.type).toLowerCase();
+        }
+        const nodeTypeLabel = nodeTypeLabels[node.node_type || node.type] || nodeTypeLabels[nodeType] || nodeType;
+        
+        // Build tooltip with all properties
+        let tooltip = `<strong>${escapeHtml(node.name)}</strong><br>`;
+        tooltip += `<em>Type: ${nodeTypeLabel}</em><br>`;
+        
+        if (node.properties) {
+            // Handle both object and JSON string properties
+            let props = node.properties;
+            if (typeof props === 'string') {
+                try {
+                    props = JSON.parse(props);
+                } catch (e) {
+                    props = {};
+                }
+            }
+            const propEntries = Object.entries(props || {});
+            if (propEntries.length > 0) {
+                tooltip += '<br><strong>Properties:</strong><br>';
+                propEntries.forEach(([key, value]) => {
+                    tooltip += `${escapeHtml(key)}: ${escapeHtml(String(value))}<br>`;
+                });
+            }
+        }
+        
+        // Build label with type indicator
+        const label = `${node.name}\n(${nodeTypeLabel})`;
+        
+        return {
+            id: node.id,
+            label: label,
+            title: tooltip,
+            color: getNodeColor(nodeType),
+            shape: getNodeShape(nodeType),
+            font: {
+                size: 14,
+                face: 'Arial',
+                multi: 'html',
+            },
+            borderWidth: 2,
+            chosen: {
+                node: function(values, id, selected, hovering) {
+                    if (hovering || selected) {
+                        values.borderWidth = 4;
+                        values.size = 30;
+                    }
+                }
+            }
+        };
+    });
+    
+    // Prepare edges with relationship labels
+    const edges = graphData.edges.map(edge => {
+        // Handle both edge_type (from enum) and relationship_type
+        const edgeType = edge.edge_type || edge.relationship_type || edge.type || 'RelatedTo';
+        const edgeLabel = edgeTypeLabels[edgeType] || edgeTypeLabels[edgeType.toLowerCase()] || edgeType.toLowerCase().replace(/([A-Z])/g, ' $1').trim();
+        
+        // Build tooltip with properties
+        let tooltip = `<strong>${edgeLabel}</strong>`;
+        if (edge.properties) {
+            // Handle both object and JSON string properties
+            let props = edge.properties;
+            if (typeof props === 'string') {
+                try {
+                    props = JSON.parse(props);
+                } catch (e) {
+                    props = {};
+                }
+            }
+            const propEntries = Object.entries(props || {});
+            if (propEntries.length > 0) {
+                tooltip += '<br><br><strong>Properties:</strong><br>';
+                propEntries.forEach(([key, value]) => {
+                    tooltip += `${escapeHtml(key)}: ${escapeHtml(String(value))}<br>`;
+                });
+            }
+        }
+        
+        return {
+            from: edge.source_node_id || edge.source,
+            to: edge.target_node_id || edge.target,
+            label: edgeLabel,
+            title: tooltip,
+            arrows: 'to',
+            color: {
+                color: '#64748b',
+                highlight: '#2563eb',
+                hover: '#2563eb',
+            },
+            font: {
+                size: 11,
+                align: 'middle',
+            },
+            smooth: {
+                type: 'continuous',
+                roundness: 0.5,
+            },
+            width: 2,
+        };
+    });
+    
+    // Create network with enhanced options
+    const data = { nodes, edges };
+    const options = {
+        nodes: {
+            font: { 
+                size: 14,
+                face: 'Arial',
+                multi: 'html',
+            },
+            borderWidth: 2,
+            shadow: true,
+            scaling: {
+                min: 10,
+                max: 30,
+            },
+        },
+        edges: {
+            font: { 
+                size: 11, 
+                align: 'middle',
+                background: 'white',
+                strokeWidth: 2,
+            },
+            smooth: { 
+                type: 'continuous',
+                roundness: 0.5,
+            },
+            arrows: {
+                to: {
+                    enabled: true,
+                    scaleFactor: 1.2,
+                }
+            },
+            shadow: true,
+        },
+        physics: {
+            enabled: true,
+            stabilization: { 
+                iterations: 200,
+                fit: true,
+            },
+            barnesHut: {
+                gravitationalConstant: -2000,
+                centralGravity: 0.1,
+                springLength: 200,
+                springConstant: 0.04,
+                damping: 0.09,
+            },
+        },
+        interaction: {
+            hover: true,
+            tooltipDelay: 100,
+            zoomView: true,
+            dragView: true,
+        },
+        layout: {
+            improvedLayout: true,
+            hierarchical: {
+                enabled: false,
+            }
+        },
+    };
+    
+    const network = new vis.Network(container, data, options);
+    
+    // Add click handler to show node details
+    network.on('click', function(params) {
+        if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            const node = graphData.nodes.find(n => n.id === nodeId);
+            if (node) {
+                showNodeDetails(node, graphData);
+            }
+        }
+    });
+    
+    // Add hover handler for better feedback
+    network.on('hoverNode', function(params) {
+        container.style.cursor = 'pointer';
+    });
+    
+    network.on('blurNode', function(params) {
+        container.style.cursor = 'default';
+    });
+}
+
+function showNodeDetails(node, graphData) {
+    // Find all edges connected to this node
+    const connectedEdges = graphData.edges.filter(e => 
+        e.source_node_id === node.id || e.target_node_id === node.id
+    );
+    
+    // Build details HTML
+    let details = `<div class="node-details">`;
+    details += `<h3>${escapeHtml(node.name)}</h3>`;
+    details += `<p><strong>Type:</strong> ${escapeHtml(node.node_type || node.type || 'unknown')}</p>`;
+    
+    if (node.properties) {
+        details += `<h4>Properties:</h4><ul>`;
+        Object.entries(node.properties).forEach(([key, value]) => {
+            details += `<li><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value))}</li>`;
+        });
+        details += `</ul>`;
+    }
+    
+    if (connectedEdges.length > 0) {
+        details += `<h4>Connections (${connectedEdges.length}):</h4><ul>`;
+        connectedEdges.forEach(edge => {
+            const otherNodeId = edge.source_node_id === node.id ? edge.target_node_id : edge.source_node_id;
+            const otherNode = graphData.nodes.find(n => n.id === otherNodeId);
+            const direction = edge.source_node_id === node.id ? '→' : '←';
+            const edgeLabel = edge.edge_type || 'related to';
+            if (otherNode) {
+                details += `<li>${direction} ${escapeHtml(otherNode.name)} (${escapeHtml(edgeLabel)})</li>`;
+            }
+        });
+        details += `</ul>`;
+    }
+    details += `</div>`;
+    
+    // Show in a modal or side panel (for now, use alert-like display)
+    const detailsDiv = document.createElement('div');
+    detailsDiv.className = 'node-details-modal';
+    detailsDiv.innerHTML = details + '<button onclick="this.parentElement.remove()">Close</button>';
+    document.body.appendChild(detailsDiv);
 }
 
 function getNodeColor(type) {
@@ -401,6 +632,8 @@ function getNodeColor(type) {
         'repository': '#3b82f6',
         'dependency': '#10b981',
         'service': '#f59e0b',
+        'package_manager': '#8b5cf6',
+        'service_provider': '#ec4899',
         'code_element': '#8b5cf6',
         'security_entity': '#ef4444',
     };
@@ -412,6 +645,8 @@ function getNodeShape(type) {
         'repository': 'box',
         'dependency': 'dot',
         'service': 'diamond',
+        'package_manager': 'triangle',
+        'service_provider': 'star',
         'code_element': 'triangle',
         'security_entity': 'star',
     };
@@ -705,8 +940,300 @@ window.analyzeRepository = async function(repoId) {
     }
 };
 
-window.viewRepository = function(repoId) {
-    // Could navigate to a repository detail page
-    alert('Repository detail view coming soon!');
+window.viewRepository = async function(repoId) {
+    // Show repository detail page
+    showPage('repository-detail');
+    
+    // Update navigation
+    document.querySelectorAll('.nav-link').forEach(link => {
+        link.classList.remove('active');
+    });
+    
+    // Load repository details
+    await loadRepositoryDetail(repoId);
 };
+
+let currentRepoId = null;
+
+async function loadRepositoryDetail(repoId) {
+    currentRepoId = repoId;
+    
+    try {
+        // Load repository info
+        const repo = await api.getRepository(repoId);
+        
+        // Update header
+        document.getElementById('repo-detail-name').textContent = repo.name;
+        document.getElementById('repo-detail-title').textContent = repo.name;
+        document.getElementById('repo-detail-url').textContent = repo.url;
+        document.getElementById('repo-detail-branch').textContent = `Branch: ${repo.branch || 'main'}`;
+        document.getElementById('repo-detail-last-analyzed').textContent = repo.last_analyzed_at 
+            ? `Last analyzed: ${new Date(repo.last_analyzed_at).toLocaleString()}`
+            : 'Not analyzed yet';
+        
+        // Setup analyze button
+        const analyzeBtn = document.getElementById('btn-analyze-detail');
+        analyzeBtn.onclick = () => {
+            window.analyzeRepository(repoId);
+            setTimeout(() => loadRepositoryDetail(repoId), 5000);
+        };
+        
+        // Setup tabs
+        setupRepositoryTabs(repoId);
+        
+        // Load overview stats
+        await loadRepositoryOverview(repoId);
+        
+        // Load initial tab (overview)
+        switchTab('overview', repoId);
+        
+    } catch (error) {
+        console.error('Failed to load repository details:', error);
+        alert('Failed to load repository details: ' + error.message);
+    }
+}
+
+function setupRepositoryTabs(repoId) {
+    const tabs = document.querySelectorAll('.repo-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const tabName = tab.getAttribute('data-tab');
+            switchTab(tabName, repoId);
+        });
+    });
+}
+
+function switchTab(tabName, repoId) {
+    // Update tab states
+    document.querySelectorAll('.repo-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.repo-tab-content').forEach(c => c.classList.remove('active'));
+    
+    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+    
+    // Load tab content
+    switch(tabName) {
+        case 'overview':
+            loadRepositoryOverview(repoId);
+            break;
+        case 'dependencies':
+            loadDependencies(repoId);
+            break;
+        case 'services':
+            loadServices(repoId);
+            break;
+        case 'code':
+            loadCodeElements(repoId);
+            break;
+        case 'security':
+            loadSecurity(repoId);
+            break;
+        case 'graph':
+            loadRepositoryGraph(repoId);
+            break;
+    }
+}
+
+async function loadRepositoryOverview(repoId) {
+    try {
+        const [deps, services, code, security] = await Promise.all([
+            api.getDependencies(repoId).catch(() => []),
+            api.getServices(repoId).catch(() => []),
+            api.getCodeElements(repoId).catch(() => []),
+            api.getSecurityEntities(repoId).catch(() => [])
+        ]);
+        
+        document.getElementById('stat-deps-count').textContent = deps.length || 0;
+        document.getElementById('stat-services-count').textContent = services.length || 0;
+        document.getElementById('stat-code-count').textContent = code.length || 0;
+        document.getElementById('stat-security-count').textContent = security.length || 0;
+    } catch (error) {
+        console.error('Failed to load overview:', error);
+    }
+}
+
+async function loadDependencies(repoId) {
+    const container = document.getElementById('dependencies-list');
+    container.innerHTML = '<p class="loading-text">Loading dependencies...</p>';
+    
+    try {
+        const deps = await api.getDependencies(repoId);
+        
+        if (deps.length === 0) {
+            container.innerHTML = '<p>No dependencies found. Run analysis first.</p>';
+            return;
+        }
+        
+        // Group by package manager
+        const grouped = {};
+        deps.forEach(dep => {
+            const pm = dep.package_manager || 'unknown';
+            if (!grouped[pm]) grouped[pm] = [];
+            grouped[pm].push(dep);
+        });
+        
+        container.innerHTML = Object.entries(grouped).map(([pm, depsList]) => `
+            <div class="detail-section">
+                <h4>${escapeHtml(pm)}</h4>
+                <div class="detail-items">
+                    ${depsList.map(dep => `
+                        <div class="detail-item">
+                            <div class="detail-item-header">
+                                <strong>${escapeHtml(dep.name)}</strong>
+                                <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
+                            </div>
+                            ${dep.file_path ? `<p class="detail-meta">Found in: ${escapeHtml(dep.file_path)}</p>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        container.innerHTML = `<p class="error-text">Failed to load dependencies: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+async function loadServices(repoId) {
+    const container = document.getElementById('services-list');
+    container.innerHTML = '<p class="loading-text">Loading services...</p>';
+    
+    try {
+        const services = await api.getServices(repoId);
+        
+        if (services.length === 0) {
+            container.innerHTML = '<p>No services found. Run analysis first.</p>';
+            return;
+        }
+        
+        // Group by provider
+        const grouped = {};
+        services.forEach(svc => {
+            const provider = svc.provider || 'unknown';
+            if (!grouped[provider]) grouped[provider] = [];
+            grouped[provider].push(svc);
+        });
+        
+        container.innerHTML = Object.entries(grouped).map(([provider, svcList]) => `
+            <div class="detail-section">
+                <h4>${escapeHtml(provider)}</h4>
+                <div class="detail-items">
+                    ${svcList.map(svc => `
+                        <div class="detail-item">
+                            <div class="detail-item-header">
+                                <strong>${escapeHtml(svc.name)}</strong>
+                                <span class="detail-badge">${escapeHtml(svc.service_type || 'service')}</span>
+                            </div>
+                            ${svc.configuration ? `<p class="detail-meta">Config: ${escapeHtml(JSON.stringify(svc.configuration).substring(0, 100))}...</p>` : ''}
+                            ${svc.file_path ? `<p class="detail-meta">Found in: ${escapeHtml(svc.file_path)}</p>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        container.innerHTML = `<p class="error-text">Failed to load services: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+async function loadCodeElements(repoId) {
+    const container = document.getElementById('code-list');
+    container.innerHTML = '<p class="loading-text">Loading code structure...</p>';
+    
+    try {
+        const elements = await api.getCodeElements(repoId);
+        
+        if (elements.length === 0) {
+            container.innerHTML = '<p>No code elements found. Run analysis first.</p>';
+            return;
+        }
+        
+        // Group by type
+        const grouped = {};
+        elements.forEach(el => {
+            const type = el.element_type || 'unknown';
+            if (!grouped[type]) grouped[type] = [];
+            grouped[type].push(el);
+        });
+        
+        container.innerHTML = Object.entries(grouped).map(([type, elList]) => `
+            <div class="detail-section">
+                <h4>${escapeHtml(type)}</h4>
+                <div class="detail-items">
+                    ${elList.map(el => `
+                        <div class="detail-item">
+                            <div class="detail-item-header">
+                                <strong>${escapeHtml(el.name)}</strong>
+                                <span class="detail-badge">${escapeHtml(el.language || 'unknown')}</span>
+                            </div>
+                            ${el.file_path ? `<p class="detail-meta">File: ${escapeHtml(el.file_path)}${el.line_number ? ` (line ${el.line_number})` : ''}</p>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        container.innerHTML = `<p class="error-text">Failed to load code elements: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+async function loadSecurity(repoId) {
+    const container = document.getElementById('security-list');
+    container.innerHTML = '<p class="loading-text">Loading security information...</p>';
+    
+    try {
+        const entities = await api.getSecurityEntities(repoId);
+        
+        if (entities.length === 0) {
+            container.innerHTML = '<p>No security entities found. Run analysis first.</p>';
+            return;
+        }
+        
+        // Group by type
+        const grouped = {};
+        entities.forEach(entity => {
+            const type = entity.entity_type || 'unknown';
+            if (!grouped[type]) grouped[type] = [];
+            grouped[type].push(entity);
+        });
+        
+        container.innerHTML = Object.entries(grouped).map(([type, entityList]) => `
+            <div class="detail-section">
+                <h4>${escapeHtml(type)}</h4>
+                <div class="detail-items">
+                    ${entityList.map(entity => `
+                        <div class="detail-item">
+                            <div class="detail-item-header">
+                                <strong>${escapeHtml(entity.name)}</strong>
+                                ${entity.provider ? `<span class="detail-badge">${escapeHtml(entity.provider)}</span>` : ''}
+                            </div>
+                            ${entity.arn ? `<p class="detail-meta">ARN: ${escapeHtml(entity.arn)}</p>` : ''}
+                            ${entity.file_path ? `<p class="detail-meta">Found in: ${escapeHtml(entity.file_path)}</p>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        container.innerHTML = `<p class="error-text">Failed to load security entities: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+async function loadRepositoryGraph(repoId) {
+    const container = document.getElementById('repo-graph-container');
+    container.innerHTML = '<p class="loading-text">Loading graph...</p>';
+    
+    try {
+        const graph = await api.getGraph(repoId);
+        
+        if (!graph.nodes || graph.nodes.length === 0) {
+            container.innerHTML = '<p>No graph data available. Run analysis first.</p>';
+            return;
+        }
+        
+        // Render enhanced graph with better labels and relationships
+        renderEnhancedGraph(graph, container);
+    } catch (error) {
+        container.innerHTML = `<p class="error-text">Failed to load graph: ${escapeHtml(error.message)}</p>`;
+    }
+}
 
