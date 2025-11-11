@@ -100,8 +100,22 @@ impl RepositoryCrawler {
                 builder.fetch_options(fallback_fetch_options);
                 builder.clone(&final_url, path)?;
                 
-                // Try to checkout the requested branch or fallback to main/master
+                // Open the cloned repository and fetch all branches
                 let repo = Repository::open(path)?;
+                let mut remote = repo.find_remote("origin")
+                    .or_else(|_| repo.remote("origin", "origin"))?;
+                
+                // Fetch all branches to ensure we have remote refs
+                let mut fetch_all_options = FetchOptions::new();
+                let mut fetch_all_callbacks = RemoteCallbacks::new();
+                let fetch_all_creds = credentials.cloned();
+                fetch_all_callbacks.credentials(move |url_str, username_from_url, allowed_types| {
+                    Self::get_credentials(url_str, username_from_url, allowed_types, fetch_all_creds.as_ref())
+                });
+                fetch_all_options.remote_callbacks(fetch_all_callbacks);
+                remote.fetch(&["refs/heads/*:refs/remotes/origin/*"], Some(&mut fetch_all_options), None)?;
+                
+                // Try to checkout the requested branch or fallback to main/master
                 let branches_to_try = if branch == "main" { vec!["main", "master"] } else { vec![branch, "main", "master"] };
                 
                 for branch_name in branches_to_try {
@@ -111,7 +125,21 @@ impl RepositoryCrawler {
                         let object = repo.find_object(oid, None)?;
                         repo.checkout_tree(&object, None)?;
                         let local_ref = format!("refs/heads/{}", branch_name);
-                        repo.branch(branch_name, &commit, false)?;
+                        
+                        // Check if branch already exists, if so update it, otherwise create it
+                        match repo.find_reference(&local_ref) {
+                            Ok(mut r) => {
+                                // Branch exists, update it
+                                r.set_target(oid, "Updated branch")?;
+                                log::info!("Updated existing branch '{}'", branch_name);
+                            }
+                            Err(_) => {
+                                // Branch doesn't exist, create it
+                                repo.branch(branch_name, &commit, false)?;
+                                log::info!("Created new branch '{}'", branch_name);
+                            }
+                        }
+                        
                         repo.set_head(&local_ref)?;
                         log::info!("Checked out branch '{}'", branch_name);
                         return Ok(());
