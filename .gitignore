@@ -60,3 +60,8 @@ Cargo.lock  # Remove if you want to commit lock file
 *.exe
 *.test
 *.prof
+
+
+# Added by cargo
+
+/target

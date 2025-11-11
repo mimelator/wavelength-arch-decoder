@@ -1,0 +1,68 @@
+[package]
+name = "wavelength-arch-decoder"
+version = "0.1.0"
+edition = "2021"
+authors = ["Mark Imel"]
+description = "A self-contained hosted server for understanding repository architecture through knowledge graphs"
+license = "MIT"
+repository = "https://github.com/your-org/wavelength-arch-decoder"
+
+[dependencies]
+# Web framework
+actix-web = "4.5"
+actix-rt = "2.9"
+actix-cors = "0.7"
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+rusqlite = { version = "0.30", features = ["bundled"] }
+
+# Authentication & Security
+jsonwebtoken = "9.3"
+bcrypt = "0.15"
+aes-gcm = "0.10"
+rand = "0.8"
+sha2 = "0.10"
+
+# Configuration
+dotenv = "0.15"
+config = "0.14"
+
+# Logging
+env_logger = "0.11"
+log = "0.4"
+
+# Git operations
+git2 = "0.18"
+
+# File parsing
+tree-sitter = "0.21"
+walkdir = "2.4"
+
+# HTTP client (for future webhook support)
+reqwest = { version = "0.11", features = ["json"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID generation
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# GraphQL (for future implementation)
+# async-graphql = "5.0"
+# async-graphql-actix-web = "5.0"
+
+[dev-dependencies]
+# Testing
+mockito = "1.2"
+tempfile = "3.9"
