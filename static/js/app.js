@@ -1327,8 +1327,8 @@ async function loadRepositoryGraph(repoId) {
             return;
         }
         
-        // Render enhanced graph with better labels and relationships
-        renderEnhancedGraph(graph, container);
+        // Render enhanced graph with repository ID
+        renderEnhancedGraph(graph, container, repoId);
     } catch (error) {
         container.innerHTML = `<p class="error-text">Failed to load graph: ${escapeHtml(error.message)}</p>`;
     }
