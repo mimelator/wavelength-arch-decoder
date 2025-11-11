@@ -141,6 +141,10 @@ class WavelengthAPI {
     async getEntityDetails(repoId, entityType, entityId) {
         return this.request(`/repositories/${repoId}/entities/${entityType}/${entityId}`);
     }
+
+    async getVersion() {
+        return this.request('/version');
+    }
 }
 
 // Global API instance

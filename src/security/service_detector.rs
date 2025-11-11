@@ -2,6 +2,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
+use regex::Regex;
 use crate::ingestion::FileType;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -154,7 +155,41 @@ impl ServiceDetector {
             }
         }
         
-        Ok(services)
+        // Deduplicate services: combine identical services (same name, provider, type)
+        // Keep the one with highest confidence and merge file paths
+        let mut deduplicated: Vec<DetectedService> = Vec::new();
+        let mut seen: HashMap<(String, ServiceProvider, ServiceType), usize> = HashMap::new();
+        
+        for service in services {
+            let key = (service.name.clone(), service.provider.clone(), service.service_type.clone());
+            
+            if let Some(&existing_idx) = seen.get(&key) {
+                // Service already exists, merge if this one has higher confidence
+                let existing = &mut deduplicated[existing_idx];
+                if service.confidence > existing.confidence {
+                    existing.confidence = service.confidence;
+                    existing.line_number = service.line_number;
+                }
+                // Merge file paths in configuration
+                let file_paths = existing.configuration
+                    .get("file_paths")
+                    .map(|s| s.clone())
+                    .unwrap_or_else(|| existing.file_path.clone());
+                if !file_paths.contains(&service.file_path) {
+                    existing.configuration.insert(
+                        "file_paths".to_string(),
+                        format!("{}, {}", file_paths, service.file_path)
+                    );
+                }
+            } else {
+                // New service, add it
+                let idx = deduplicated.len();
+                seen.insert(key, idx);
+                deduplicated.push(service);
+            }
+        }
+        
+        Ok(deduplicated)
     }
 
     /// Detect services in a specific file
@@ -362,7 +397,106 @@ impl ServiceDetector {
         let mut services = Vec::new();
         let content_lower = content.to_lowercase();
         
-        // Detect npm packages / imports
+        // Detect specific AWS SDK clients from @aws-sdk/client-* imports
+        let aws_sdk_client_pattern = regex::Regex::new(r"@aws-sdk/client-([a-z0-9-]+)").unwrap();
+        for cap in aws_sdk_client_pattern.captures_iter(&content_lower) {
+            if let Some(service_name) = cap.get(1) {
+                let service = service_name.as_str();
+                let display_name = self.format_aws_service_name(service);
+                
+                services.push(DetectedService {
+                    provider: ServiceProvider::Aws,
+                    service_type: ServiceType::CloudProvider,
+                    name: format!("AWS {}", display_name),
+                    configuration: {
+                        let mut config = HashMap::new();
+                        config.insert("sdk_client".to_string(), format!("@aws-sdk/client-{}", service));
+                        config
+                    },
+                    file_path: file_path.to_string_lossy().to_string(),
+                    line_number: self.find_line_number(content, &format!("@aws-sdk/client-{}", service)),
+                    confidence: 0.9,
+                });
+            }
+        }
+        
+        // Detect AWS SDK v2 imports (aws-sdk package with specific service imports)
+        if content_lower.contains("aws-sdk") || content_lower.contains("from 'aws-sdk'") || content_lower.contains("require('aws-sdk')") {
+            // Try to detect which specific AWS services are being used
+            let aws_service_patterns = vec![
+                ("s3", "S3"),
+                ("dynamodb", "DynamoDB"),
+                ("lambda", "Lambda"),
+                ("sns", "SNS"),
+                ("sqs", "SQS"),
+                ("ses", "SES"),
+                ("ec2", "EC2"),
+                ("rds", "RDS"),
+                ("cloudfront", "CloudFront"),
+                ("cognito", "Cognito"),
+                ("iam", "IAM"),
+                ("sts", "STS"),
+                ("cloudwatch", "CloudWatch"),
+                ("kms", "KMS"),
+                ("secretsmanager", "Secrets Manager"),
+                ("ssm", "Systems Manager"),
+                ("apigateway", "API Gateway"),
+                ("eventbridge", "EventBridge"),
+                ("stepfunctions", "Step Functions"),
+            ];
+            
+            for (pattern, display_name) in aws_service_patterns {
+                // Look for patterns like: new AWS.S3(), AWS.S3(), s3 = new AWS.S3()
+                let service_patterns = vec![
+                    format!("aws.{}", pattern),
+                    format!("aws['{}']", pattern),
+                    format!("aws[\"{}\"]", pattern),
+                    format!("new aws.{}", pattern),
+                    format!("new aws['{}']", pattern),
+                    format!("new aws[\"{}\"]", pattern),
+                ];
+                
+                for service_pattern in &service_patterns {
+                    if content_lower.contains(service_pattern) {
+                        services.push(DetectedService {
+                            provider: ServiceProvider::Aws,
+                            service_type: ServiceType::CloudProvider,
+                            name: format!("AWS {}", display_name),
+                            configuration: {
+                                let mut config = HashMap::new();
+                                config.insert("sdk_version".to_string(), "v2".to_string());
+                                config.insert("service".to_string(), pattern.to_string());
+                                config
+                            },
+                            file_path: file_path.to_string_lossy().to_string(),
+                            line_number: self.find_line_number(content, service_pattern),
+                            confidence: 0.85,
+                        });
+                        break; // Only add once per service per file
+                    }
+                }
+            }
+            
+            // If no specific services found, add a generic AWS SDK entry
+            if !services.iter().any(|s| s.name.starts_with("AWS ") && s.configuration.contains_key("sdk_version")) {
+                services.push(DetectedService {
+                    provider: ServiceProvider::Aws,
+                    service_type: ServiceType::CloudProvider,
+                    name: "AWS SDK (v2)".to_string(),
+                    configuration: {
+                        let mut config = HashMap::new();
+                        config.insert("sdk_version".to_string(), "v2".to_string());
+                        config.insert("note".to_string(), "Generic AWS SDK detected - specific services not identified".to_string());
+                        config
+                    },
+                    file_path: file_path.to_string_lossy().to_string(),
+                    line_number: self.find_line_number(content, "aws-sdk"),
+                    confidence: 0.7,
+                });
+            }
+        }
+        
+        // Detect other service SDKs
         let sdk_patterns = vec![
             ("@clerk/", ServiceProvider::Clerk, ServiceType::Auth),
             ("@auth0/", ServiceProvider::Auth0, ServiceType::Auth),
@@ -374,8 +508,6 @@ impl ServiceDetector {
             ("@datadog/", ServiceProvider::Datadog, ServiceType::Monitoring),
             ("@sentry/", ServiceProvider::Sentry, ServiceType::Monitoring),
             ("@vercel/", ServiceProvider::Vercel, ServiceType::CloudProvider),
-            ("aws-sdk", ServiceProvider::Aws, ServiceType::CloudProvider),
-            ("@aws-sdk/", ServiceProvider::Aws, ServiceType::CloudProvider),
         ];
         
         for (pattern, provider, service_type) in sdk_patterns {
@@ -393,6 +525,64 @@ impl ServiceDetector {
         }
         
         Ok(services)
+    }
+    
+    /// Format AWS service name from SDK client name
+    fn format_aws_service_name(&self, service: &str) -> String {
+        // Map common AWS SDK client names to display names
+        let service_map: std::collections::HashMap<&str, &str> = [
+            ("s3", "S3"),
+            ("dynamodb", "DynamoDB"),
+            ("lambda", "Lambda"),
+            ("sns", "SNS"),
+            ("sqs", "SQS"),
+            ("ses", "SES"),
+            ("ec2", "EC2"),
+            ("rds", "RDS"),
+            ("cloudfront", "CloudFront"),
+            ("cognito", "Cognito"),
+            ("cognito-identity-provider", "Cognito"),
+            ("iam", "IAM"),
+            ("sts", "STS"),
+            ("cloudwatch", "CloudWatch"),
+            ("kms", "KMS"),
+            ("secrets-manager", "Secrets Manager"),
+            ("ssm", "Systems Manager"),
+            ("apigateway", "API Gateway"),
+            ("apigatewayv2", "API Gateway v2"),
+            ("eventbridge", "EventBridge"),
+            ("stepfunctions", "Step Functions"),
+            ("s3-control", "S3 Control"),
+            ("s3-outposts", "S3 Outposts"),
+            ("textract", "Textract"),
+            ("comprehend", "Comprehend"),
+            ("translate", "Translate"),
+            ("polly", "Polly"),
+            ("rekognition", "Rekognition"),
+            ("transcribe", "Transcribe"),
+            ("bedrock", "Bedrock"),
+            ("bedrock-runtime", "Bedrock Runtime"),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        
+        // Check if we have a mapping
+        if let Some(display_name) = service_map.get(service) {
+            return display_name.to_string();
+        }
+        
+        // Otherwise, format it nicely
+        service.split('-')
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     /// Detect API endpoints

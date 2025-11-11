@@ -7,11 +7,41 @@ function initializeApp() {
     setupNavigation();
     setupModals();
     setupAuth();
+    setupTheme();
     checkAuthStatus();
     loadDashboard();
     setupSearch();
     setupGraph();
+    loadVersion();
     // setupRepositories removed - not needed
+}
+
+// Theme Management
+function setupTheme() {
+    // Load saved theme preference
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    setTheme(savedTheme);
+    
+    // Setup theme toggle button
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            setTheme(newTheme);
+        });
+    }
+}
+
+function setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    
+    // Update theme icon
+    const themeIcon = document.getElementById('theme-icon');
+    if (themeIcon) {
+        themeIcon.textContent = theme === 'dark' ? '☀️' : '🌙';
+    }
 }
 
 // Authentication
@@ -738,16 +768,30 @@ function highlightNodeInTab(tabName, nodeName) {
 }
 
 function getNodeColor(type) {
-    const colors = {
-        'repository': '#3b82f6',
-        'dependency': '#10b981',
-        'service': '#f59e0b',
-        'package_manager': '#8b5cf6',
-        'service_provider': '#ec4899',
-        'code_element': '#8b5cf6',
-        'security_entity': '#ef4444',
+    // Get colors from CSS variables to support theme switching
+    const root = document.documentElement;
+    const computedStyle = getComputedStyle(root);
+    
+    const getColor = (varName, fallback) => {
+        return computedStyle.getPropertyValue(varName).trim() || fallback;
     };
-    return colors[type] || '#64748b';
+    
+    const typeLower = (type || '').toLowerCase();
+    
+    // Map node types to entity colors
+    if (typeLower.includes('repository')) {
+        return getColor('--entity-repository', '#f59e0b');
+    } else if (typeLower.includes('dependency') || typeLower.includes('package')) {
+        return getColor('--entity-dependency', '#3b82f6');
+    } else if (typeLower.includes('service') || typeLower.includes('provider')) {
+        return getColor('--entity-service', '#10b981');
+    } else if (typeLower.includes('code') || typeLower.includes('function') || typeLower.includes('class')) {
+        return getColor('--entity-code', '#8b5cf6');
+    } else if (typeLower.includes('security') || typeLower.includes('iam') || typeLower.includes('lambda') || typeLower.includes('s3')) {
+        return getColor('--entity-security', '#ef4444');
+    }
+    
+    return getColor('--secondary-color', '#64748b');
 }
 
 function getNodeShape(type) {
@@ -945,10 +989,14 @@ function showError(message) {
 
 // Global functions for onclick handlers
 window.analyzeRepository = async function(repoId) {
-    // Find the repository item to show progress
+    console.log('Starting analysis for repository', repoId);
+    
+    // Find the repository item to show progress (could be on dashboard or detail page)
     const repoItem = document.querySelector(`[data-repo-id="${repoId}"]`);
-    const analyzeBtn = repoItem?.querySelector('.btn-analyze');
-    const statusDiv = repoItem?.querySelector('.analysis-status');
+    const analyzeBtn = repoItem?.querySelector('.btn-analyze') || document.getElementById('btn-analyze-detail');
+    const statusDiv = repoItem?.querySelector('.analysis-status') || document.getElementById('analysis-status-detail');
+    
+    console.log('Found elements:', { repoItem: !!repoItem, analyzeBtn: !!analyzeBtn, statusDiv: !!statusDiv });
     
     // Show loading state
     if (analyzeBtn) {
@@ -959,6 +1007,13 @@ window.analyzeRepository = async function(repoId) {
     if (statusDiv) {
         statusDiv.innerHTML = '<div class="analysis-progress">Starting analysis...</div>';
         statusDiv.style.display = 'block';
+        statusDiv.style.visibility = 'visible';
+        console.log('Status div updated, display:', statusDiv.style.display, 'visibility:', statusDiv.style.visibility);
+    } else {
+        console.error('Status div not found! Available IDs:', {
+            'analysis-status-detail': !!document.getElementById('analysis-status-detail'),
+            'btn-analyze-detail': !!document.getElementById('btn-analyze-detail')
+        });
     }
     
     const steps = [
@@ -985,8 +1040,13 @@ window.analyzeRepository = async function(repoId) {
                     <div class="progress-text">Step ${currentStep + 1}/${steps.length}: ${steps[currentStep]}</div>
                 </div>
             `;
+            statusDiv.style.display = 'block';
+            statusDiv.style.visibility = 'visible';
         }
     };
+    
+    // Show initial progress
+    updateProgress();
     
     // Simulate progress updates (since we can't get real-time updates from the server)
     const progressInterval = setInterval(() => {
@@ -1014,6 +1074,8 @@ window.analyzeRepository = async function(repoId) {
                     </div>
                 </div>
             `;
+            statusDiv.style.display = 'block';
+            statusDiv.style.visibility = 'visible';
         }
         
         if (analyzeBtn) {
@@ -1024,6 +1086,10 @@ window.analyzeRepository = async function(repoId) {
         // Reload repositories to show updated status
         setTimeout(() => {
             loadRepositories();
+            // If we're on the detail page, reload it too
+            if (document.getElementById('repository-detail')?.classList.contains('active')) {
+                loadRepositoryDetail(repoId);
+            }
         }, 2000);
         
         console.log('Analysis result:', result);
@@ -1039,6 +1105,8 @@ window.analyzeRepository = async function(repoId) {
                     <div class="error-details">${escapeHtml(error.message)}</div>
                 </div>
             `;
+            statusDiv.style.display = 'block';
+            statusDiv.style.visibility = 'visible';
         }
         
         if (analyzeBtn) {
@@ -1162,87 +1230,312 @@ async function loadRepositoryOverview(repoId) {
     }
 }
 
+// Store dependencies for filtering
+let allDependencies = [];
+let currentDependenciesGroupBy = 'package_manager';
+
 async function loadDependencies(repoId) {
+    currentRepoId = repoId;
     const container = document.getElementById('dependencies-list');
     container.innerHTML = '<p class="loading-text">Loading dependencies...</p>';
     
     try {
         const deps = await api.getDependencies(repoId);
+        allDependencies = deps;
         
         if (deps.length === 0) {
             container.innerHTML = '<p>No dependencies found. Run analysis first.</p>';
             return;
         }
         
-        // Group by package manager
-        const grouped = {};
-        deps.forEach(dep => {
-            const pm = dep.package_manager || 'unknown';
-            if (!grouped[pm]) grouped[pm] = [];
-            grouped[pm].push(dep);
-        });
+        // Populate filter dropdowns
+        populateDependencyFilters(deps);
         
-        container.innerHTML = Object.entries(grouped).map(([pm, depsList]) => `
-            <div class="detail-section">
-                <h4>${escapeHtml(pm)}</h4>
-                <div class="detail-items">
-                    ${depsList.map(dep => `
-                        <div class="detail-item clickable" onclick="showEntityDetail('${repoId}', 'dependency', '${dep.id}')">
-                            <div class="detail-item-header">
-                                <strong>${escapeHtml(dep.name)}</strong>
-                                <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
-                            </div>
-                            ${dep.file_path ? `<p class="detail-meta">Found in: ${escapeHtml(dep.file_path)}</p>` : ''}
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `).join('');
+        // Initial render
+        filterAndRenderDependencies();
+        
+        // Setup filter event listeners
+        setupDependencyFilters();
     } catch (error) {
         container.innerHTML = `<p class="error-text">Failed to load dependencies: ${escapeHtml(error.message)}</p>`;
     }
 }
 
+function populateDependencyFilters(deps) {
+    const packageManagerSelect = document.getElementById('dependencies-filter-package-manager');
+    const packageManagers = [...new Set(deps.map(d => d.package_manager).filter(Boolean))].sort();
+    
+    // Clear existing options except "All"
+    packageManagerSelect.innerHTML = '<option value="">All Package Managers</option>';
+    packageManagers.forEach(pm => {
+        const option = document.createElement('option');
+        option.value = pm;
+        option.textContent = pm;
+        packageManagerSelect.appendChild(option);
+    });
+}
+
+function setupDependencyFilters() {
+    const searchInput = document.getElementById('dependencies-search');
+    const groupBySelect = document.getElementById('dependencies-group-by');
+    const packageManagerFilter = document.getElementById('dependencies-filter-package-manager');
+    const typeFilter = document.getElementById('dependencies-filter-type');
+    
+    searchInput.addEventListener('input', () => filterAndRenderDependencies());
+    packageManagerFilter.addEventListener('change', () => filterAndRenderDependencies());
+    typeFilter.addEventListener('change', () => filterAndRenderDependencies());
+    groupBySelect.addEventListener('change', () => {
+        currentDependenciesGroupBy = groupBySelect.value;
+        filterAndRenderDependencies();
+    });
+}
+
+function filterAndRenderDependencies() {
+    const searchTerm = document.getElementById('dependencies-search').value.toLowerCase();
+    const packageManagerFilter = document.getElementById('dependencies-filter-package-manager').value;
+    const typeFilter = document.getElementById('dependencies-filter-type').value;
+    
+    let filtered = allDependencies.filter(dep => {
+        const matchesSearch = !searchTerm || 
+            dep.name.toLowerCase().includes(searchTerm) ||
+            (dep.version && dep.version.toLowerCase().includes(searchTerm)) ||
+            (dep.file_path && dep.file_path.toLowerCase().includes(searchTerm));
+        const matchesPackageManager = !packageManagerFilter || dep.package_manager === packageManagerFilter;
+        const matchesType = !typeFilter || 
+            (typeFilter === 'dev' && dep.is_dev) ||
+            (typeFilter === 'prod' && !dep.is_dev);
+        return matchesSearch && matchesPackageManager && matchesType;
+    });
+    
+    // Update filter info
+    const filterInfo = document.getElementById('dependencies-filter-info');
+    if (filterInfo) {
+        const activeFilters = [];
+        if (searchTerm) activeFilters.push(`search: "${searchTerm}"`);
+        if (packageManagerFilter) activeFilters.push(`package manager: ${packageManagerFilter}`);
+        if (typeFilter) activeFilters.push(`type: ${typeFilter}`);
+        filterInfo.textContent = activeFilters.length > 0 
+            ? `Showing ${filtered.length} of ${allDependencies.length} dependencies (${activeFilters.join(', ')})`
+            : `Showing ${filtered.length} dependencies`;
+    }
+    
+    // Group and render
+    const container = document.getElementById('dependencies-list');
+    if (filtered.length === 0) {
+        container.innerHTML = '<p>No dependencies match the current filters.</p>';
+        return;
+    }
+    
+    let html = '';
+    if (currentDependenciesGroupBy === 'none') {
+        html = '<div class="detail-items">';
+        html += filtered.map(dep => `
+            <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'dependency', '${dep.id}')">
+                <div class="detail-item-header">
+                    <strong>${escapeHtml(dep.name)}</strong>
+                    <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
+                </div>
+                <div class="detail-meta">
+                    ${dep.package_manager ? `<span>${escapeHtml(dep.package_manager)}</span>` : ''}
+                    ${dep.is_dev ? '<span class="badge badge-secondary">dev</span>' : ''}
+                </div>
+                ${dep.file_path ? `<p class="detail-meta">Found in: ${escapeHtml(dep.file_path)}</p>` : ''}
+            </div>
+        `).join('');
+        html += '</div>';
+    } else {
+        const grouped = {};
+        filtered.forEach(dep => {
+            let key = 'unknown';
+            if (currentDependenciesGroupBy === 'package_manager') {
+                key = dep.package_manager || 'unknown';
+            } else if (currentDependenciesGroupBy === 'type') {
+                key = dep.is_dev ? 'Dev Dependencies' : 'Production Dependencies';
+            } else if (currentDependenciesGroupBy === 'file') {
+                key = dep.file_path || 'unknown';
+            }
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(dep);
+        });
+        
+        html = Object.entries(grouped).map(([key, depsList]) => `
+            <div class="detail-section">
+                <h4>${escapeHtml(key)}</h4>
+                <div class="detail-items">
+                    ${depsList.map(dep => `
+                        <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'dependency', '${dep.id}')">
+                            <div class="detail-item-header">
+                                <strong>${escapeHtml(dep.name)}</strong>
+                                <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
+                            </div>
+                            ${dep.file_path && currentDependenciesGroupBy !== 'file' ? `<p class="detail-meta">Found in: ${escapeHtml(dep.file_path)}</p>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    container.innerHTML = html;
+}
+
+// Store services for filtering
+let allServices = [];
+let currentServicesGroupBy = 'provider';
+
 async function loadServices(repoId) {
+    currentRepoId = repoId;
     const container = document.getElementById('services-list');
     container.innerHTML = '<p class="loading-text">Loading services...</p>';
     
     try {
         const services = await api.getServices(repoId);
+        allServices = services;
         
         if (services.length === 0) {
             container.innerHTML = '<p>No services found. Run analysis first.</p>';
             return;
         }
         
-        // Group by provider
+        // Populate filter dropdowns
+        populateServiceFilters(services);
+        
+        // Initial render
+        filterAndRenderServices();
+        
+        // Setup filter event listeners
+        setupServiceFilters();
+    } catch (error) {
+        container.innerHTML = `<p class="error-text">Failed to load services: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+function populateServiceFilters(services) {
+    const providerSelect = document.getElementById('services-filter-provider');
+    const typeSelect = document.getElementById('services-filter-type');
+    
+    const providers = [...new Set(services.map(s => s.provider).filter(Boolean))].sort();
+    const types = [...new Set(services.map(s => s.service_type).filter(Boolean))].sort();
+    
+    // Clear existing options except "All"
+    providerSelect.innerHTML = '<option value="">All Providers</option>';
+    providers.forEach(provider => {
+        const option = document.createElement('option');
+        option.value = provider;
+        option.textContent = provider;
+        providerSelect.appendChild(option);
+    });
+    
+    typeSelect.innerHTML = '<option value="">All Types</option>';
+    types.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type;
+        typeSelect.appendChild(option);
+    });
+}
+
+function setupServiceFilters() {
+    const searchInput = document.getElementById('services-search');
+    const groupBySelect = document.getElementById('services-group-by');
+    const providerFilter = document.getElementById('services-filter-provider');
+    const typeFilter = document.getElementById('services-filter-type');
+    
+    searchInput.addEventListener('input', () => filterAndRenderServices());
+    providerFilter.addEventListener('change', () => filterAndRenderServices());
+    typeFilter.addEventListener('change', () => filterAndRenderServices());
+    groupBySelect.addEventListener('change', () => {
+        currentServicesGroupBy = groupBySelect.value;
+        filterAndRenderServices();
+    });
+}
+
+function filterAndRenderServices() {
+    const searchTerm = document.getElementById('services-search').value.toLowerCase();
+    const providerFilter = document.getElementById('services-filter-provider').value;
+    const typeFilter = document.getElementById('services-filter-type').value;
+    
+    let filtered = allServices.filter(svc => {
+        const matchesSearch = !searchTerm || 
+            svc.name.toLowerCase().includes(searchTerm) ||
+            (svc.provider && svc.provider.toLowerCase().includes(searchTerm)) ||
+            (svc.service_type && svc.service_type.toLowerCase().includes(searchTerm)) ||
+            (svc.file_path && svc.file_path.toLowerCase().includes(searchTerm));
+        const matchesProvider = !providerFilter || svc.provider === providerFilter;
+        const matchesType = !typeFilter || svc.service_type === typeFilter;
+        return matchesSearch && matchesProvider && matchesType;
+    });
+    
+    // Update filter info
+    const filterInfo = document.getElementById('services-filter-info');
+    if (filterInfo) {
+        const activeFilters = [];
+        if (searchTerm) activeFilters.push(`search: "${searchTerm}"`);
+        if (providerFilter) activeFilters.push(`provider: ${providerFilter}`);
+        if (typeFilter) activeFilters.push(`type: ${typeFilter}`);
+        filterInfo.textContent = activeFilters.length > 0 
+            ? `Showing ${filtered.length} of ${allServices.length} services (${activeFilters.join(', ')})`
+            : `Showing ${filtered.length} services`;
+    }
+    
+    // Group and render
+    const container = document.getElementById('services-list');
+    if (filtered.length === 0) {
+        container.innerHTML = '<p>No services match the current filters.</p>';
+        return;
+    }
+    
+    let html = '';
+    if (currentServicesGroupBy === 'none') {
+        html = '<div class="detail-items">';
+        html += filtered.map(svc => `
+            <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'service', '${svc.id}')">
+                <div class="detail-item-header">
+                    <strong>${escapeHtml(svc.name)}</strong>
+                    <span class="detail-badge">${escapeHtml(svc.service_type || 'service')}</span>
+                </div>
+                <div class="detail-meta">
+                    ${svc.provider ? `<span>${escapeHtml(svc.provider)}</span>` : ''}
+                </div>
+                ${svc.file_path ? `<p class="detail-meta">Found in: ${escapeHtml(svc.file_path)}</p>` : ''}
+            </div>
+        `).join('');
+        html += '</div>';
+    } else {
         const grouped = {};
-        services.forEach(svc => {
-            const provider = svc.provider || 'unknown';
-            if (!grouped[provider]) grouped[provider] = [];
-            grouped[provider].push(svc);
+        filtered.forEach(svc => {
+            let key = 'unknown';
+            if (currentServicesGroupBy === 'provider') {
+                key = svc.provider || 'unknown';
+            } else if (currentServicesGroupBy === 'type') {
+                key = svc.service_type || 'unknown';
+            } else if (currentServicesGroupBy === 'file') {
+                key = svc.file_path || 'unknown';
+            }
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(svc);
         });
         
-        container.innerHTML = Object.entries(grouped).map(([provider, svcList]) => `
+        html = Object.entries(grouped).map(([key, svcList]) => `
             <div class="detail-section">
-                <h4>${escapeHtml(provider)}</h4>
+                <h4>${escapeHtml(key)}</h4>
                 <div class="detail-items">
                     ${svcList.map(svc => `
-                        <div class="detail-item clickable" onclick="showEntityDetail('${repoId}', 'service', '${svc.id}')">
+                        <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'service', '${svc.id}')">
                             <div class="detail-item-header">
                                 <strong>${escapeHtml(svc.name)}</strong>
                                 <span class="detail-badge">${escapeHtml(svc.service_type || 'service')}</span>
                             </div>
-                            ${svc.configuration ? `<p class="detail-meta">Config: ${escapeHtml(JSON.stringify(svc.configuration).substring(0, 100))}...</p>` : ''}
-                            ${svc.file_path ? `<p class="detail-meta">Found in: ${escapeHtml(svc.file_path)}</p>` : ''}
+                            ${svc.provider && currentServicesGroupBy !== 'provider' ? `<p class="detail-meta">Provider: ${escapeHtml(svc.provider)}</p>` : ''}
+                            ${svc.file_path && currentServicesGroupBy !== 'file' ? `<p class="detail-meta">Found in: ${escapeHtml(svc.file_path)}</p>` : ''}
                         </div>
                     `).join('')}
                 </div>
             </div>
         `).join('');
-    } catch (error) {
-        container.innerHTML = `<p class="error-text">Failed to load services: ${escapeHtml(error.message)}</p>`;
     }
+    
+    container.innerHTML = html;
 }
 
 // Store code elements for filtering
@@ -2019,4 +2312,17 @@ function renderRelationships(entityType, details) {
 // Make functions globally available
 window.showEntityDetail = showEntityDetail;
 window.closeEntityDetailModal = closeEntityDetailModal;
+
+// Load version on app initialization
+async function loadVersion() {
+    try {
+        const response = await api.getVersion();
+        const versionElement = document.getElementById('app-version');
+        if (versionElement && response.version) {
+            versionElement.textContent = `v${response.version}`;
+        }
+    } catch (error) {
+        console.error('Failed to load version:', error);
+    }
+}
 

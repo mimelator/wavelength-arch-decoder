@@ -1,7 +1,7 @@
 use actix_web::{web, App, HttpServer};
 use actix_files::Files;
 use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse};
-use crate::api::{ApiState, health, register, login, create_api_key};
+use crate::api::{ApiState, health, register, login, create_api_key, version};
 use crate::graphql::GraphQLSchema;
 use crate::api::repositories::{
     create_repository, list_repositories, get_repository,
@@ -98,6 +98,8 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
             .service(web::resource("/").route(web::get().to(index_handler)))
             .service(
                 web::scope("/api/v1")
+                    // Health and version endpoints
+                    .route("/version", web::get().to(version))
                     // Auth endpoints
                     .route("/auth/register", web::post().to(register))
                     .route("/auth/login", web::post().to(login))

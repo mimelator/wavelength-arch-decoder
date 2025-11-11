@@ -323,7 +323,19 @@ pub async fn analyze_repository(
     };
 
     // Store security entities, relationships, and vulnerabilities
+    // IMPORTANT: Delete in reverse dependency order to avoid foreign key constraint issues
+    // Delete vulnerabilities and relationships first (they reference entities), then entities
     log::info!("Storing security data...");
+    
+    // First, delete old vulnerabilities and relationships (they reference entities)
+    if let Err(e) = state.security_repo.store_vulnerabilities(&repo.id, &[]) {
+        log::warn!("Failed to clear old vulnerabilities: {}", e);
+    }
+    if let Err(e) = state.security_repo.store_relationships(&repo.id, &[]) {
+        log::warn!("Failed to clear old relationships: {}", e);
+    }
+    
+    // Now store entities (they can be deleted safely)
     if let Err(e) = state.security_repo.store_entities(&repo.id, &security_analysis.entities) {
         log::error!("✗ Failed to store security entities: {}", e);
         return HttpResponse::InternalServerError().json(ErrorResponse {
@@ -332,6 +344,7 @@ pub async fn analyze_repository(
     }
     log::info!("✓ Stored {} security entities", security_analysis.entities.len());
 
+    // Now store relationships (entities exist now)
     if let Err(e) = state.security_repo.store_relationships(&repo.id, &security_analysis.relationships) {
         log::error!("✗ Failed to store security relationships: {}", e);
         return HttpResponse::InternalServerError().json(ErrorResponse {
@@ -340,6 +353,7 @@ pub async fn analyze_repository(
     }
     log::info!("✓ Stored {} security relationships", security_analysis.relationships.len());
 
+    // Finally store vulnerabilities (entities exist now)
     if let Err(e) = state.security_repo.store_vulnerabilities(&repo.id, &security_analysis.vulnerabilities) {
         log::error!("✗ Failed to store security vulnerabilities: {}", e);
         return HttpResponse::InternalServerError().json(ErrorResponse {

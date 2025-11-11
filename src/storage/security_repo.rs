@@ -20,6 +20,9 @@ impl SecurityRepository {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
+        // Temporarily disable foreign key constraints to avoid issues during delete/insert
+        conn.execute("PRAGMA foreign_keys = OFF", [])?;
+        
         // Delete existing entities for this repository
         conn.execute(
             "DELETE FROM security_entities WHERE repository_id = ?1",
@@ -52,6 +55,9 @@ impl SecurityRepository {
             )?;
         }
         
+        // Re-enable foreign key constraints
+        conn.execute("PRAGMA foreign_keys = ON", [])?;
+        
         Ok(())
     }
 
@@ -59,34 +65,42 @@ impl SecurityRepository {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
+        // Temporarily disable foreign key constraints to avoid issues during delete/insert
+        conn.execute("PRAGMA foreign_keys = OFF", [])?;
+        
         // Delete existing relationships for this repository
         conn.execute(
             "DELETE FROM security_relationships WHERE repository_id = ?1",
             params![repository_id],
         )?;
         
-        // Insert new relationships
-        let now = Utc::now();
-        for relationship in relationships {
-            let id = Uuid::new_v4().to_string();
-            let permissions_json = serde_json::to_string(&relationship.permissions)?;
-            
-            conn.execute(
-                "INSERT INTO security_relationships 
-                 (id, repository_id, source_entity_id, target_entity_id, relationship_type, permissions, condition, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![
-                    id,
-                    repository_id,
-                    relationship.source_entity_id,
-                    relationship.target_entity_id,
-                    relationship.relationship_type,
-                    permissions_json,
-                    relationship.condition,
-                    now.to_rfc3339()
-                ],
-            )?;
+        // Insert new relationships (only if provided)
+        if !relationships.is_empty() {
+            let now = Utc::now();
+            for relationship in relationships {
+                let id = Uuid::new_v4().to_string();
+                let permissions_json = serde_json::to_string(&relationship.permissions)?;
+                
+                conn.execute(
+                    "INSERT INTO security_relationships 
+                     (id, repository_id, source_entity_id, target_entity_id, relationship_type, permissions, condition, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![
+                        id,
+                        repository_id,
+                        relationship.source_entity_id,
+                        relationship.target_entity_id,
+                        relationship.relationship_type,
+                        permissions_json,
+                        relationship.condition,
+                        now.to_rfc3339()
+                    ],
+                )?;
+            }
         }
+        
+        // Re-enable foreign key constraints
+        conn.execute("PRAGMA foreign_keys = ON", [])?;
         
         Ok(())
     }
@@ -95,35 +109,43 @@ impl SecurityRepository {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
+        // Temporarily disable foreign key constraints to avoid issues during delete/insert
+        conn.execute("PRAGMA foreign_keys = OFF", [])?;
+        
         // Delete existing vulnerabilities for this repository
         conn.execute(
             "DELETE FROM security_vulnerabilities WHERE repository_id = ?1",
             params![repository_id],
         )?;
         
-        // Insert new vulnerabilities
-        let now = Utc::now();
-        for vuln in vulnerabilities {
-            let severity_str = self.severity_to_string(&vuln.severity);
-            
-            conn.execute(
-                "INSERT INTO security_vulnerabilities 
-                 (id, repository_id, entity_id, vulnerability_type, severity, description, recommendation, file_path, line_number, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params![
-                    vuln.id,
-                    repository_id,
-                    vuln.entity_id,
-                    vuln.vulnerability_type,
-                    severity_str,
-                    vuln.description,
-                    vuln.recommendation,
-                    vuln.file_path,
-                    vuln.line_number.map(|n| n as i32),
-                    now.to_rfc3339()
-                ],
-            )?;
+        // Insert new vulnerabilities (only if provided)
+        if !vulnerabilities.is_empty() {
+            let now = Utc::now();
+            for vuln in vulnerabilities {
+                let severity_str = self.severity_to_string(&vuln.severity);
+                
+                conn.execute(
+                    "INSERT INTO security_vulnerabilities 
+                     (id, repository_id, entity_id, vulnerability_type, severity, description, recommendation, file_path, line_number, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        vuln.id,
+                        repository_id,
+                        vuln.entity_id,
+                        vuln.vulnerability_type,
+                        severity_str,
+                        vuln.description,
+                        vuln.recommendation,
+                        vuln.file_path,
+                        vuln.line_number.map(|n| n as i32),
+                        now.to_rfc3339()
+                    ],
+                )?;
+            }
         }
+        
+        // Re-enable foreign key constraints
+        conn.execute("PRAGMA foreign_keys = ON", [])?;
         
         Ok(())
     }

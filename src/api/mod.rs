@@ -34,6 +34,17 @@ pub async fn health() -> impl Responder {
     }))
 }
 
+// Version endpoint
+pub async fn version() -> impl Responder {
+    let version = match std::fs::read_to_string("VERSION") {
+        Ok(v) => v.trim().to_string(),
+        Err(_) => "0.1.0".to_string(),
+    };
+    HttpResponse::Ok().json(serde_json::json!({
+        "version": version
+    }))
+}
+
 // Auth endpoints
 pub async fn register(
     state: web::Data<ApiState>,

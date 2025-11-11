@@ -21,6 +21,11 @@
                 <li><a href="#search" class="nav-link" data-page="search">Search</a></li>
                 <li><a href="#api-docs" class="nav-link" data-page="api-docs">API Docs</a></li>
                 <li><a href="#login" class="nav-link" id="nav-login" data-page="login">Login</a></li>
+                <li>
+                    <button id="theme-toggle" class="theme-toggle" title="Toggle dark/light theme">
+                        <span id="theme-icon">🌙</span>
+                    </button>
+                </li>
             </ul>
         </div>
     </nav>
@@ -33,19 +38,19 @@
                 <p>Overview of your architecture analysis</p>
             </div>
             <div class="dashboard-grid">
-                <div class="stat-card">
+                <div class="stat-card" data-entity-type="repositories">
                     <h3 id="stat-repositories">0</h3>
                     <p>Repositories</p>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" data-entity-type="dependencies">
                     <h3 id="stat-dependencies">0</h3>
                     <p>Dependencies</p>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" data-entity-type="services">
                     <h3 id="stat-services">0</h3>
                     <p>Services</p>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" data-entity-type="security">
                     <h3 id="stat-security">0</h3>
                     <p>Security Entities</p>
                 </div>
@@ -88,41 +93,80 @@
                         <button class="btn btn-primary" id="btn-analyze-detail">Analyze</button>
                     </div>
                 </div>
+                <div id="analysis-status-detail" class="analysis-status"></div>
                 <div class="repo-detail-tabs">
                     <button class="repo-tab active" data-tab="overview">Overview</button>
-                    <button class="repo-tab" data-tab="dependencies">Dependencies</button>
-                    <button class="repo-tab" data-tab="services">Services</button>
-                    <button class="repo-tab" data-tab="code">Code Structure</button>
-                    <button class="repo-tab" data-tab="security">Security</button>
+                    <button class="repo-tab" data-tab="dependencies" data-entity-type="dependencies">Dependencies</button>
+                    <button class="repo-tab" data-tab="services" data-entity-type="services">Services</button>
+                    <button class="repo-tab" data-tab="code" data-entity-type="code">Code Structure</button>
+                    <button class="repo-tab" data-tab="security" data-entity-type="security">Security</button>
                     <button class="repo-tab" data-tab="graph">Graph</button>
                 </div>
                 <div class="repo-detail-content">
                     <div id="tab-overview" class="repo-tab-content active">
                         <div class="detail-stats">
-                            <div class="detail-stat-card">
+                            <div class="detail-stat-card" data-entity-type="dependencies">
                                 <h4 id="stat-deps-count">0</h4>
                                 <p>Dependencies</p>
                             </div>
-                            <div class="detail-stat-card">
+                            <div class="detail-stat-card" data-entity-type="services">
                                 <h4 id="stat-services-count">0</h4>
                                 <p>Services</p>
                             </div>
-                            <div class="detail-stat-card">
+                            <div class="detail-stat-card" data-entity-type="code">
                                 <h4 id="stat-code-count">0</h4>
                                 <p>Code Elements</p>
                             </div>
-                            <div class="detail-stat-card">
+                            <div class="detail-stat-card" data-entity-type="security">
                                 <h4 id="stat-security-count">0</h4>
                                 <p>Security Entities</p>
                             </div>
                         </div>
                     </div>
                     <div id="tab-dependencies" class="repo-tab-content">
+                        <div class="code-filters">
+                            <div class="filter-row">
+                                <input type="text" id="dependencies-search" placeholder="Search dependencies..." class="search-input" style="flex: 1;">
+                                <select id="dependencies-group-by" class="select-input">
+                                    <option value="package_manager">Group by Package Manager</option>
+                                    <option value="type">Group by Type</option>
+                                    <option value="file">Group by File</option>
+                                    <option value="none">No Grouping</option>
+                                </select>
+                                <select id="dependencies-filter-package-manager" class="select-input">
+                                    <option value="">All Package Managers</option>
+                                </select>
+                                <select id="dependencies-filter-type" class="select-input">
+                                    <option value="">All Types</option>
+                                    <option value="dev">Dev Dependencies</option>
+                                    <option value="prod">Production Dependencies</option>
+                                </select>
+                            </div>
+                            <div class="filter-info" id="dependencies-filter-info"></div>
+                        </div>
                         <div id="dependencies-list" class="detail-list">
                             <p class="loading-text">Loading dependencies...</p>
                         </div>
                     </div>
                     <div id="tab-services" class="repo-tab-content">
+                        <div class="code-filters">
+                            <div class="filter-row">
+                                <input type="text" id="services-search" placeholder="Search services..." class="search-input" style="flex: 1;">
+                                <select id="services-group-by" class="select-input">
+                                    <option value="provider">Group by Provider</option>
+                                    <option value="type">Group by Type</option>
+                                    <option value="file">Group by File</option>
+                                    <option value="none">No Grouping</option>
+                                </select>
+                                <select id="services-filter-provider" class="select-input">
+                                    <option value="">All Providers</option>
+                                </select>
+                                <select id="services-filter-type" class="select-input">
+                                    <option value="">All Types</option>
+                                </select>
+                            </div>
+                            <div class="filter-info" id="services-filter-info"></div>
+                        </div>
                         <div id="services-list" class="detail-list">
                             <p class="loading-text">Loading services...</p>
                         </div>
@@ -462,6 +506,12 @@
 
     <script src="/static/js/api.js"></script>
     <script src="/static/js/app.js"></script>
+    
+    <footer class="app-footer">
+        <div class="footer-content">
+            <p>Wavelength Architecture Decoder <span id="app-version">v0.1.0</span></p>
+        </div>
+    </footer>
 </body>
 </html>
 
