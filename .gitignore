@@ -1,0 +1,62 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# API Keys and secrets
+*.key
+*.pem
+secrets/
+config/secrets.json
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# Cache
+cache/
+*.cache
+
+# Build artifacts
+target/
+dist/
+build/
+*.o
+*.so
+*.dylib
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+*.gcov
+*.gcda
+*.gcno
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Rust specific
+Cargo.lock  # Remove if you want to commit lock file
+
+# Go specific
+*.exe
+*.test
+*.prof
