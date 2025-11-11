@@ -86,12 +86,11 @@ impl AuthService {
         // Generate API key with NO expiration for local tool convenience
         // Users shouldn't have to deal with expiring keys for a local tool
         let api_key = self.generate_api_key(&user.id, "login", vec!["read".to_string(), "write".to_string()], None)?;
-        let expires_at = None; // No expiration for local tool
 
         Ok(LoginResponse {
             api_key,
             refresh_token: Uuid::new_v4().to_string(), // TODO: Implement proper refresh tokens
-            expires_at: expires_at.map(|d| d.to_rfc3339()).unwrap_or_else(|| "never".to_string()),
+            expires_at: "never".to_string(), // No expiration for local tool
         })
     }
 
