@@ -146,7 +146,7 @@ impl ServiceDetector {
                     let language = path.extension()
                         .and_then(|e| e.to_str())
                         .map(|s| s.to_string());
-                    if let Ok(detected) = self.detect_in_code(path, language.as_deref()) {
+                    if let Ok(detected) = self.detect_in_code(path, &language) {
                         services.extend(detected);
                     }
                 }
