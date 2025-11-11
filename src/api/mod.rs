@@ -1,13 +1,14 @@
 use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use serde::{Deserialize, Serialize};
 use crate::auth::{AuthService, RegisterRequest, LoginRequest, CreateApiKeyRequest};
-use crate::storage::{RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository};
+use crate::storage::{RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, SecurityRepository};
 
 pub mod server;
 pub mod repositories;
 pub mod services;
 pub mod graph;
 pub mod code;
+pub mod security;
 
 pub struct ApiState {
     pub auth_service: AuthService,
@@ -15,6 +16,7 @@ pub struct ApiState {
     pub dep_repo: DependencyRepository,
     pub service_repo: ServiceRepository,
     pub code_repo: CodeElementRepository,
+    pub security_repo: SecurityRepository,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

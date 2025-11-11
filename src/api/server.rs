@@ -7,9 +7,10 @@ use crate::api::repositories::{
 use crate::api::services::{get_services, search_services_by_provider};
 use crate::api::graph::{get_graph, get_graph_statistics, get_node_neighbors};
 use crate::api::code::{get_code_elements, get_code_calls};
+use crate::api::security::{get_security_entities, get_security_relationships, get_security_vulnerabilities};
 use crate::auth::AuthService;
 use crate::config::Config;
-use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository};
+use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, SecurityRepository};
 
 pub async fn start_server(config: Config) -> std::io::Result<()> {
     // Initialize database
@@ -22,7 +23,8 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
     let repo_repo = RepositoryRepository::new(db.clone());
     let dep_repo = DependencyRepository::new(db.clone());
     let service_repo = ServiceRepository::new(db.clone());
-    let code_repo = CodeElementRepository::new(db);
+    let code_repo = CodeElementRepository::new(db.clone());
+    let security_repo = SecurityRepository::new(db);
     
     // Initialize auth service
     let auth_service = AuthService::new(
@@ -38,6 +40,7 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
         dep_repo,
         service_repo,
         code_repo,
+        security_repo,
     });
 
     // Start HTTP server
@@ -69,6 +72,10 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     // Code structure endpoints
                     .route("/repositories/{id}/code/elements", web::get().to(get_code_elements))
                     .route("/repositories/{id}/code/calls", web::get().to(get_code_calls))
+                    // Security endpoints
+                    .route("/repositories/{id}/security/entities", web::get().to(get_security_entities))
+                    .route("/repositories/{id}/security/relationships", web::get().to(get_security_relationships))
+                    .route("/repositories/{id}/security/vulnerabilities", web::get().to(get_security_vulnerabilities))
             )
     })
     .bind(format!("{}:{}", config.server.host, config.server.port))?

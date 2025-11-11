@@ -6,6 +6,7 @@ use crate::storage::{RepositoryRepository, DependencyRepository};
 use crate::ingestion::RepositoryCrawler;
 use crate::analysis::DependencyExtractor;
 use crate::security::ServiceDetector;
+use crate::security::analyzer::SecurityAnalyzer;
 use crate::graph::GraphBuilder;
 use crate::analysis::CodeAnalyzer;
 use crate::config::StorageConfig;
@@ -271,6 +272,36 @@ pub async fn analyze_repository(
         });
     }
 
+    // Analyze security configuration
+    let security_analyzer = SecurityAnalyzer::new();
+    let security_analysis = match security_analyzer.analyze_repository(&repo_path) {
+        Ok(analysis) => analysis,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to analyze security: {}", e),
+            });
+        }
+    };
+
+    // Store security entities, relationships, and vulnerabilities
+    if let Err(e) = state.security_repo.store_entities(&repo.id, &security_analysis.entities) {
+        return HttpResponse::InternalServerError().json(ErrorResponse {
+            error: format!("Failed to store security entities: {}", e),
+        });
+    }
+
+    if let Err(e) = state.security_repo.store_relationships(&repo.id, &security_analysis.relationships) {
+        return HttpResponse::InternalServerError().json(ErrorResponse {
+            error: format!("Failed to store security relationships: {}", e),
+        });
+    }
+
+    if let Err(e) = state.security_repo.store_vulnerabilities(&repo.id, &security_analysis.vulnerabilities) {
+        return HttpResponse::InternalServerError().json(ErrorResponse {
+            error: format!("Failed to store security vulnerabilities: {}", e),
+        });
+    }
+
     // Update last analyzed timestamp
     if let Err(e) = state.repo_repo.update_last_analyzed(&repo.id) {
         return HttpResponse::InternalServerError().json(ErrorResponse {
@@ -285,7 +316,10 @@ pub async fn analyze_repository(
         "services_found": services.len(),
         "graph_built": true,
         "code_elements_found": code_structure.elements.len(),
-        "code_calls_found": code_structure.calls.len()
+        "code_calls_found": code_structure.calls.len(),
+        "security_entities_found": security_analysis.entities.len(),
+        "security_relationships_found": security_analysis.relationships.len(),
+        "security_vulnerabilities_found": security_analysis.vulnerabilities.len()
     }))
 }
 

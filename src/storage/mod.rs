@@ -8,10 +8,12 @@ pub mod repositories;
 pub mod repository_repo;
 pub mod service_repo;
 pub mod code_repo;
+pub mod security_repo;
 pub use repositories::{UserRepository, ApiKeyRepository};
 pub use repository_repo::{RepositoryRepository, DependencyRepository, Repository, StoredDependency};
 pub use service_repo::{ServiceRepository, StoredService};
 pub use code_repo::CodeElementRepository;
+pub use security_repo::SecurityRepository;
 
 #[derive(Clone)]
 pub struct Database {
@@ -182,6 +184,62 @@ impl Database {
             [],
         )?;
 
+        // Security entities table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS security_entities (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                configuration TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                line_number INTEGER,
+                arn TEXT,
+                region TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id)
+            )",
+            [],
+        )?;
+
+        // Security relationships table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS security_relationships (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                source_entity_id TEXT NOT NULL,
+                target_entity_id TEXT NOT NULL,
+                relationship_type TEXT NOT NULL,
+                permissions TEXT NOT NULL,
+                condition TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id),
+                FOREIGN KEY (source_entity_id) REFERENCES security_entities(id),
+                FOREIGN KEY (target_entity_id) REFERENCES security_entities(id)
+            )",
+            [],
+        )?;
+
+        // Security vulnerabilities table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS security_vulnerabilities (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                vulnerability_type TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                description TEXT NOT NULL,
+                recommendation TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                line_number INTEGER,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id),
+                FOREIGN KEY (entity_id) REFERENCES security_entities(id)
+            )",
+            [],
+        )?;
+
         // Create indexes
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id)",
@@ -249,6 +307,30 @@ impl Database {
         )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_code_calls_callee ON code_calls(callee_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_security_entities_repository ON security_entities(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_security_entities_type ON security_entities(entity_type)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_security_entities_provider ON security_entities(provider)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_security_relationships_repository ON security_relationships(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_security_vulnerabilities_repository ON security_vulnerabilities(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_security_vulnerabilities_severity ON security_vulnerabilities(severity)",
             [],
         )?;
 
