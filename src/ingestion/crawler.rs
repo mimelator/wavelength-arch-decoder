@@ -73,7 +73,7 @@ impl RepositoryCrawler {
         };
         
         let mut builder = git2::build::RepoBuilder::new();
-        builder.fetch_options(fetch_options.clone());
+        builder.fetch_options(fetch_options);
         
         // Try cloning with the specified branch, but don't fail if it doesn't exist
         // We'll checkout the correct branch after cloning
@@ -85,8 +85,19 @@ impl RepositoryCrawler {
             Err(e) if e.code() == git2::ErrorCode::NotFound => {
                 // Branch not found, clone without specifying branch and checkout default
                 log::warn!("Branch '{}' not found, cloning default branch instead", branch);
+                
+                // Recreate fetch_options for the fallback clone
+                let mut fallback_fetch_options = FetchOptions::new();
+                fallback_fetch_options.download_tags(git2::AutotagOption::All);
+                let mut fallback_callbacks = RemoteCallbacks::new();
+                let fallback_creds = credentials.cloned();
+                fallback_callbacks.credentials(move |url_str, username_from_url, allowed_types| {
+                    Self::get_credentials(url_str, username_from_url, allowed_types, fallback_creds.as_ref())
+                });
+                fallback_fetch_options.remote_callbacks(fallback_callbacks);
+                
                 builder = git2::build::RepoBuilder::new();
-                builder.fetch_options(fetch_options);
+                builder.fetch_options(fallback_fetch_options);
                 builder.clone(&final_url, path)?;
                 
                 // Try to checkout the requested branch or fallback to main/master
