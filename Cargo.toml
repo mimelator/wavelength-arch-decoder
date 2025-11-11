@@ -7,6 +7,10 @@ description = "A self-contained hosted server for understanding repository archi
 license = "MIT"
 repository = "https://github.com/your-org/wavelength-arch-decoder"
 
+[lib]
+name = "wavelength_arch_decoder"
+path = "src/lib.rs"
+
 [dependencies]
 # Web framework
 actix-web = "4.5"
