@@ -59,6 +59,10 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     // Service endpoints
                     .route("/repositories/{id}/services", web::get().to(get_services))
                     .route("/services/search", web::get().to(search_services_by_provider))
+                    // Graph endpoints
+                    .route("/repositories/{id}/graph", web::get().to(get_graph))
+                    .route("/repositories/{id}/graph/statistics", web::get().to(get_graph_statistics))
+                    .route("/repositories/{id}/graph/nodes/{node_id}/neighbors", web::get().to(get_node_neighbors))
             )
     })
     .bind(format!("{}:{}", config.server.host, config.server.port))?
