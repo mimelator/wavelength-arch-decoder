@@ -342,7 +342,7 @@ async function loadGraph(repoId) {
         }
         
         // Render enhanced graph
-        renderEnhancedGraph(graphData, container);
+        renderEnhancedGraph(graphData, container, repoId);
         
         // Show graph info
         document.getElementById('graph-info').innerHTML = `
@@ -360,7 +360,7 @@ async function loadGraph(repoId) {
     }
 }
 
-function renderEnhancedGraph(graphData, container) {
+function renderEnhancedGraph(graphData, container, repoId = null) {
     // Map node types to better display names (handle both enum serialization and string formats)
     const nodeTypeLabels = {
         'repository': 'Repository',
@@ -571,13 +571,18 @@ function renderEnhancedGraph(graphData, container) {
     
     const network = new vis.Network(container, data, options);
     
+    // Store graph data and repo ID for navigation
+    network.graphData = graphData;
+    // Determine repo ID: use provided repoId, or check if we're in repository detail view
+    network.repoId = repoId || (container.closest('.page')?.id === 'repository-detail' ? currentRepoId : null);
+    
     // Add click handler to show node details
     network.on('click', function(params) {
         if (params.nodes.length > 0) {
             const nodeId = params.nodes[0];
             const node = graphData.nodes.find(n => n.id === nodeId);
             if (node) {
-                showNodeDetails(node, graphData);
+                showNodeDetails(node, graphData, network.repoId);
             }
         }
     });
@@ -592,11 +597,24 @@ function renderEnhancedGraph(graphData, container) {
     });
 }
 
-function showNodeDetails(node, graphData) {
+function showNodeDetails(node, graphData, repoId = null) {
     // Find all edges connected to this node
     const connectedEdges = graphData.edges.filter(e => 
         e.source_node_id === node.id || e.target_node_id === node.id
     );
+    
+    // Determine which tab this node type belongs to
+    const nodeType = (node.node_type || node.type || 'unknown').toLowerCase();
+    const tabMapping = {
+        'dependency': 'dependencies',
+        'service': 'services',
+        'code_element': 'code',
+        'security_entity': 'security',
+        'repository': 'overview',
+        'package_manager': 'dependencies',
+        'service_provider': 'services',
+    };
+    const targetTab = tabMapping[nodeType] || null;
     
     // Build details HTML
     let details = `<div class="node-details">`;
@@ -604,11 +622,23 @@ function showNodeDetails(node, graphData) {
     details += `<p><strong>Type:</strong> ${escapeHtml(node.node_type || node.type || 'unknown')}</p>`;
     
     if (node.properties) {
-        details += `<h4>Properties:</h4><ul>`;
-        Object.entries(node.properties).forEach(([key, value]) => {
-            details += `<li><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value))}</li>`;
-        });
-        details += `</ul>`;
+        // Handle both object and JSON string properties
+        let props = node.properties;
+        if (typeof props === 'string') {
+            try {
+                props = JSON.parse(props);
+            } catch (e) {
+                props = {};
+            }
+        }
+        const propEntries = Object.entries(props || {});
+        if (propEntries.length > 0) {
+            details += `<h4>Properties:</h4><ul>`;
+            propEntries.forEach(([key, value]) => {
+                details += `<li><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value))}</li>`;
+            });
+            details += `</ul>`;
+        }
     }
     
     if (connectedEdges.length > 0) {
@@ -624,13 +654,74 @@ function showNodeDetails(node, graphData) {
         });
         details += `</ul>`;
     }
+    
+    // Add navigation link if we're in repository detail view and have a matching tab
+    let actionButtons = '<div style="margin-top: 1rem; display: flex; gap: 0.5rem;">';
+    actionButtons += '<button onclick="this.closest(\'.node-details-modal\').remove()">Close</button>';
+    
+    if (repoId && targetTab) {
+        actionButtons += `<button onclick="navigateToNodeInDetail('${repoId}', '${targetTab}', '${escapeHtml(node.name)}'); this.closest('.node-details-modal').remove();" style="background: var(--primary-color); color: white;">View in Repository Details</button>`;
+    } else if (repoId) {
+        // If we have a repo ID but no specific tab, just go to overview
+        actionButtons += `<button onclick="navigateToNodeInDetail('${repoId}', 'overview', '${escapeHtml(node.name)}'); this.closest('.node-details-modal').remove();" style="background: var(--primary-color); color: white;">View Repository Details</button>`;
+    }
+    actionButtons += '</div>';
+    
+    details += actionButtons;
     details += `</div>`;
     
-    // Show in a modal or side panel (for now, use alert-like display)
+    // Show in a modal
     const detailsDiv = document.createElement('div');
     detailsDiv.className = 'node-details-modal';
-    detailsDiv.innerHTML = details + '<button onclick="this.parentElement.remove()">Close</button>';
+    detailsDiv.innerHTML = details;
     document.body.appendChild(detailsDiv);
+}
+
+// Navigate to a specific node in the repository detail view
+window.navigateToNodeInDetail = async function(repoId, tabName, nodeName) {
+    // If we're not already on the repository detail page, navigate there
+    const currentPage = document.querySelector('.page.active')?.id;
+    if (currentPage !== 'repository-detail') {
+        await window.viewRepository(repoId);
+        // Wait a bit for the page to load
+        await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    // Switch to the appropriate tab
+    switchTab(tabName, repoId);
+    
+    // Wait for tab content to load, then try to scroll to/highlight the item
+    setTimeout(() => {
+        highlightNodeInTab(tabName, nodeName);
+    }, 500);
+}
+
+function highlightNodeInTab(tabName, nodeName) {
+    const tabContent = document.getElementById(`tab-${tabName}`);
+    if (!tabContent) return;
+    
+    // Find the item that matches the node name
+    const items = tabContent.querySelectorAll('.detail-item');
+    for (const item of items) {
+        const itemName = item.querySelector('strong')?.textContent;
+        if (itemName && itemName.toLowerCase().includes(nodeName.toLowerCase())) {
+            // Scroll to the item
+            item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // Highlight it temporarily
+            item.style.backgroundColor = 'rgba(37, 99, 235, 0.2)';
+            item.style.borderColor = 'var(--primary-color)';
+            item.style.transition = 'all 0.3s';
+            
+            // Remove highlight after 3 seconds
+            setTimeout(() => {
+                item.style.backgroundColor = '';
+                item.style.borderColor = '';
+            }, 3000);
+            
+            break;
+        }
+    }
 }
 
 function getNodeColor(type) {
