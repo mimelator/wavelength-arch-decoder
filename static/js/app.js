@@ -1232,46 +1232,202 @@ async function loadServices(repoId) {
     }
 }
 
+// Store code elements for filtering
+let allCodeElements = [];
+let currentCodeGroupBy = 'type';
+
 async function loadCodeElements(repoId) {
     const container = document.getElementById('code-list');
     container.innerHTML = '<p class="loading-text">Loading code structure...</p>';
     
     try {
         const elements = await api.getCodeElements(repoId);
+        allCodeElements = elements;
         
         if (elements.length === 0) {
             container.innerHTML = '<p>No code elements found. Run analysis first.</p>';
             return;
         }
         
-        // Group by type
-        const grouped = {};
-        elements.forEach(el => {
-            const type = el.element_type || 'unknown';
-            if (!grouped[type]) grouped[type] = [];
-            grouped[type].push(el);
-        });
+        // Setup filters
+        setupCodeFilters(elements);
         
-        container.innerHTML = Object.entries(grouped).map(([type, elList]) => `
-            <div class="detail-section">
-                <h4>${escapeHtml(type)}</h4>
-                <div class="detail-items">
-                    ${elList.map(el => `
-                        <div class="detail-item">
-                            <div class="detail-item-header">
-                                <strong>${escapeHtml(el.name)}</strong>
-                                <span class="detail-badge">${escapeHtml(el.language || 'unknown')}</span>
-                            </div>
-                            ${el.file_path ? `<p class="detail-meta">File: ${escapeHtml(el.file_path)}${el.line_number ? ` (line ${el.line_number})` : ''}</p>` : ''}
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `).join('');
+        // Render code elements
+        renderCodeElements(elements);
     } catch (error) {
         container.innerHTML = `<p class="error-text">Failed to load code elements: ${escapeHtml(error.message)}</p>`;
     }
 }
+
+function setupCodeFilters(elements) {
+    // Populate type filter
+    const typeFilter = document.getElementById('code-filter-type');
+    const types = [...new Set(elements.map(el => el.element_type || 'unknown'))].sort();
+    typeFilter.innerHTML = '<option value="">All Types</option>' + 
+        types.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`).join('');
+    
+    // Populate language filter
+    const langFilter = document.getElementById('code-filter-language');
+    const languages = [...new Set(elements.map(el => el.language || 'unknown'))].sort();
+    langFilter.innerHTML = '<option value="">All Languages</option>' + 
+        languages.map(lang => `<option value="${escapeHtml(lang)}">${escapeHtml(lang)}</option>`).join('');
+    
+    // Setup event listeners
+    const searchInput = document.getElementById('code-search');
+    const groupBySelect = document.getElementById('code-group-by');
+    
+    searchInput.addEventListener('input', () => filterAndRenderCode());
+    typeFilter.addEventListener('change', () => filterAndRenderCode());
+    langFilter.addEventListener('change', () => filterAndRenderCode());
+    groupBySelect.addEventListener('change', () => {
+        currentCodeGroupBy = groupBySelect.value;
+        filterAndRenderCode();
+    });
+}
+
+function filterAndRenderCode() {
+    const searchTerm = document.getElementById('code-search').value.toLowerCase();
+    const typeFilter = document.getElementById('code-filter-type').value;
+    const langFilter = document.getElementById('code-filter-language').value;
+    
+    let filtered = allCodeElements.filter(el => {
+        const matchesSearch = !searchTerm || 
+            el.name.toLowerCase().includes(searchTerm) ||
+            (el.file_path && el.file_path.toLowerCase().includes(searchTerm));
+        const matchesType = !typeFilter || el.element_type === typeFilter;
+        const matchesLang = !langFilter || el.language === langFilter;
+        return matchesSearch && matchesType && matchesLang;
+    });
+    
+    // Update filter info
+    const infoDiv = document.getElementById('code-filter-info');
+    if (filtered.length !== allCodeElements.length) {
+        infoDiv.textContent = `Showing ${filtered.length} of ${allCodeElements.length} code elements`;
+        infoDiv.style.display = 'block';
+    } else {
+        infoDiv.style.display = 'none';
+    }
+    
+    renderCodeElements(filtered);
+}
+
+function renderCodeElements(elements) {
+    const container = document.getElementById('code-list');
+    
+    if (elements.length === 0) {
+        container.innerHTML = '<p>No code elements match the current filters.</p>';
+        return;
+    }
+    
+    let html = '';
+    
+    if (currentCodeGroupBy === 'none') {
+        // No grouping - show all in a single list with pagination
+        html = renderCodeElementsList(elements, false);
+    } else {
+        // Group elements
+        const grouped = {};
+        elements.forEach(el => {
+            let key;
+            if (currentCodeGroupBy === 'type') {
+                key = el.element_type || 'unknown';
+            } else if (currentCodeGroupBy === 'language') {
+                key = el.language || 'unknown';
+            } else if (currentCodeGroupBy === 'file') {
+                key = el.file_path ? el.file_path.split('/').slice(0, -1).join('/') || 'root' : 'unknown';
+            }
+            
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(el);
+        });
+        
+        // Sort groups
+        const sortedGroups = Object.entries(grouped).sort((a, b) => {
+            if (currentCodeGroupBy === 'file') {
+                return a[0].localeCompare(b[0]);
+            }
+            return a[0].localeCompare(b[0]);
+        });
+        
+        html = sortedGroups.map(([groupKey, elList]) => {
+            const groupTitle = currentCodeGroupBy === 'file' 
+                ? groupKey === 'root' ? 'Root Directory' : groupKey
+                : groupKey;
+            const count = elList.length;
+            return `
+                <div class="detail-section collapsible-section">
+                    <h4 class="section-header" onclick="toggleSection(this)">
+                        <span class="section-toggle">▼</span>
+                        ${escapeHtml(groupTitle)} <span class="section-count">(${count})</span>
+                    </h4>
+                    <div class="section-content">
+                        ${renderCodeElementsList(elList, true)}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    container.innerHTML = html;
+}
+
+function renderCodeElementsList(elements, showAll = false) {
+    // Sort elements by name
+    const sorted = [...elements].sort((a, b) => a.name.localeCompare(b.name));
+    
+    // If showing all and there are many, limit initial display
+    const maxInitial = 50;
+    const shouldPaginate = !showAll && sorted.length > maxInitial;
+    const displayElements = shouldPaginate ? sorted.slice(0, maxInitial) : sorted;
+    
+    let html = '<div class="detail-items">';
+    html += displayElements.map(el => `
+        <div class="detail-item" data-code-name="${escapeHtml(el.name.toLowerCase())}">
+            <div class="detail-item-header">
+                <strong>${escapeHtml(el.name)}</strong>
+                <span class="detail-badge">${escapeHtml(el.language || 'unknown')}</span>
+            </div>
+            ${el.file_path ? `<p class="detail-meta">File: ${escapeHtml(el.file_path)}${el.line_number ? ` (line ${el.line_number})` : ''}</p>` : ''}
+            ${el.element_type ? `<p class="detail-meta" style="font-size: 0.75rem; color: var(--text-secondary);">Type: ${escapeHtml(el.element_type)}</p>` : ''}
+        </div>
+    `).join('');
+    html += '</div>';
+    
+    if (shouldPaginate) {
+        html += `
+            <div class="pagination-controls">
+                <p style="text-align: center; color: var(--text-secondary); margin-top: 1rem;">
+                    Showing ${maxInitial} of ${sorted.length} elements
+                </p>
+                <button class="btn btn-secondary" onclick="loadMoreCodeElements()" style="width: 100%; margin-top: 0.5rem;">
+                    Show All ${sorted.length} Elements
+                </button>
+            </div>
+        `;
+    }
+    
+    return html;
+}
+
+window.toggleSection = function(header) {
+    const section = header.closest('.collapsible-section');
+    const content = section.querySelector('.section-content');
+    const toggle = header.querySelector('.section-toggle');
+    
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        toggle.textContent = '▼';
+    } else {
+        content.style.display = 'none';
+        toggle.textContent = '▶';
+    }
+};
+
+window.loadMoreCodeElements = function() {
+    currentCodeGroupBy = 'none';
+    document.getElementById('code-group-by').value = 'none';
+    filterAndRenderCode();
+};
 
 async function loadSecurity(repoId) {
     const container = document.getElementById('security-list');

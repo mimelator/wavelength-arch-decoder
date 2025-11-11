@@ -128,6 +128,24 @@
                         </div>
                     </div>
                     <div id="tab-code" class="repo-tab-content">
+                        <div class="code-filters">
+                            <div class="filter-row">
+                                <input type="text" id="code-search" placeholder="Search code elements..." class="search-input" style="flex: 1;">
+                                <select id="code-group-by" class="select-input">
+                                    <option value="type">Group by Type</option>
+                                    <option value="language">Group by Language</option>
+                                    <option value="file">Group by File</option>
+                                    <option value="none">No Grouping</option>
+                                </select>
+                                <select id="code-filter-type" class="select-input">
+                                    <option value="">All Types</option>
+                                </select>
+                                <select id="code-filter-language" class="select-input">
+                                    <option value="">All Languages</option>
+                                </select>
+                            </div>
+                            <div class="filter-info" id="code-filter-info"></div>
+                        </div>
                         <div id="code-list" class="detail-list">
                             <p class="loading-text">Loading code structure...</p>
                         </div>
