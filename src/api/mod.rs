@@ -9,6 +9,7 @@ pub mod services;
 pub mod graph;
 pub mod code;
 pub mod security;
+pub mod jobs;
 
 pub struct ApiState {
     pub auth_service: AuthService,

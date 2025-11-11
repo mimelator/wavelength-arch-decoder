@@ -10,6 +10,8 @@ use crate::api::services::{get_services, search_services_by_provider};
 use crate::api::graph::{get_graph, get_graph_statistics, get_node_neighbors};
 use crate::api::code::{get_code_elements, get_code_calls};
 use crate::api::security::{get_security_entities, get_security_relationships, get_security_vulnerabilities};
+use crate::api::jobs::{create_job, get_job_status, list_jobs, create_scheduled_job, batch_analyze};
+use crate::crawler::webhooks::{handle_github_webhook, handle_gitlab_webhook};
 use crate::auth::AuthService;
 use crate::config::Config;
 use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, SecurityRepository};
@@ -106,6 +108,15 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     .route("/repositories/{id}/security/entities", web::get().to(get_security_entities))
                     .route("/repositories/{id}/security/relationships", web::get().to(get_security_relationships))
                     .route("/repositories/{id}/security/vulnerabilities", web::get().to(get_security_vulnerabilities))
+                    // Job endpoints (Phase 8)
+                    .route("/jobs", web::post().to(create_job))
+                    .route("/jobs", web::get().to(list_jobs))
+                    .route("/jobs/{id}", web::get().to(get_job_status))
+                    .route("/jobs/scheduled", web::post().to(create_scheduled_job))
+                    .route("/jobs/batch", web::post().to(batch_analyze))
+                    // Webhook endpoints (Phase 8)
+                    .route("/webhooks/github", web::post().to(handle_github_webhook))
+                    .route("/webhooks/gitlab", web::post().to(handle_gitlab_webhook))
             )
     })
     .bind(format!("{}:{}", config.server.host, config.server.port))?

@@ -8,6 +8,7 @@ mod analysis;
 mod security;
 mod graph;
 mod graphql;
+mod crawler;
 
 use api::server::start_server;
 use config::Config;
