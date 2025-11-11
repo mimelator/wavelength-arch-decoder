@@ -96,6 +96,7 @@ impl ApiKeyDetector {
 
         let mut files_scanned = 0;
         let mut files_with_keys = 0;
+        let mut files_skipped = 0;
 
         // First pass: Scan code files for API key patterns
         for entry in WalkDir::new(repo_path)
@@ -120,6 +121,17 @@ impl ApiKeyDetector {
                 continue;
             }
 
+            // Check file size - skip files larger than 1MB to avoid memory issues
+            if let Ok(metadata) = std::fs::metadata(path) {
+                if metadata.len() > 1_048_576 { // 1MB
+                    files_skipped += 1;
+                    if files_skipped % 100 == 0 {
+                        log::debug!("Skipped {} large files so far...", files_skipped);
+                    }
+                    continue;
+                }
+            }
+
             // Only scan code files
             if file_name.ends_with(".js") || 
                file_name.ends_with(".ts") ||
@@ -137,48 +149,64 @@ impl ApiKeyDetector {
                file_name.contains("config") {
                 
                 files_scanned += 1;
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    // Normalize path relative to repo_path for matching and storage
-                    let file_path_str = if let Ok(rel_path) = path.strip_prefix(repo_path) {
-                        // Remove leading "./" if present
-                        let rel_str = rel_path.to_string_lossy().to_string();
-                        if rel_str.starts_with("./") {
-                            rel_str[2..].to_string()
+                
+                // Log progress every 100 files
+                if files_scanned % 100 == 0 {
+                    log::info!("API key detection progress: scanned {} files, found keys in {} files...", 
+                        files_scanned, files_with_keys);
+                }
+                
+                // Try to read file, but handle errors gracefully
+                match std::fs::read_to_string(path) {
+                    Ok(content) => {
+                        // Normalize path relative to repo_path for matching and storage
+                        let file_path_str = if let Ok(rel_path) = path.strip_prefix(repo_path) {
+                            // Remove leading "./" if present
+                            let rel_str = rel_path.to_string_lossy().to_string();
+                            if rel_str.starts_with("./") {
+                                rel_str[2..].to_string()
+                            } else {
+                                rel_str
+                            }
                         } else {
-                            rel_str
-                        }
-                    } else {
-                        // Try to strip common cache prefixes
-                        let path_str = path.to_string_lossy().to_string();
-                        if let Some(stripped) = path_str.strip_prefix("./cache/repos/") {
-                            if let Some(repo_rel) = stripped.find('/') {
-                                stripped[repo_rel+1..].to_string()
+                            // Try to strip common cache prefixes
+                            let path_str = path.to_string_lossy().to_string();
+                            if let Some(stripped) = path_str.strip_prefix("./cache/repos/") {
+                                if let Some(repo_rel) = stripped.find('/') {
+                                    stripped[repo_rel+1..].to_string()
+                                } else {
+                                    path_str
+                                }
                             } else {
                                 path_str
                             }
-                        } else {
-                            path_str
-                        }
-                    };
-                    let file_elements = code_elements_by_file.get(&file_path_str);
-                    match self.scan_file_for_keys(&content, path, file_elements, &file_path_str) {
-                        Ok(keys) => {
-                            if !keys.is_empty() {
-                                files_with_keys += 1;
-                                log::info!("Found {} API keys in {}", keys.len(), file_path_str);
+                        };
+                        let file_elements = code_elements_by_file.get(&file_path_str);
+                        match self.scan_file_for_keys(&content, path, file_elements, &file_path_str) {
+                            Ok(keys) => {
+                                if !keys.is_empty() {
+                                    files_with_keys += 1;
+                                    log::info!("Found {} API keys in {}", keys.len(), file_path_str);
+                                }
+                                detected_keys.extend(keys);
+                            },
+                            Err(e) => {
+                                log::warn!("Error scanning file {}: {}", file_path_str, e);
                             }
-                            detected_keys.extend(keys);
-                        },
-                        Err(e) => {
-                            log::warn!("Error scanning file {}: {}", file_path_str, e);
+                        }
+                    },
+                    Err(e) => {
+                        // File might be binary or have encoding issues - skip silently
+                        if files_scanned % 500 == 0 {
+                            log::debug!("Skipped file {} (read error: {})", path.display(), e);
                         }
                     }
                 }
             }
         }
 
-        log::info!("Scanned {} files, found keys in {} files, total keys detected: {}", 
-            files_scanned, files_with_keys, detected_keys.len());
+        log::info!("API key detection complete: scanned {} files (skipped {} large files), found keys in {} files, total keys detected: {}", 
+            files_scanned, files_skipped, files_with_keys, detected_keys.len());
 
         // Convert detected keys to security entities and create relationships
         for key in detected_keys {

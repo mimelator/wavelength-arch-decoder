@@ -1153,6 +1153,35 @@ body {
     background-color: #3b82f6;
 }
 
+/* Entity ID Badge */
+.entity-id-badge {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.4rem;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    color: var(--text-secondary);
+    font-family: 'Courier New', monospace;
+    font-weight: 500;
+    cursor: help;
+}
+
+.entity-id-badge:hover {
+    background-color: var(--card-bg);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+[data-theme="dark"] .entity-id-badge {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .entity-id-badge:hover {
+    background-color: var(--bg-color);
+    border-color: var(--primary-color);
+}
+
 .detail-item.has-vulnerability {
     border-left: 3px solid var(--warning-color);
 }

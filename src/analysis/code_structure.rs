@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use walkdir::WalkDir;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum CodeElementType {
@@ -78,6 +79,11 @@ impl CodeAnalyzer {
                 continue;
             }
 
+            // Normalize path: make it relative to repo_path
+            let normalized_path = path.strip_prefix(repo_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| path.to_string_lossy().to_string());
+
             // Determine language from extension
             let language = self.detect_language(path);
             if language.is_none() {
@@ -88,22 +94,22 @@ impl CodeAnalyzer {
             if let Ok(content) = std::fs::read_to_string(path) {
                 match language.as_deref() {
                     Some("javascript") | Some("typescript") => {
-                        let (file_elements, file_calls) = self.analyze_js_ts(&content, path)?;
+                        let (file_elements, file_calls) = self.analyze_js_ts(&content, &normalized_path)?;
                         elements.extend(file_elements);
                         calls.extend(file_calls);
                     }
                     Some("python") => {
-                        let (file_elements, file_calls) = self.analyze_python(&content, path)?;
+                        let (file_elements, file_calls) = self.analyze_python(&content, &normalized_path)?;
                         elements.extend(file_elements);
                         calls.extend(file_calls);
                     }
                     Some("rust") => {
-                        let (file_elements, file_calls) = self.analyze_rust(&content, path)?;
+                        let (file_elements, file_calls) = self.analyze_rust(&content, &normalized_path)?;
                         elements.extend(file_elements);
                         calls.extend(file_calls);
                     }
                     Some("go") => {
-                        let (file_elements, file_calls) = self.analyze_go(&content, path)?;
+                        let (file_elements, file_calls) = self.analyze_go(&content, &normalized_path)?;
                         elements.extend(file_elements);
                         calls.extend(file_calls);
                     }
@@ -132,7 +138,7 @@ impl CodeAnalyzer {
     }
 
     /// Analyze JavaScript/TypeScript files
-    fn analyze_js_ts(&self, content: &str, path: &Path) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
+    fn analyze_js_ts(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
         let mut elements = Vec::new();
         let mut calls = Vec::new();
         let mut element_map: HashMap<String, String> = HashMap::new(); // name -> id
@@ -146,14 +152,15 @@ impl CodeAnalyzer {
             // Detect function declarations
             if line.contains("function ") || line.contains("const ") && line.contains("=") && line.contains("=>") {
                 if let Some(name) = self.extract_function_name_js(line) {
-                    let id = format!("{}:{}:{}", path.to_string_lossy(), line_idx, name);
+                    // Use UUID for ID to ensure uniqueness
+                    let id = uuid::Uuid::new_v4().to_string();
                     element_map.insert(name.clone(), id.clone());
                     
                     elements.push(CodeElement {
                         id: id.clone(),
                         name,
                         element_type: CodeElementType::Function,
-                        file_path: path.to_string_lossy().to_string(),
+                        file_path: normalized_path.to_string(),
                         line_number: line_idx,
                         language: "javascript".to_string(),
                         signature: Some(line.to_string()),
@@ -168,14 +175,14 @@ impl CodeAnalyzer {
             // Detect class declarations
             if line.contains("class ") {
                 if let Some(name) = self.extract_class_name_js(line) {
-                    let id = format!("{}:{}:{}", path.to_string_lossy(), line_idx, name);
+                    let id = uuid::Uuid::new_v4().to_string();
                     element_map.insert(name.clone(), id.clone());
                     
                     elements.push(CodeElement {
                         id: id.clone(),
                         name,
                         element_type: CodeElementType::Class,
-                        file_path: path.to_string_lossy().to_string(),
+                        file_path: normalized_path.to_string(),
                         line_number: line_idx,
                         language: "javascript".to_string(),
                         signature: Some(line.to_string()),
@@ -191,13 +198,13 @@ impl CodeAnalyzer {
             if line.starts_with("import ") || line.starts_with("require(") {
                 if let Some(module) = self.extract_import_js(line) {
                     // Create a module element if it doesn't exist
-                    let module_id = format!("module:{}", module);
+                    let module_id = Uuid::new_v4().to_string();
                     if !element_map.contains_key(&module_id) {
                         elements.push(CodeElement {
                             id: module_id.clone(),
                             name: module.clone(),
                             element_type: CodeElementType::Module,
-                            file_path: path.to_string_lossy().to_string(),
+                            file_path: normalized_path.to_string(),
                             line_number: line_idx,
                             language: "javascript".to_string(),
                             signature: None,
@@ -216,7 +223,7 @@ impl CodeAnalyzer {
     }
 
     /// Analyze Python files
-    fn analyze_python(&self, content: &str, path: &Path) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
+    fn analyze_python(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
         let mut elements = Vec::new();
         let mut calls = Vec::new();
         let mut element_map: HashMap<String, String> = HashMap::new();
@@ -230,14 +237,14 @@ impl CodeAnalyzer {
             // Detect function definitions
             if line.starts_with("def ") {
                 if let Some(name) = self.extract_function_name_python(line) {
-                    let id = format!("{}:{}:{}", path.to_string_lossy(), line_idx, name);
+                    let id = Uuid::new_v4().to_string();
                     element_map.insert(name.clone(), id.clone());
                     
                     elements.push(CodeElement {
                         id: id.clone(),
                         name,
                         element_type: CodeElementType::Function,
-                        file_path: path.to_string_lossy().to_string(),
+                        file_path: normalized_path.to_string(),
                         line_number: line_idx,
                         language: "python".to_string(),
                         signature: Some(line.to_string()),
@@ -252,14 +259,14 @@ impl CodeAnalyzer {
             // Detect class definitions
             if line.starts_with("class ") {
                 if let Some(name) = self.extract_class_name_python(line) {
-                    let id = format!("{}:{}:{}", path.to_string_lossy(), line_idx, name);
+                    let id = Uuid::new_v4().to_string();
                     element_map.insert(name.clone(), id.clone());
                     
                     elements.push(CodeElement {
                         id: id.clone(),
                         name,
                         element_type: CodeElementType::Class,
-                        file_path: path.to_string_lossy().to_string(),
+                        file_path: normalized_path.to_string(),
                         line_number: line_idx,
                         language: "python".to_string(),
                         signature: Some(line.to_string()),
@@ -274,13 +281,13 @@ impl CodeAnalyzer {
             // Detect imports
             if line.starts_with("import ") || line.starts_with("from ") {
                 if let Some(module) = self.extract_import_python(line) {
-                    let module_id = format!("module:{}", module);
+                    let module_id = Uuid::new_v4().to_string();
                     if !element_map.contains_key(&module_id) {
                         elements.push(CodeElement {
                             id: module_id.clone(),
                             name: module.clone(),
                             element_type: CodeElementType::Module,
-                            file_path: path.to_string_lossy().to_string(),
+                            file_path: normalized_path.to_string(),
                             line_number: line_idx,
                             language: "python".to_string(),
                             signature: None,
@@ -299,7 +306,7 @@ impl CodeAnalyzer {
     }
 
     /// Analyze Rust files
-    fn analyze_rust(&self, content: &str, path: &Path) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
+    fn analyze_rust(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
         let mut elements = Vec::new();
         let mut calls = Vec::new();
         let mut element_map: HashMap<String, String> = HashMap::new();
@@ -313,14 +320,14 @@ impl CodeAnalyzer {
             // Detect function definitions
             if line.starts_with("fn ") || line.contains(" fn ") {
                 if let Some(name) = self.extract_function_name_rust(line) {
-                    let id = format!("{}:{}:{}", path.to_string_lossy(), line_idx, name);
+                    let id = Uuid::new_v4().to_string();
                     element_map.insert(name.clone(), id.clone());
                     
                     elements.push(CodeElement {
                         id: id.clone(),
                         name,
                         element_type: CodeElementType::Function,
-                        file_path: path.to_string_lossy().to_string(),
+                        file_path: normalized_path.to_string(),
                         line_number: line_idx,
                         language: "rust".to_string(),
                         signature: Some(line.to_string()),
@@ -335,14 +342,14 @@ impl CodeAnalyzer {
             // Detect struct definitions
             if line.starts_with("struct ") || line.contains(" struct ") {
                 if let Some(name) = self.extract_struct_name_rust(line) {
-                    let id = format!("{}:{}:{}", path.to_string_lossy(), line_idx, name);
+                    let id = Uuid::new_v4().to_string();
                     element_map.insert(name.clone(), id.clone());
                     
                     elements.push(CodeElement {
                         id: id.clone(),
                         name,
                         element_type: CodeElementType::Struct,
-                        file_path: path.to_string_lossy().to_string(),
+                        file_path: normalized_path.to_string(),
                         line_number: line_idx,
                         language: "rust".to_string(),
                         signature: Some(line.to_string()),
@@ -357,14 +364,14 @@ impl CodeAnalyzer {
             // Detect enum definitions
             if line.starts_with("enum ") || line.contains(" enum ") {
                 if let Some(name) = self.extract_enum_name_rust(line) {
-                    let id = format!("{}:{}:{}", path.to_string_lossy(), line_idx, name);
+                    let id = Uuid::new_v4().to_string();
                     element_map.insert(name.clone(), id.clone());
                     
                     elements.push(CodeElement {
                         id: id.clone(),
                         name,
                         element_type: CodeElementType::Enum,
-                        file_path: path.to_string_lossy().to_string(),
+                        file_path: normalized_path.to_string(),
                         line_number: line_idx,
                         language: "rust".to_string(),
                         signature: Some(line.to_string()),
@@ -379,13 +386,13 @@ impl CodeAnalyzer {
             // Detect use statements (imports)
             if line.starts_with("use ") {
                 if let Some(module) = self.extract_use_rust(line) {
-                    let module_id = format!("module:{}", module);
+                    let module_id = Uuid::new_v4().to_string();
                     if !element_map.contains_key(&module_id) {
                         elements.push(CodeElement {
                             id: module_id.clone(),
                             name: module.clone(),
                             element_type: CodeElementType::Module,
-                            file_path: path.to_string_lossy().to_string(),
+                            file_path: normalized_path.to_string(),
                             line_number: line_idx,
                             language: "rust".to_string(),
                             signature: None,
@@ -404,7 +411,7 @@ impl CodeAnalyzer {
     }
 
     /// Analyze Go files
-    fn analyze_go(&self, content: &str, path: &Path) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
+    fn analyze_go(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
         let mut elements = Vec::new();
         let mut calls = Vec::new();
         let mut element_map: HashMap<String, String> = HashMap::new();
@@ -418,14 +425,14 @@ impl CodeAnalyzer {
             // Detect function definitions
             if line.starts_with("func ") {
                 if let Some(name) = self.extract_function_name_go(line) {
-                    let id = format!("{}:{}:{}", path.to_string_lossy(), line_idx, name);
+                    let id = Uuid::new_v4().to_string();
                     element_map.insert(name.clone(), id.clone());
                     
                     elements.push(CodeElement {
                         id: id.clone(),
                         name,
                         element_type: CodeElementType::Function,
-                        file_path: path.to_string_lossy().to_string(),
+                        file_path: normalized_path.to_string(),
                         line_number: line_idx,
                         language: "go".to_string(),
                         signature: Some(line.to_string()),
@@ -440,14 +447,14 @@ impl CodeAnalyzer {
             // Detect type definitions (structs, interfaces)
             if line.starts_with("type ") {
                 if let Some((name, element_type)) = self.extract_type_go(line) {
-                    let id = format!("{}:{}:{}", path.to_string_lossy(), line_idx, name);
+                    let id = Uuid::new_v4().to_string();
                     element_map.insert(name.clone(), id.clone());
                     
                     elements.push(CodeElement {
                         id: id.clone(),
                         name,
                         element_type,
-                        file_path: path.to_string_lossy().to_string(),
+                        file_path: normalized_path.to_string(),
                         line_number: line_idx,
                         language: "go".to_string(),
                         signature: Some(line.to_string()),
@@ -462,13 +469,13 @@ impl CodeAnalyzer {
             // Detect imports
             if line.starts_with("import ") {
                 if let Some(module) = self.extract_import_go(line) {
-                    let module_id = format!("module:{}", module);
+                    let module_id = Uuid::new_v4().to_string();
                     if !element_map.contains_key(&module_id) {
                         elements.push(CodeElement {
                             id: module_id.clone(),
                             name: module.clone(),
                             element_type: CodeElementType::Module,
-                            file_path: path.to_string_lossy().to_string(),
+                            file_path: normalized_path.to_string(),
                             line_number: line_idx,
                             language: "go".to_string(),
                             signature: None,

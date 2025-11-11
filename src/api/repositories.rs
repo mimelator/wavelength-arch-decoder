@@ -10,6 +10,7 @@ use crate::security::analyzer::SecurityAnalyzer;
 use crate::graph::GraphBuilder;
 use crate::analysis::CodeAnalyzer;
 use crate::config::StorageConfig;
+use crate::config::Config;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateRepositoryRequest {
@@ -81,24 +82,31 @@ pub async fn analyze_repository(
     _req: HttpRequest,
     body: web::Json<AnalyzeRepositoryRequest>,
 ) -> impl Responder {
-    log::info!("Starting analysis for repository ID: {}", body.repository_id);
+    let repository_id = body.repository_id.clone();
+    log::info!("Starting analysis for repository ID: {}", repository_id);
+    
+    // Start progress tracking
+    state.progress_tracker.start_analysis(&repository_id, 8);
     
     // API key validation removed for local tool simplicity
     // Get repository
+    state.progress_tracker.update_progress(&repository_id, 1, "Fetching repository information", "Loading repository details...", None);
     log::info!("Step 1/8: Fetching repository information...");
-    let repo = match state.repo_repo.find_by_id(&body.repository_id) {
+    let repo = match state.repo_repo.find_by_id(&repository_id) {
         Ok(Some(repo)) => {
             log::info!("Found repository: {} ({})", repo.name, repo.url);
             repo
         },
         Ok(None) => {
-            log::error!("Repository not found: {}", body.repository_id);
+            log::error!("Repository not found: {}", repository_id);
+            state.progress_tracker.fail_analysis(&repository_id, "Repository not found");
             return HttpResponse::NotFound().json(ErrorResponse {
                 error: "Repository not found".to_string(),
             });
         }
         Err(e) => {
             log::error!("Database error fetching repository: {}", e);
+            state.progress_tracker.fail_analysis(&repository_id, &format!("Database error: {}", e));
             return HttpResponse::InternalServerError().json(ErrorResponse {
                 error: e.to_string(),
             });
@@ -106,6 +114,7 @@ pub async fn analyze_repository(
     };
 
     // Clone/update repository
+    state.progress_tracker.update_progress(&repository_id, 2, "Initializing crawler", "Setting up repository crawler...", None);
     log::info!("Step 2/8: Initializing repository crawler...");
     let storage_config = StorageConfig {
         repository_cache_path: "./cache/repos".to_string(),
@@ -119,13 +128,21 @@ pub async fn analyze_repository(
         },
         Err(e) => {
             log::error!("Failed to initialize crawler: {}", e);
+            state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to initialize crawler: {}", e));
             return HttpResponse::InternalServerError().json(ErrorResponse {
                 error: format!("Failed to initialize crawler: {}", e),
             });
         }
     };
 
-    log::info!("Step 3/8: Cloning/updating repository from {} (branch: {})...", repo.url, repo.branch);
+    state.progress_tracker.update_progress(&repository_id, 3, "Preparing repository", 
+        if crate::ingestion::crawler::RepositoryCrawler::is_local_path(&repo.url) {
+            format!("Using local repository at {}...", repo.url)
+        } else {
+            format!("Fetching repository from {}...", repo.url)
+        }.as_str(), 
+        Some(serde_json::json!({"url": repo.url, "branch": repo.branch, "is_local": crate::ingestion::crawler::RepositoryCrawler::is_local_path(&repo.url)})));
+    log::info!("Step 3/8: Preparing repository from {} (branch: {})...", repo.url, repo.branch);
     let credentials = repo.auth_type.as_ref().and_then(|auth_type| {
         repo.auth_value.as_ref().map(|auth_value| {
             match auth_type.as_str() {
@@ -290,6 +307,7 @@ pub async fn analyze_repository(
     log::info!("Storing code elements...");
     if let Err(e) = state.code_repo.store_elements(&repo.id, &code_structure.elements) {
         log::error!("✗ Failed to store code elements: {}", e);
+        state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to store code elements: {}", e));
         return HttpResponse::InternalServerError().json(ErrorResponse {
             error: format!("Failed to store code elements: {}", e),
         });
@@ -299,6 +317,7 @@ pub async fn analyze_repository(
     log::info!("Storing code calls...");
     if let Err(e) = state.code_repo.store_calls(&repo.id, &code_structure.calls) {
         log::error!("✗ Failed to store code calls: {}", e);
+        state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to store code calls: {}", e));
         return HttpResponse::InternalServerError().json(ErrorResponse {
             error: format!("Failed to store code calls: {}", e),
         });
@@ -306,16 +325,26 @@ pub async fn analyze_repository(
     log::info!("✓ Stored {} code calls", code_structure.calls.len());
 
     // Analyze security configuration
+    state.progress_tracker.update_progress(&repository_id, 8, "Analyzing security configuration", "Scanning for security entities, API keys, and vulnerabilities...", None);
     log::info!("Step 8/8: Analyzing security configuration...");
     let security_analyzer = SecurityAnalyzer::new();
     let security_analysis = match security_analyzer.analyze_repository(&repo_path, Some(&code_structure), Some(&services)) {
         Ok(analysis) => {
             log::info!("✓ Security analysis complete: {} entities, {} relationships, {} vulnerabilities", 
                 analysis.entities.len(), analysis.relationships.len(), analysis.vulnerabilities.len());
+            state.progress_tracker.update_progress(&repository_id, 8, "Analyzing security configuration", 
+                format!("Found {} security entities, {} relationships, {} vulnerabilities", 
+                    analysis.entities.len(), analysis.relationships.len(), analysis.vulnerabilities.len()).as_str(),
+                Some(serde_json::json!({
+                    "entities": analysis.entities.len(),
+                    "relationships": analysis.relationships.len(),
+                    "vulnerabilities": analysis.vulnerabilities.len()
+                })));
             analysis
         },
         Err(e) => {
             log::error!("✗ Failed to analyze security: {}", e);
+            state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to analyze security: {}", e));
             return HttpResponse::InternalServerError().json(ErrorResponse {
                 error: format!("Failed to analyze security: {}", e),
             });
@@ -391,6 +420,80 @@ pub async fn analyze_repository(
             "security_relationships_found": security_analysis.relationships.len(),
             "security_vulnerabilities_found": security_analysis.vulnerabilities.len()
         }
+    }))
+}
+
+pub async fn delete_repository(
+    state: web::Data<ApiState>,
+    _req: HttpRequest,
+    path: web::Path<String>,
+) -> impl Responder {
+    let repository_id = path.into_inner();
+    
+    log::info!("Deleting repository: {}", repository_id);
+    
+    // Get repository info before deletion (for cache cleanup)
+    let repo = match state.repo_repo.find_by_id(&repository_id) {
+        Ok(Some(repo)) => repo,
+        Ok(None) => {
+            return HttpResponse::NotFound().json(ErrorResponse {
+                error: "Repository not found".to_string(),
+            });
+        }
+        Err(e) => {
+            log::error!("Failed to find repository: {}", e);
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to find repository: {}", e),
+            });
+        }
+    };
+    
+    // Delete all repository data from database
+    if let Err(e) = state.repo_repo.delete(&repository_id) {
+        log::error!("Failed to delete repository data: {}", e);
+        return HttpResponse::InternalServerError().json(ErrorResponse {
+            error: format!("Failed to delete repository: {}", e),
+        });
+    }
+    
+    // Remove cached repository files
+    let config = match Config::from_env() {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to load config for cache cleanup: {}", e);
+            // Continue even if we can't clean cache
+            return HttpResponse::Ok().json(serde_json::json!({
+                "message": "Repository deleted successfully",
+                "repository_id": repository_id,
+                "warning": "Cache cleanup failed, but repository data was deleted"
+            }));
+        }
+    };
+    
+    let crawler = match RepositoryCrawler::new(&config.storage) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to create crawler for cache cleanup: {}", e);
+            // Continue even if we can't clean cache
+            return HttpResponse::Ok().json(serde_json::json!({
+                "message": "Repository deleted successfully",
+                "repository_id": repository_id,
+                "warning": "Cache cleanup failed, but repository data was deleted"
+            }));
+        }
+    };
+    
+    if let Err(e) = crawler.remove_repository(&repo.url) {
+        log::warn!("Failed to remove repository cache: {}", e);
+        // Continue even if cache cleanup fails
+    } else {
+        log::info!("Removed repository cache for: {}", repo.url);
+    }
+    
+    log::info!("✓ Successfully deleted repository: {}", repository_id);
+    HttpResponse::Ok().json(serde_json::json!({
+        "message": "Repository deleted successfully",
+        "repository_id": repository_id
     }))
 }
 

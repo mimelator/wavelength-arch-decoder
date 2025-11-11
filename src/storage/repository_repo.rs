@@ -163,7 +163,45 @@ impl RepositoryRepository {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
+        // Temporarily disable foreign key constraints to allow cascading deletes
+        conn.execute("PRAGMA foreign_keys = OFF", [])?;
+        
+        // Delete in order: child tables first, then parent
+        // Graph edges (references graph_nodes)
+        conn.execute(
+            "DELETE FROM graph_edges WHERE source_node_id IN (SELECT id FROM graph_nodes WHERE repository_id = ?1) OR target_node_id IN (SELECT id FROM graph_nodes WHERE repository_id = ?1)",
+            params![id],
+        )?;
+        
+        // Graph nodes
+        conn.execute("DELETE FROM graph_nodes WHERE repository_id = ?1", params![id])?;
+        
+        // Code calls (references code_elements)
+        conn.execute("DELETE FROM code_calls WHERE repository_id = ?1", params![id])?;
+        
+        // Code elements
+        conn.execute("DELETE FROM code_elements WHERE repository_id = ?1", params![id])?;
+        
+        // Security relationships (references security_entities)
+        conn.execute("DELETE FROM security_relationships WHERE repository_id = ?1", params![id])?;
+        
+        // Security vulnerabilities (references security_entities)
+        conn.execute("DELETE FROM security_vulnerabilities WHERE repository_id = ?1", params![id])?;
+        
+        // Security entities
+        conn.execute("DELETE FROM security_entities WHERE repository_id = ?1", params![id])?;
+        
+        // Services
+        conn.execute("DELETE FROM services WHERE repository_id = ?1", params![id])?;
+        
+        // Dependencies
+        conn.execute("DELETE FROM dependencies WHERE repository_id = ?1", params![id])?;
+        
+        // Finally, delete the repository itself
         conn.execute("DELETE FROM repositories WHERE id = ?1", params![id])?;
+        
+        // Re-enable foreign key constraints
+        conn.execute("PRAGMA foreign_keys = ON", [])?;
         
         Ok(())
     }

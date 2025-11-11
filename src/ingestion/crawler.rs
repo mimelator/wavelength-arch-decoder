@@ -31,9 +31,68 @@ impl RepositoryCrawler {
             cache_path,
         })
     }
+    
+    /// Check if a URL is a local file path (public method for use in API)
+    pub fn is_local_path(url: &str) -> bool {
+        // Check for common local path indicators:
+        // - Absolute paths starting with /
+        // - Relative paths starting with ./ or ../
+        // - file:// protocol
+        // - Paths that don't contain :// (which would indicate http://, https://, git@, etc.)
+        url.starts_with('/') 
+            || url.starts_with("./") 
+            || url.starts_with("../")
+            || url.starts_with("file://")
+            || (!url.contains("://") && !url.contains('@') && PathBuf::from(url).exists())
+    }
 
-    /// Clone or update a repository from a URL
+    /// Clone or update a repository from a URL, or use a local path directly
     pub fn clone_or_update(&self, url: &str, branch: Option<&str>, credentials: Option<&RepositoryCredentials>) -> Result<PathBuf> {
+        // Check if this is a local file path
+        if Self::is_local_path(url) {
+            log::info!("Detected local repository path: {}", url);
+            
+            // Convert file:// URLs to actual paths
+            let local_path = if url.starts_with("file://") {
+                // file:// URLs: file:///absolute/path or file://relative/path
+                // Strip the file:// prefix
+                let path_str = url.strip_prefix("file://").unwrap_or(url);
+                // Handle triple slash (file:///) which is correct for absolute paths
+                let path_str = if path_str.starts_with("//") && path_str.len() > 2 {
+                    // file:///path -> /path
+                    &path_str[1..]
+                } else if path_str.starts_with("/") {
+                    // file:///path (already correct)
+                    path_str
+                } else {
+                    // file://relative/path -> relative/path
+                    path_str
+                };
+                PathBuf::from(path_str)
+            } else {
+                PathBuf::from(url)
+            };
+            
+            // Validate that the path exists and is a directory
+            if !local_path.exists() {
+                return Err(anyhow::anyhow!("Local repository path does not exist: {} (resolved to: {})", url, local_path.display()));
+            }
+            
+            if !local_path.is_dir() {
+                return Err(anyhow::anyhow!("Local repository path is not a directory: {} (resolved to: {})", url, local_path.display()));
+            }
+            
+            // Check if it's a git repository
+            let git_dir = local_path.join(".git");
+            if !git_dir.exists() {
+                log::warn!("Local path does not appear to be a git repository (no .git directory), but proceeding anyway");
+            }
+            
+            log::info!("Using local repository path directly: {}", local_path.display());
+            return Ok(local_path);
+        }
+        
+        // Otherwise, treat as remote URL and clone/update
         let repo_name = self.extract_repo_name(url);
         let repo_path = self.cache_path.join(&repo_name);
         let branch = branch.unwrap_or("main");
@@ -48,6 +107,7 @@ impl RepositoryCrawler {
 
         Ok(repo_path)
     }
+    
 
     /// Clone a repository
     fn clone_repository(&self, url: &str, path: &Path, branch: &str, credentials: Option<&RepositoryCredentials>) -> Result<()> {
@@ -157,22 +217,86 @@ impl RepositoryCrawler {
     fn update_repository(&self, path: &Path, branch: &str, credentials: Option<&RepositoryCredentials>) -> Result<()> {
         log::info!("Updating repository at {}", path.display());
         
+        log::info!("Opening repository...");
         let repo = Repository::open(path)?;
+        log::info!("✓ Repository opened successfully");
         
         // Fetch latest changes
+        log::info!("Finding remote 'origin'...");
         let mut remote = repo.find_remote("origin")
-            .or_else(|_| repo.remote("origin", "origin"))?;
+            .or_else(|_| {
+                log::info!("Remote 'origin' not found, creating it...");
+                repo.remote("origin", "origin")
+            })?;
+        log::info!("✓ Remote 'origin' found/created");
+        
+        // Log remote URL for diagnostics
+        let remote_url = remote.url().unwrap_or("unknown");
+        log::info!("Remote URL: {}", remote_url);
         
         let mut fetch_options = FetchOptions::new();
+        fetch_options.download_tags(git2::AutotagOption::None); // Don't download tags to speed up
         let mut callbacks = RemoteCallbacks::new();
         let creds = credentials.cloned();
-        callbacks.credentials(move |url_str, username_from_url, allowed_types| {
-            Self::get_credentials(url_str, username_from_url, allowed_types, creds.as_ref())
+        
+        // Add progress callback to see what's happening
+        callbacks.transfer_progress(|stats| {
+            log::info!("Git fetch progress: received {} objects, indexed {} objects, received {} bytes", 
+                stats.received_objects(), stats.indexed_objects(), stats.received_bytes());
+            true // Continue the fetch
         });
+        
+        // Add sideband progress callback for more detailed output
+        callbacks.sideband_progress(|data| {
+            if let Ok(msg) = std::str::from_utf8(data) {
+                let msg = msg.trim();
+                if !msg.is_empty() && !msg.contains("pack") && !msg.contains("Enumerating") {
+                    log::debug!("Git fetch: {}", msg);
+                }
+            }
+            true
+        });
+        
+        callbacks.credentials(move |url_str, username_from_url, allowed_types| {
+            log::info!("Git credentials requested for URL: {}, username: {:?}, allowed_types: {:?}", 
+                url_str, username_from_url, allowed_types);
+            let result = Self::get_credentials(url_str, username_from_url, allowed_types, creds.as_ref());
+            match &result {
+                Ok(_) => log::info!("✓ Credentials provided successfully"),
+                Err(e) => log::warn!("✗ Credential error: {}", e),
+            }
+            result
+        });
+        
         fetch_options.remote_callbacks(callbacks);
 
-        // Fetch all branches to ensure we have the latest refs
-        remote.fetch(&["refs/heads/*:refs/remotes/origin/*"], Some(&mut fetch_options), None)?;
+        // Fetch only the specific branch to speed up large repositories
+        log::info!("Fetching branch '{}' from origin (URL: {})...", branch, remote_url);
+        let fetch_start = std::time::Instant::now();
+        let branch_ref = format!("refs/heads/{}", branch);
+        match remote.fetch(&[&branch_ref], Some(&mut fetch_options), None) {
+            Ok(_) => {
+                let fetch_duration = fetch_start.elapsed();
+                log::info!("✓ Successfully fetched branch '{}' in {:?}", branch, fetch_duration);
+            },
+            Err(e) => {
+                let fetch_duration = fetch_start.elapsed();
+                log::warn!("Failed to fetch specific branch '{}' after {:?}: {}. Trying all branches...", branch, fetch_duration, e);
+                // Fallback: fetch all branches if specific branch fetch fails
+                let fallback_start = std::time::Instant::now();
+                match remote.fetch(&["refs/heads/*:refs/remotes/origin/*"], Some(&mut fetch_options), None) {
+                    Ok(_) => {
+                        let fallback_duration = fallback_start.elapsed();
+                        log::info!("✓ Successfully fetched all branches in {:?}", fallback_duration);
+                    },
+                    Err(e2) => {
+                        let fallback_duration = fallback_start.elapsed();
+                        return Err(anyhow::anyhow!("Failed to fetch branches after {:?} (specific branch) and {:?} (all branches): {} / {}", 
+                            fetch_duration, fallback_duration, e, e2));
+                    }
+                }
+            }
+        }
         
         // Try to find the branch, fallback to main/master if not found
         let branch_ref = format!("refs/remotes/origin/{}", branch);
@@ -325,7 +449,24 @@ impl RepositoryCrawler {
     }
 
     /// Get the repository path for a given URL
+    /// Get the repository path for a URL (handles both local and remote)
     pub fn get_repo_path(&self, url: &str) -> PathBuf {
+        // If it's a local path, return it directly (with file:// conversion)
+        if Self::is_local_path(url) {
+            if url.starts_with("file://") {
+                // Convert file:// URLs to actual paths
+                let path_str = url.strip_prefix("file://").unwrap_or(url);
+                let path_str = if path_str.starts_with("//") && path_str.len() > 2 {
+                    &path_str[1..]
+                } else {
+                    path_str
+                };
+                return PathBuf::from(path_str);
+            }
+            return PathBuf::from(url);
+        }
+        
+        // Otherwise, use the cache path
         let repo_name = self.extract_repo_name(url);
         self.cache_path.join(&repo_name)
     }
@@ -335,8 +476,14 @@ impl RepositoryCrawler {
         self.get_repo_path(url).exists()
     }
 
-    /// Remove a repository from cache
+    /// Remove a repository from cache (only works for cached repos, not local paths)
     pub fn remove_repository(&self, url: &str) -> Result<()> {
+        // Don't try to remove local paths
+        if Self::is_local_path(url) {
+            log::info!("Skipping removal of local repository path: {}", url);
+            return Ok(());
+        }
+        
         let repo_path = self.get_repo_path(url);
         if repo_path.exists() {
             fs::remove_dir_all(&repo_path)?;

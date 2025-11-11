@@ -1,3 +1,10 @@
+// Helper function to generate short ID for display
+function getShortId(fullId) {
+    if (!fullId) return 'N/A';
+    // Use first 8 characters of UUID
+    return fullId.substring(0, 8);
+}
+
 // Main Application
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
@@ -342,6 +349,7 @@ function displayRepositories(repos, containerId) {
             <div class="repo-actions">
                 <button class="btn btn-primary btn-analyze" onclick="analyzeRepository('${repo.id}')">Analyze</button>
                 <button class="btn btn-secondary" onclick="viewRepository('${repo.id}')">View</button>
+                <button class="btn btn-danger" onclick="deleteRepository('${repo.id}', '${escapeHtml(repo.name)}')" title="Delete repository">Delete</button>
             </div>
         </div>
     `).join('');
@@ -1029,6 +1037,7 @@ window.analyzeRepository = async function(repoId) {
     ];
     
     let currentStep = 0;
+    let lastUpdateTime = Date.now();
     const updateProgress = () => {
         if (statusDiv && currentStep < steps.length) {
             const progress = ((currentStep + 1) / steps.length * 100).toFixed(0);
@@ -1038,6 +1047,9 @@ window.analyzeRepository = async function(repoId) {
                         <div class="progress-fill" style="width: ${progress}%"></div>
                     </div>
                     <div class="progress-text">Step ${currentStep + 1}/${steps.length}: ${steps[currentStep]}</div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                        ⏳ Analysis in progress... This may take several minutes for large repositories.
+                    </div>
                 </div>
             `;
             statusDiv.style.display = 'block';
@@ -1048,13 +1060,23 @@ window.analyzeRepository = async function(repoId) {
     // Show initial progress
     updateProgress();
     
-    // Simulate progress updates (since we can't get real-time updates from the server)
+    // Simulate progress updates - but much slower and more realistic
+    // Only advance if enough time has passed (15 seconds per step minimum)
     const progressInterval = setInterval(() => {
-        if (currentStep < steps.length - 1) {
+        const now = Date.now();
+        const timeSinceLastUpdate = now - lastUpdateTime;
+        
+        // Only advance if we've been on this step for at least 15 seconds
+        // This prevents the UI from getting ahead of the actual server progress
+        if (currentStep < steps.length - 1 && timeSinceLastUpdate >= 15000) {
             currentStep++;
+            lastUpdateTime = now;
+            updateProgress();
+        } else if (currentStep < steps.length - 1) {
+            // Still update the display to show we're waiting
             updateProgress();
         }
-    }, 2000); // Update every 2 seconds
+    }, 5000); // Check every 5 seconds, but only advance every 15 seconds
     
     try {
         console.log(`Starting analysis for repository ${repoId}...`);
@@ -1131,6 +1153,54 @@ window.viewRepository = async function(repoId) {
     await loadRepositoryDetail(repoId);
 };
 
+// Delete repository function
+window.deleteRepository = async function(repoId, repoName) {
+    const confirmed = confirm(
+        `Are you sure you want to delete "${repoName}"?\n\n` +
+        `This will permanently delete:\n` +
+        `- Repository registration\n` +
+        `- All dependencies\n` +
+        `- All services\n` +
+        `- All code elements\n` +
+        `- All security entities\n` +
+        `- All graph data\n` +
+        `- Cached repository files\n\n` +
+        `This action cannot be undone.`
+    );
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    try {
+        await api.deleteRepository(repoId);
+        
+        // Show success message
+        alert(`Repository "${repoName}" has been deleted successfully.`);
+        
+        // If we're on the repository detail page, go back to repositories list
+        const currentPage = document.querySelector('.page.active')?.id;
+        if (currentPage === 'repository-detail') {
+            showPage('repositories');
+        }
+        
+        // Reload repositories list
+        await loadRepositories();
+        
+        // Reload dashboard if visible
+        if (currentPage === 'dashboard') {
+            await loadDashboard();
+        }
+        
+        // Reload graph repository list
+        await loadRepositoriesForGraph();
+        
+    } catch (error) {
+        console.error('Failed to delete repository:', error);
+        alert(`Failed to delete repository: ${error.message}`);
+    }
+};
+
 let currentRepoId = null;
 
 async function loadRepositoryDetail(repoId) {
@@ -1154,6 +1224,12 @@ async function loadRepositoryDetail(repoId) {
         analyzeBtn.onclick = () => {
             window.analyzeRepository(repoId);
             setTimeout(() => loadRepositoryDetail(repoId), 5000);
+        };
+        
+        // Setup delete button
+        const deleteBtn = document.getElementById('btn-delete-detail');
+        deleteBtn.onclick = () => {
+            deleteRepository(repoId, repo.name);
         };
         
         // Setup tabs
@@ -1333,7 +1409,10 @@ function filterAndRenderDependencies() {
             <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'dependency', '${dep.id}')">
                 <div class="detail-item-header">
                     <strong>${escapeHtml(dep.name)}</strong>
-                    <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <span class="entity-id-badge" title="Entity ID: ${dep.id}">ID: ${getShortId(dep.id)}</span>
+                        <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
+                    </div>
                 </div>
                 <div class="detail-meta">
                     ${dep.package_manager ? `<span>${escapeHtml(dep.package_manager)}</span>` : ''}
@@ -1366,7 +1445,10 @@ function filterAndRenderDependencies() {
                         <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'dependency', '${dep.id}')">
                             <div class="detail-item-header">
                                 <strong>${escapeHtml(dep.name)}</strong>
-                                <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <span class="entity-id-badge" title="Entity ID: ${dep.id}">ID: ${getShortId(dep.id)}</span>
+                                    <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
+                                </div>
                             </div>
                             ${dep.file_path && currentDependenciesGroupBy !== 'file' ? `<p class="detail-meta">Found in: ${escapeHtml(dep.file_path)}</p>` : ''}
                         </div>
@@ -1492,7 +1574,10 @@ function filterAndRenderServices() {
             <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'service', '${svc.id}')">
                 <div class="detail-item-header">
                     <strong>${escapeHtml(svc.name)}</strong>
-                    <span class="detail-badge">${escapeHtml(svc.service_type || 'service')}</span>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <span class="entity-id-badge" title="Entity ID: ${svc.id}">ID: ${getShortId(svc.id)}</span>
+                        <span class="detail-badge">${escapeHtml(svc.service_type || 'service')}</span>
+                    </div>
                 </div>
                 <div class="detail-meta">
                     ${svc.provider ? `<span>${escapeHtml(svc.provider)}</span>` : ''}
@@ -1524,7 +1609,10 @@ function filterAndRenderServices() {
                         <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'service', '${svc.id}')">
                             <div class="detail-item-header">
                                 <strong>${escapeHtml(svc.name)}</strong>
-                                <span class="detail-badge">${escapeHtml(svc.service_type || 'service')}</span>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <span class="entity-id-badge" title="Entity ID: ${svc.id}">ID: ${getShortId(svc.id)}</span>
+                                    <span class="detail-badge">${escapeHtml(svc.service_type || 'service')}</span>
+                                </div>
                             </div>
                             ${svc.provider && currentServicesGroupBy !== 'provider' ? `<p class="detail-meta">Provider: ${escapeHtml(svc.provider)}</p>` : ''}
                             ${svc.file_path && currentServicesGroupBy !== 'file' ? `<p class="detail-meta">Found in: ${escapeHtml(svc.file_path)}</p>` : ''}
@@ -1692,7 +1780,10 @@ function renderCodeElementsList(elements, showAll = false) {
         <div class="detail-item clickable" data-code-name="${escapeHtml(el.name.toLowerCase())}" onclick="showEntityDetail('${currentRepoId || ''}', 'code_element', '${el.id}')">
             <div class="detail-item-header">
                 <strong>${escapeHtml(el.name)}</strong>
-                <span class="detail-badge">${escapeHtml(el.language || 'unknown')}</span>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <span class="entity-id-badge" title="Entity ID: ${el.id}">ID: ${getShortId(el.id)}</span>
+                    <span class="detail-badge">${escapeHtml(el.language || 'unknown')}</span>
+                </div>
             </div>
             ${el.file_path ? `<p class="detail-meta">File: ${escapeHtml(el.file_path)}${el.line_number ? ` (line ${el.line_number})` : ''}</p>` : ''}
             ${el.element_type ? `<p class="detail-meta" style="font-size: 0.75rem; color: var(--text-secondary);">Type: ${escapeHtml(el.element_type)}</p>` : ''}
@@ -1968,9 +2059,12 @@ function renderSecurityEntitiesList(entities, showAll = false) {
             <div class="detail-item clickable ${hasVulns ? 'has-vulnerability' : ''}" onclick="showEntityDetail('${currentRepoId || ''}', 'security_entity', '${entity.id}')">
                 <div class="detail-item-header">
                     <strong>${escapeHtml(keyName)}</strong>
-                    <span class="detail-badge ${keyType === 'hardcoded' ? 'badge-critical' : 'badge-info'}">${escapeHtml(keyType)}</span>
-                    <span class="detail-badge">${escapeHtml(provider)}</span>
-                    ${hasVulns ? '<span class="detail-badge badge-warning">⚠ Vulnerable</span>' : ''}
+                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        <span class="entity-id-badge" title="Entity ID: ${entity.id}">ID: ${getShortId(entity.id)}</span>
+                        <span class="detail-badge ${keyType === 'hardcoded' ? 'badge-critical' : 'badge-info'}">${escapeHtml(keyType)}</span>
+                        <span class="detail-badge">${escapeHtml(provider)}</span>
+                        ${hasVulns ? '<span class="detail-badge badge-warning">⚠ Vulnerable</span>' : ''}
+                    </div>
                 </div>
                 <div class="detail-meta">
                     ${entity.file_path ? `<p><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}</p>` : ''}
@@ -2000,8 +2094,11 @@ function renderSecurityEntitiesList(entities, showAll = false) {
         <div class="detail-item clickable ${hasVulns ? 'has-vulnerability' : ''}" onclick="showEntityDetail('${currentRepoId || ''}', 'security_entity', '${entity.id}')">
             <div class="detail-item-header">
                 <strong>${escapeHtml(entity.name)}</strong>
-                ${entity.provider ? `<span class="detail-badge">${escapeHtml(entity.provider)}</span>` : ''}
-                ${hasVulns ? '<span class="detail-badge badge-warning">⚠ Vulnerable</span>' : ''}
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <span class="entity-id-badge" title="Entity ID: ${entity.id}">ID: ${getShortId(entity.id)}</span>
+                    ${entity.provider ? `<span class="detail-badge">${escapeHtml(entity.provider)}</span>` : ''}
+                    ${hasVulns ? '<span class="detail-badge badge-warning">⚠ Vulnerable</span>' : ''}
+                </div>
             </div>
             ${entity.arn ? `<p class="detail-meta"><strong>ARN:</strong> <code>${escapeHtml(entity.arn)}</code></p>` : ''}
             ${entity.file_path ? `<p class="detail-meta"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}</p>` : ''}

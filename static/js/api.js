@@ -85,6 +85,12 @@ class WavelengthAPI {
         });
     }
 
+    async deleteRepository(id) {
+        return this.request(`/repositories/${id}`, {
+            method: 'DELETE',
+        });
+    }
+
     async getDependencies(repoId) {
         return this.request(`/repositories/${repoId}/dependencies`);
     }

@@ -6,6 +6,7 @@ use crate::graphql::GraphQLSchema;
 use crate::api::repositories::{
     create_repository, list_repositories, get_repository,
     analyze_repository, get_dependencies, search_dependencies,
+    delete_repository,
 };
 use crate::api::services::{get_services, search_services_by_provider};
 use crate::api::graph::{get_graph, get_graph_statistics, get_node_neighbors};
@@ -13,10 +14,13 @@ use crate::api::code::{get_code_elements, get_code_calls};
 use crate::api::security::{get_security_entities, get_security_relationships, get_security_vulnerabilities};
 use crate::api::entity_details::get_entity_details;
 use crate::api::jobs::{create_job, get_job_status, list_jobs, create_scheduled_job, batch_analyze};
+use crate::api::progress::get_analysis_progress;
 use crate::crawler::webhooks::{handle_github_webhook, handle_gitlab_webhook};
 use crate::auth::AuthService;
 use crate::config::Config;
 use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, SecurityRepository};
+use crate::api::progress::ProgressTracker;
+use std::sync::Arc;
 use actix_web::HttpResponse;
 use std::fs;
 
@@ -49,6 +53,9 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
         config.security.api_key_encryption_key.clone(),
     );
     
+    // Initialize progress tracker
+    let progress_tracker = Arc::new(ProgressTracker::new());
+    
     // Create API state
     let api_state = web::Data::new(ApiState {
         auth_service,
@@ -57,7 +64,11 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
         service_repo: service_repo.clone(),
         code_repo: code_repo.clone(),
         security_repo: security_repo.clone(),
+        progress_tracker: progress_tracker.clone(),
     });
+    
+    // Create progress tracker state for the progress endpoint
+    let progress_state = web::Data::new(progress_tracker.clone());
 
     // Create GraphQL schema
     let schema = GraphQLSchema::build(
@@ -88,6 +99,7 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(api_state.clone())
+            .app_data(progress_state.clone())
             .app_data(schema.clone())
             .route("/health", web::get().to(health))
             .route("/graphql", web::post().to(graphql_handler))
@@ -108,7 +120,9 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     .route("/repositories", web::post().to(create_repository))
                     .route("/repositories", web::get().to(list_repositories))
                     .route("/repositories/{id}", web::get().to(get_repository))
+                    .route("/repositories/{id}", web::delete().to(delete_repository))
                     .route("/repositories/{id}/analyze", web::post().to(analyze_repository))
+                    .route("/repositories/{id}/progress", web::get().to(get_analysis_progress))
                     .route("/repositories/{id}/dependencies", web::get().to(get_dependencies))
                     // Dependency search
                     .route("/dependencies/search", web::get().to(search_dependencies))
