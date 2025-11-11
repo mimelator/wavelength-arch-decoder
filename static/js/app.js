@@ -299,7 +299,7 @@ function displayRepositories(repos, containerId) {
     }
     
     container.innerHTML = repos.map(repo => `
-        <div class="repo-item">
+        <div class="repo-item" data-repo-id="${repo.id}">
             <div class="repo-info">
                 <h3>${escapeHtml(repo.name)}</h3>
                 <p>${escapeHtml(repo.url)}</p>
@@ -307,9 +307,10 @@ function displayRepositories(repos, containerId) {
                     Branch: ${escapeHtml(repo.branch)} | 
                     ${repo.last_analyzed_at ? `Last analyzed: ${new Date(repo.last_analyzed_at).toLocaleDateString()}` : 'Not analyzed yet'}
                 </p>
+                <div class="analysis-status" style="display: none; margin-top: 0.5rem;"></div>
             </div>
             <div class="repo-actions">
-                <button class="btn btn-primary" onclick="analyzeRepository('${repo.id}')">Analyze</button>
+                <button class="btn btn-primary btn-analyze" onclick="analyzeRepository('${repo.id}')">Analyze</button>
                 <button class="btn btn-secondary" onclick="viewRepository('${repo.id}')">View</button>
             </div>
         </div>
@@ -599,11 +600,107 @@ function showError(message) {
 
 // Global functions for onclick handlers
 window.analyzeRepository = async function(repoId) {
+    // Find the repository item to show progress
+    const repoItem = document.querySelector(`[data-repo-id="${repoId}"]`);
+    const analyzeBtn = repoItem?.querySelector('.btn-analyze');
+    const statusDiv = repoItem?.querySelector('.analysis-status');
+    
+    // Show loading state
+    if (analyzeBtn) {
+        analyzeBtn.disabled = true;
+        analyzeBtn.textContent = 'Analyzing...';
+    }
+    
+    if (statusDiv) {
+        statusDiv.innerHTML = '<div class="analysis-progress">Starting analysis...</div>';
+        statusDiv.style.display = 'block';
+    }
+    
+    const steps = [
+        'Fetching repository information...',
+        'Initializing crawler...',
+        'Cloning/updating repository...',
+        'Extracting dependencies...',
+        'Detecting services...',
+        'Building knowledge graph...',
+        'Analyzing code structure...',
+        'Analyzing security configuration...',
+        'Finalizing...'
+    ];
+    
+    let currentStep = 0;
+    const updateProgress = () => {
+        if (statusDiv && currentStep < steps.length) {
+            const progress = ((currentStep + 1) / steps.length * 100).toFixed(0);
+            statusDiv.innerHTML = `
+                <div class="analysis-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${progress}%"></div>
+                    </div>
+                    <div class="progress-text">Step ${currentStep + 1}/${steps.length}: ${steps[currentStep]}</div>
+                </div>
+            `;
+        }
+    };
+    
+    // Simulate progress updates (since we can't get real-time updates from the server)
+    const progressInterval = setInterval(() => {
+        if (currentStep < steps.length - 1) {
+            currentStep++;
+            updateProgress();
+        }
+    }, 2000); // Update every 2 seconds
+    
     try {
-        await api.analyzeRepository(repoId);
-        alert('Analysis started! This may take a few moments.');
-        loadRepositories();
+        console.log(`Starting analysis for repository ${repoId}...`);
+        const result = await api.analyzeRepository(repoId);
+        
+        clearInterval(progressInterval);
+        
+        if (statusDiv) {
+            statusDiv.innerHTML = `
+                <div class="analysis-success">
+                    <strong>✓ Analysis Complete!</strong>
+                    <div class="analysis-results">
+                        <div>📦 ${result.results?.total_dependencies || 0} dependencies</div>
+                        <div>🔌 ${result.results?.services_found || 0} services</div>
+                        <div>📝 ${result.results?.code_elements_found || 0} code elements</div>
+                        <div>🔒 ${result.results?.security_entities_found || 0} security entities</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        if (analyzeBtn) {
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = 'Re-analyze';
+        }
+        
+        // Reload repositories to show updated status
+        setTimeout(() => {
+            loadRepositories();
+        }, 2000);
+        
+        console.log('Analysis result:', result);
     } catch (error) {
+        clearInterval(progressInterval);
+        
+        console.error('Analysis error:', error);
+        
+        if (statusDiv) {
+            statusDiv.innerHTML = `
+                <div class="analysis-error">
+                    <strong>✗ Analysis Failed</strong>
+                    <div class="error-details">${escapeHtml(error.message)}</div>
+                </div>
+            `;
+        }
+        
+        if (analyzeBtn) {
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = 'Analyze';
+        }
+        
         alert('Failed to start analysis: ' + error.message);
     }
 };
