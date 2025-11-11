@@ -96,10 +96,11 @@ impl RepositoryCrawler {
                 for branch_name in branches_to_try {
                     let branch_ref = format!("refs/remotes/origin/{}", branch_name);
                     if let Ok(oid) = repo.refname_to_id(&branch_ref) {
+                        let commit = repo.find_commit(oid)?;
                         let object = repo.find_object(oid, None)?;
                         repo.checkout_tree(&object, None)?;
                         let local_ref = format!("refs/heads/{}", branch_name);
-                        repo.branch(branch_name, &object, false)?;
+                        repo.branch(branch_name, &commit, false)?;
                         repo.set_head(&local_ref)?;
                         log::info!("Checked out branch '{}'", branch_name);
                         return Ok(());
@@ -167,7 +168,8 @@ impl RepositoryCrawler {
             }
             Err(_) => {
                 // Create local branch if it doesn't exist
-                repo.branch(&actual_branch, &repo.find_object(oid, None)?, false)?;
+                let commit = repo.find_commit(oid)?;
+                repo.branch(&actual_branch, &commit, false)?;
             }
         }
         
