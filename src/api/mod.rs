@@ -6,6 +6,7 @@ use crate::storage::{RepositoryRepository, DependencyRepository, ServiceReposito
 pub mod server;
 pub mod repositories;
 pub mod services;
+pub mod graph;
 
 pub struct ApiState {
     pub auth_service: AuthService,

@@ -5,6 +5,7 @@ use crate::api::repositories::{
     analyze_repository, get_dependencies, search_dependencies,
 };
 use crate::api::services::{get_services, search_services_by_provider};
+use crate::api::graph::{get_graph, get_graph_statistics, get_node_neighbors};
 use crate::auth::AuthService;
 use crate::config::Config;
 use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository};

@@ -30,8 +30,9 @@ pub struct StoredDependency {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Clone)]
 pub struct RepositoryRepository {
-    db: Database,
+    pub db: Database,
 }
 
 impl RepositoryRepository {
@@ -149,6 +150,7 @@ impl RepositoryRepository {
     }
 }
 
+#[derive(Clone)]
 pub struct DependencyRepository {
     db: Database,
 }

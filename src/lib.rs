@@ -6,4 +6,5 @@ pub mod ingestion;
 pub mod parsers;
 pub mod analysis;
 pub mod security;
+pub mod graph;
 

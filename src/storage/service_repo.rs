@@ -19,6 +19,7 @@ pub struct StoredService {
     pub created_at: String,
 }
 
+#[derive(Clone)]
 pub struct ServiceRepository {
     db: Database,
 }

@@ -6,6 +6,7 @@ use crate::storage::{RepositoryRepository, DependencyRepository};
 use crate::ingestion::RepositoryCrawler;
 use crate::analysis::DependencyExtractor;
 use crate::security::ServiceDetector;
+use crate::graph::GraphBuilder;
 use crate::config::StorageConfig;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -222,6 +223,29 @@ pub async fn analyze_repository(
         });
     }
 
+    // Build and store knowledge graph
+    let graph_builder = GraphBuilder::new(
+        state.repo_repo.db.clone(),
+        state.repo_repo.clone(),
+        state.dep_repo.clone(),
+        state.service_repo.clone(),
+    );
+    
+    match graph_builder.build_for_repository(&repo.id) {
+        Ok(graph) => {
+            if let Err(e) = graph_builder.store_graph(&repo.id, &graph) {
+                return HttpResponse::InternalServerError().json(ErrorResponse {
+                    error: format!("Failed to store graph: {}", e),
+                });
+            }
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to build graph: {}", e),
+            });
+        }
+    }
+
     // Update last analyzed timestamp
     if let Err(e) = state.repo_repo.update_last_analyzed(&repo.id) {
         return HttpResponse::InternalServerError().json(ErrorResponse {
@@ -233,7 +257,8 @@ pub async fn analyze_repository(
         "message": "Repository analyzed successfully",
         "manifests_found": manifests.len(),
         "total_dependencies": manifests.iter().map(|m| m.dependencies.len()).sum::<usize>(),
-        "services_found": services.len()
+        "services_found": services.len(),
+        "graph_built": true
     }))
 }
 
