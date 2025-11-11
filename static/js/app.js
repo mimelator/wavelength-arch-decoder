@@ -434,16 +434,18 @@ function renderEnhancedGraph(graphData, container) {
             color: getNodeColor(nodeType),
             shape: getNodeShape(nodeType),
             font: {
-                size: 14,
+                size: 18,
                 face: 'Arial',
                 multi: 'html',
             },
             borderWidth: 2,
+            size: 25,
             chosen: {
                 node: function(values, id, selected, hovering) {
                     if (hovering || selected) {
                         values.borderWidth = 4;
-                        values.size = 30;
+                        values.size = 35;
+                        values.font.size = 20;
                     }
                 }
             }
@@ -505,20 +507,22 @@ function renderEnhancedGraph(graphData, container) {
     const options = {
         nodes: {
             font: { 
-                size: 14,
+                size: 18,
                 face: 'Arial',
                 multi: 'html',
             },
             borderWidth: 2,
             shadow: true,
+            size: 25,
             scaling: {
-                min: 10,
-                max: 30,
+                min: 20,
+                max: 40,
             },
+            margin: 20,
         },
         edges: {
             font: { 
-                size: 11, 
+                size: 13, 
                 align: 'middle',
                 background: 'white',
                 strokeWidth: 2,
@@ -534,19 +538,20 @@ function renderEnhancedGraph(graphData, container) {
                 }
             },
             shadow: true,
+            length: 300,
         },
         physics: {
             enabled: true,
             stabilization: { 
-                iterations: 200,
+                iterations: 300,
                 fit: true,
             },
             barnesHut: {
-                gravitationalConstant: -2000,
-                centralGravity: 0.1,
-                springLength: 200,
-                springConstant: 0.04,
-                damping: 0.09,
+                gravitationalConstant: -3000,
+                centralGravity: 0.05,
+                springLength: 300,
+                springConstant: 0.03,
+                damping: 0.1,
             },
         },
         interaction: {
@@ -554,6 +559,7 @@ function renderEnhancedGraph(graphData, container) {
             tooltipDelay: 100,
             zoomView: true,
             dragView: true,
+            zoomSpeed: 0.5,
         },
         layout: {
             improvedLayout: true,

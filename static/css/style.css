@@ -281,9 +281,11 @@ body {
     background: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: 0.5rem;
-    height: 600px;
+    height: 800px;
+    min-height: 800px;
     position: relative;
     overflow: hidden;
+    width: 100%;
 }
 
 .graph-placeholder {
