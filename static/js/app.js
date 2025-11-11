@@ -55,7 +55,15 @@ function setupAuth() {
                 showApiKey(result.api_key || 'API key received');
             } catch (error) {
                 resultDiv.className = 'auth-result error';
-                resultDiv.textContent = 'Registration failed: ' + error.message;
+                // Provide more helpful error messages
+                let errorMsg = error.message || 'Registration failed';
+                if (errorMsg.includes('already exists') || errorMsg.includes('duplicate')) {
+                    errorMsg = 'An account with this email already exists. Please login instead.';
+                } else if (errorMsg.includes('API key')) {
+                    errorMsg = 'Failed to generate API key. Please try again.';
+                }
+                resultDiv.textContent = 'Registration failed: ' + errorMsg;
+                console.error('Registration error:', error);
             }
         });
     }
@@ -76,7 +84,15 @@ function setupAuth() {
                 showApiKey(result.api_key || 'API key received');
             } catch (error) {
                 resultDiv.className = 'auth-result error';
-                resultDiv.textContent = 'Login failed: ' + error.message;
+                // Provide more helpful error messages
+                let errorMsg = error.message || 'Login failed';
+                if (errorMsg.includes('Invalid email or password')) {
+                    errorMsg = 'Invalid email or password. Please check your credentials and try again.';
+                } else if (errorMsg.includes('API key')) {
+                    errorMsg = 'Failed to generate API key. Please try again.';
+                }
+                resultDiv.textContent = 'Login failed: ' + errorMsg;
+                console.error('Login error:', error);
             }
         });
     }
@@ -221,7 +237,23 @@ async function loadDashboard() {
         displayRepositories(recentRepos, 'recent-repos');
     } catch (error) {
         console.error('Failed to load dashboard:', error);
-        showError('Failed to load dashboard. Please check your API key.');
+        
+        // If API key is invalid, redirect to login
+        if (error.message && error.message.includes('API key')) {
+            localStorage.removeItem('wavelength_api_key');
+            api.setApiKey('');
+            showPage('login');
+            document.querySelectorAll('.nav-link').forEach(link => {
+                if (link.getAttribute('data-page') === 'login') {
+                    link.classList.add('active');
+                } else {
+                    link.classList.remove('active');
+                }
+            });
+            showError('Your API key is invalid or expired. Please login again.');
+        } else {
+            showError('Failed to load dashboard. Please check your API key.');
+        }
     }
 }
 

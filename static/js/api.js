@@ -29,6 +29,17 @@ class WavelengthAPI {
 
             if (!response.ok) {
                 const error = await response.json().catch(() => ({ error: response.statusText }));
+                
+                // If unauthorized (401), clear invalid API key
+                if (response.status === 401) {
+                    console.warn('API key invalid or expired, clearing from storage');
+                    this.setApiKey('');
+                    localStorage.removeItem('wavelength_api_key');
+                    
+                    // Show user-friendly error
+                    throw new Error('Your API key is invalid or expired. Please login again.');
+                }
+                
                 throw new Error(error.error || `HTTP ${response.status}`);
             }
 
