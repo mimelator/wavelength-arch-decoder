@@ -6,9 +6,10 @@ use crate::api::repositories::{
 };
 use crate::api::services::{get_services, search_services_by_provider};
 use crate::api::graph::{get_graph, get_graph_statistics, get_node_neighbors};
+use crate::api::code::{get_code_elements, get_code_calls};
 use crate::auth::AuthService;
 use crate::config::Config;
-use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository};
+use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository};
 
 pub async fn start_server(config: Config) -> std::io::Result<()> {
     // Initialize database
@@ -20,7 +21,8 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
     let api_key_repo = ApiKeyRepository::new(db.clone());
     let repo_repo = RepositoryRepository::new(db.clone());
     let dep_repo = DependencyRepository::new(db.clone());
-    let service_repo = ServiceRepository::new(db);
+    let service_repo = ServiceRepository::new(db.clone());
+    let code_repo = CodeElementRepository::new(db);
     
     // Initialize auth service
     let auth_service = AuthService::new(
@@ -35,6 +37,7 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
         repo_repo,
         dep_repo,
         service_repo,
+        code_repo,
     });
 
     // Start HTTP server
@@ -63,6 +66,9 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     .route("/repositories/{id}/graph", web::get().to(get_graph))
                     .route("/repositories/{id}/graph/statistics", web::get().to(get_graph_statistics))
                     .route("/repositories/{id}/graph/nodes/{node_id}/neighbors", web::get().to(get_node_neighbors))
+                    // Code structure endpoints
+                    .route("/repositories/{id}/code/elements", web::get().to(get_code_elements))
+                    .route("/repositories/{id}/code/calls", web::get().to(get_code_calls))
             )
     })
     .bind(format!("{}:{}", config.server.host, config.server.port))?

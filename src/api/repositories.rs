@@ -7,6 +7,7 @@ use crate::ingestion::RepositoryCrawler;
 use crate::analysis::DependencyExtractor;
 use crate::security::ServiceDetector;
 use crate::graph::GraphBuilder;
+use crate::analysis::CodeAnalyzer;
 use crate::config::StorageConfig;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -246,6 +247,30 @@ pub async fn analyze_repository(
         }
     }
 
+    // Analyze code structure
+    let code_analyzer = CodeAnalyzer::new();
+    let code_structure = match code_analyzer.analyze_repository(&repo_path) {
+        Ok(structure) => structure,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to analyze code structure: {}", e),
+            });
+        }
+    };
+
+    // Store code elements and calls
+    if let Err(e) = state.code_repo.store_elements(&repo.id, &code_structure.elements) {
+        return HttpResponse::InternalServerError().json(ErrorResponse {
+            error: format!("Failed to store code elements: {}", e),
+        });
+    }
+
+    if let Err(e) = state.code_repo.store_calls(&repo.id, &code_structure.calls) {
+        return HttpResponse::InternalServerError().json(ErrorResponse {
+            error: format!("Failed to store code calls: {}", e),
+        });
+    }
+
     // Update last analyzed timestamp
     if let Err(e) = state.repo_repo.update_last_analyzed(&repo.id) {
         return HttpResponse::InternalServerError().json(ErrorResponse {
@@ -258,7 +283,9 @@ pub async fn analyze_repository(
         "manifests_found": manifests.len(),
         "total_dependencies": manifests.iter().map(|m| m.dependencies.len()).sum::<usize>(),
         "services_found": services.len(),
-        "graph_built": true
+        "graph_built": true,
+        "code_elements_found": code_structure.elements.len(),
+        "code_calls_found": code_structure.calls.len()
     }))
 }
 

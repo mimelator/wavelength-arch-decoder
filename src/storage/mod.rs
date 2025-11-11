@@ -7,9 +7,11 @@ use crate::config::DatabaseConfig;
 pub mod repositories;
 pub mod repository_repo;
 pub mod service_repo;
+pub mod code_repo;
 pub use repositories::{UserRepository, ApiKeyRepository};
 pub use repository_repo::{RepositoryRepository, DependencyRepository, Repository, StoredDependency};
 pub use service_repo::{ServiceRepository, StoredService};
+pub use code_repo::CodeElementRepository;
 
 #[derive(Clone)]
 pub struct Database {
@@ -142,6 +144,44 @@ impl Database {
             [],
         )?;
 
+        // Code elements table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS code_elements (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                element_type TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                line_number INTEGER NOT NULL,
+                language TEXT NOT NULL,
+                signature TEXT,
+                doc_comment TEXT,
+                visibility TEXT,
+                parameters TEXT,
+                return_type TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id)
+            )",
+            [],
+        )?;
+
+        // Code calls table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS code_calls (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                caller_id TEXT NOT NULL,
+                callee_id TEXT NOT NULL,
+                call_type TEXT NOT NULL,
+                line_number INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id),
+                FOREIGN KEY (caller_id) REFERENCES code_elements(id),
+                FOREIGN KEY (callee_id) REFERENCES code_elements(id)
+            )",
+            [],
+        )?;
+
         // Create indexes
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id)",
@@ -185,6 +225,30 @@ impl Database {
         )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_services_type ON services(service_type)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_code_elements_repository ON code_elements(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_code_elements_type ON code_elements(element_type)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_code_elements_language ON code_elements(language)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_code_calls_repository ON code_calls(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_code_calls_caller ON code_calls(caller_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_code_calls_callee ON code_calls(callee_id)",
             [],
         )?;
 
