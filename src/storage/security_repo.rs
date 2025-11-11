@@ -249,7 +249,10 @@ impl SecurityRepository {
                 description: row.get(4)?,
                 recommendation: row.get(5)?,
                 file_path: row.get(6)?,
-                line_number: row.get::<_, Option<i32>>(7).map(|n| n as usize),
+                line_number: match row.get::<_, Option<i32>>(7)? {
+                    Some(n) => Some(n as usize),
+                    None => None,
+                },
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
