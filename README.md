@@ -38,11 +38,12 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **No Hard-Coding Required**: Uses pattern matching, word boundaries, and code analysis
 
 ### 📦 **Comprehensive Dependency Analysis**
-- **Multi-Package Manager Support**: npm, pip, Cargo, Maven, Go modules
+- **Multi-Package Manager Support**: npm, pip, Cargo, Maven, Gradle, Go modules, Swift Package Manager, CocoaPods
 - **Dependency Graph Construction**: Visualizes dependency trees and relationships
 - **Version Conflict Detection**: Identifies potential version conflicts
 - **Transitive Dependency Resolution**: Maps indirect dependencies
 - **Search & Filter**: Powerful filtering by package manager, type, and name
+- **Xcode Project Support**: Parses `.xcodeproj/project.pbxproj` files for Swift Package Manager dependencies
 
 ### 🔌 **Service Detection**
 - **Cloud Providers**: AWS (S3, Lambda, DynamoDB, etc.), Vercel, Netlify
@@ -73,7 +74,7 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **Environment Templates**: Detects `.env.example` and security configuration files
 
 ### 📝 **Code Structure Analysis**
-- **Multi-Language Support**: JavaScript/TypeScript, Python, Rust, Go
+- **Multi-Language Support**: JavaScript/TypeScript, Python, Rust, Go, Swift, Objective-C, Java
 - **Function & Class Extraction**: Identifies functions, classes, modules, interfaces
 - **Call Graph Construction**: Maps function calls and relationships
 - **Import/Export Tracking**: Tracks module dependencies
@@ -168,6 +169,51 @@ The server will start on `http://localhost:8080` by default.
 *Comprehensive HTML report with architecture overview*
 
 </div>
+
+---
+
+## 🌐 Language Support
+
+### ✅ Fully Supported Languages
+
+These languages have **complete code structure analysis** including function/class extraction, imports, and service detection:
+
+| Language | Extensions | Code Parsing | Service Detection | Dependency Detection |
+|----------|-----------|--------------|-------------------|---------------------|
+| **JavaScript/TypeScript** | `.js`, `.jsx`, `.ts`, `.tsx` | ✅ Full | ✅ Yes | ✅ npm, yarn |
+| **Python** | `.py` | ✅ Full | ✅ Yes | ✅ pip, poetry |
+| **Rust** | `.rs` | ✅ Full | ✅ Yes | ✅ Cargo |
+| **Go** | `.go` | ✅ Full | ✅ Yes | ✅ go.mod |
+| **Swift** | `.swift` | ✅ Full | ✅ Yes | ✅ SPM, CocoaPods |
+| **Objective-C** | `.m`, `.mm` | ✅ Full | ✅ Yes | ✅ CocoaPods |
+| **Java** | `.java` | ✅ Full | ✅ Yes | ✅ Maven, Gradle |
+
+### ⚠️ Partially Supported Languages
+
+These languages have **dependency detection** but **no code structure parsing**:
+
+| Language | Extensions | Code Parsing | Service Detection | Dependency Detection |
+|----------|-----------|--------------|-------------------|---------------------|
+| **C/C++** | `.c`, `.cpp`, `.h`, `.hpp` | ❌ No | ❌ No | ⚠️ Build systems only |
+| **C#** | `.cs` | ❌ No | ❌ No | ⚠️ NuGet |
+| **PHP** | `.php` | ❌ No | ❌ No | ⚠️ Composer |
+| **Ruby** | `.rb` | ❌ No | ❌ No | ⚠️ Bundler/Gemfile |
+| **Kotlin** | `.kt` | ❌ No | ❌ No | ⚠️ Gradle/Maven |
+
+### 📋 Package Manager Support
+
+| Package Manager | Supported | File(s) Detected |
+|----------------|-----------|------------------|
+| **npm/yarn** | ✅ Yes | `package.json` |
+| **pip** | ✅ Yes | `requirements.txt`, `setup.py` |
+| **Cargo** | ✅ Yes | `Cargo.toml` |
+| **Maven** | ✅ Yes | `pom.xml` |
+| **Gradle** | ✅ Yes | `build.gradle` |
+| **Go Modules** | ✅ Yes | `go.mod` |
+| **Swift Package Manager** | ✅ Yes | `Package.swift`, `project.pbxproj` |
+| **CocoaPods** | ✅ Yes | `Podfile` |
+| **Composer** | ✅ Yes | `composer.json` |
+| **NuGet** | ✅ Yes | `.csproj`, `packages.config` |
 
 ---
 
@@ -351,10 +397,20 @@ Service: Firebase SDK
 **Multi-Language Code Analysis**
 
 **Supported Languages**:
-- **JavaScript/TypeScript**: Functions, classes, modules, imports
-- **Python**: Functions, classes, modules, decorators
-- **Rust**: Functions, structs, enums, traits, modules
-- **Go**: Functions, structs, interfaces, packages
+- **JavaScript/TypeScript** (.js, .jsx, .ts, .tsx): Functions, classes, modules, imports
+- **Python** (.py): Functions, classes, modules, decorators
+- **Rust** (.rs): Functions, structs, enums, traits, modules
+- **Go** (.go): Functions, structs, interfaces, packages
+- **Swift** (.swift): Functions, classes, structs, enums, imports
+- **Objective-C** (.m, .mm): Methods, classes, interfaces, implementations
+- **Java** (.java): Classes, interfaces, enums, methods, imports
+
+**Unsupported Languages** (dependencies detected, but code parsing not available):
+- **C/C++** (.c, .cpp, .h, .hpp): Dependency detection only (via build systems)
+- **C#** (.cs): Dependency detection only (via NuGet)
+- **PHP** (.php): Dependency detection only (via Composer)
+- **Ruby** (.rb): Dependency detection only (via Bundler/Gemfile)
+- **Kotlin** (.kt): Dependency detection only (via Gradle/Maven)
 
 **Features**:
 - Function/class extraction with signatures
@@ -362,7 +418,18 @@ Service: Firebase SDK
 - Import/export relationship tracking
 - Parameter and return type detection
 - Documentation comment extraction
-- Visibility modifiers (public/private)
+- Visibility modifiers (public/private/protected)
+- Generic type support (Java, Swift)
+- Method modifiers (static, final, abstract, etc.)
+
+**Language-Specific Features**:
+- **JavaScript/TypeScript**: ES6+ syntax, arrow functions, async/await
+- **Python**: Decorators, type hints, docstrings
+- **Rust**: Traits, lifetimes, pattern matching
+- **Go**: Goroutines, interfaces, package structure
+- **Swift**: Access control (public, private, internal, fileprivate), optionals
+- **Objective-C**: Categories, protocols, class clusters
+- **Java**: Generics, annotations, package-private visibility
 
 **Smart Filtering**:
 - Excludes compiled classes
@@ -725,7 +792,7 @@ Built with:
 - [ ] IDE integrations (VS Code, IntelliJ)
 - [ ] Docker container support
 - [ ] Performance optimizations for large repositories
-- [ ] Additional language support (Java, C#, PHP)
+- [ ] Additional language support (C/C++, C#, PHP, Ruby, Kotlin)
 - [ ] Relationship confidence learning
 
 ---
