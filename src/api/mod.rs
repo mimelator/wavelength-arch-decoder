@@ -53,7 +53,7 @@ pub async fn version() -> impl Responder {
                 Err(_) => {
                     // Try from env or default
                     std::env::var("WAVELENGTH_VERSION")
-                        .unwrap_or_else(|_| "0.7.1".to_string())
+                        .unwrap_or_else(|_| "0.7.2".to_string())
                 }
             }
         }
