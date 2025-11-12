@@ -18,14 +18,22 @@ impl CodeRelationshipRepository {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
 
+        let total = relationships.len();
+        if total > 0 {
+            log::info!("Preparing to store {} code relationships...", total);
+        }
+
         // Delete existing relationships for this repository
         conn.execute(
             "DELETE FROM code_relationships WHERE repository_id = ?1",
             params![repository_id],
         )?;
 
-        // Insert new relationships
+        // Insert new relationships with progress logging
         let now = Utc::now();
+        let batch_size = 1000; // Log every 1000 relationships
+        let mut stored = 0;
+        
         for rel in relationships {
             let target_type_str = match rel.target_type {
                 RelationshipTargetType::Service => "service",
@@ -48,8 +56,17 @@ impl CodeRelationshipRepository {
                     now.to_rfc3339()
                 ],
             )?;
+            
+            stored += 1;
+            if stored % batch_size == 0 || stored == total {
+                let percent = (stored as f64 / total as f64 * 100.0) as u32;
+                log::info!("  Stored {}/{} relationships ({}%)...", stored, total, percent);
+            }
         }
 
+        if total > 0 {
+            log::info!("✓ Successfully stored all {} code relationships", total);
+        }
         Ok(())
     }
 

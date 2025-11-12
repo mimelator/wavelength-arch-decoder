@@ -19,15 +19,23 @@ impl CodeElementRepository {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
+        let total = elements.len();
+        log::info!("Preparing to store {} code elements...", total);
+        
         // Delete existing elements for this repository
+        log::info!("Clearing existing code elements for repository...");
         conn.execute(
             "DELETE FROM code_elements WHERE repository_id = ?1",
             params![repository_id],
         )?;
         
-        // Insert new elements
+        // Insert new elements with progress logging
         let now = Utc::now();
-        for element in elements {
+        let batch_size = 1000; // Log every 1000 elements
+        let mut stored = 0;
+        
+        log::info!("Inserting code elements (batch size: {})...", batch_size);
+        for element in elements.iter() {
             let element_type_str = self.element_type_to_string(&element.element_type);
             let parameters_json = serde_json::to_string(&element.parameters)?;
             
@@ -51,8 +59,15 @@ impl CodeElementRepository {
                     now.to_rfc3339()
                 ],
             )?;
+            
+            stored += 1;
+            if stored % batch_size == 0 || stored == total {
+                let percent = (stored as f64 / total as f64 * 100.0) as u32;
+                log::info!("  Stored {}/{} elements ({}%)...", stored, total, percent);
+            }
         }
         
+        log::info!("✓ Successfully stored all {} code elements", total);
         Ok(())
     }
 
@@ -60,14 +75,22 @@ impl CodeElementRepository {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
+        let total = calls.len();
+        if total > 0 {
+            log::info!("Preparing to store {} code calls...", total);
+        }
+        
         // Delete existing calls for this repository
         conn.execute(
             "DELETE FROM code_calls WHERE repository_id = ?1",
             params![repository_id],
         )?;
         
-        // Insert new calls
+        // Insert new calls with progress logging
         let now = Utc::now();
+        let batch_size = 1000; // Log every 1000 calls
+        let mut stored = 0;
+        
         for call in calls {
             let id = Uuid::new_v4().to_string();
             
@@ -85,6 +108,16 @@ impl CodeElementRepository {
                     now.to_rfc3339()
                 ],
             )?;
+            
+            stored += 1;
+            if stored % batch_size == 0 || stored == total {
+                let percent = (stored as f64 / total as f64 * 100.0) as u32;
+                log::info!("  Stored {}/{} calls ({}%)...", stored, total, percent);
+            }
+        }
+        
+        if total > 0 {
+            log::info!("✓ Successfully stored all {} code calls", total);
         }
         
         Ok(())

@@ -23,14 +23,22 @@ impl SecurityRepository {
         // Temporarily disable foreign key constraints to avoid issues during delete/insert
         conn.execute("PRAGMA foreign_keys = OFF", [])?;
         
+        let total = entities.len();
+        if total > 0 {
+            log::info!("Preparing to store {} security entities...", total);
+        }
+        
         // Delete existing entities for this repository
         conn.execute(
             "DELETE FROM security_entities WHERE repository_id = ?1",
             params![repository_id],
         )?;
         
-        // Insert new entities
+        // Insert new entities with progress logging
         let now = Utc::now();
+        let batch_size = 500; // Log every 500 entities
+        let mut stored = 0;
+        
         for entity in entities {
             let entity_type_str = self.entity_type_to_string(&entity.entity_type);
             let config_json = serde_json::to_string(&entity.configuration)?;
@@ -53,6 +61,16 @@ impl SecurityRepository {
                     now.to_rfc3339()
                 ],
             )?;
+            
+            stored += 1;
+            if stored % batch_size == 0 || stored == total {
+                let percent = (stored as f64 / total as f64 * 100.0) as u32;
+                log::info!("  Stored {}/{} security entities ({}%)...", stored, total, percent);
+            }
+        }
+        
+        if total > 0 {
+            log::info!("✓ Successfully stored all {} security entities", total);
         }
         
         // Re-enable foreign key constraints
@@ -68,15 +86,21 @@ impl SecurityRepository {
         // Temporarily disable foreign key constraints to avoid issues during delete/insert
         conn.execute("PRAGMA foreign_keys = OFF", [])?;
         
+        let total = relationships.len();
+        
         // Delete existing relationships for this repository
         conn.execute(
             "DELETE FROM security_relationships WHERE repository_id = ?1",
             params![repository_id],
         )?;
         
-        // Insert new relationships (only if provided)
+        // Insert new relationships (only if provided) with progress logging
         if !relationships.is_empty() {
+            log::info!("Preparing to store {} security relationships...", total);
             let now = Utc::now();
+            let batch_size = 500; // Log every 500 relationships
+            let mut stored = 0;
+            
             for relationship in relationships {
                 let id = Uuid::new_v4().to_string();
                 let permissions_json = serde_json::to_string(&relationship.permissions)?;
@@ -96,7 +120,15 @@ impl SecurityRepository {
                         now.to_rfc3339()
                     ],
                 )?;
+                
+                stored += 1;
+                if stored % batch_size == 0 || stored == total {
+                    let percent = (stored as f64 / total as f64 * 100.0) as u32;
+                    log::info!("  Stored {}/{} security relationships ({}%)...", stored, total, percent);
+                }
             }
+            
+            log::info!("✓ Successfully stored all {} security relationships", total);
         }
         
         // Re-enable foreign key constraints
@@ -112,15 +144,21 @@ impl SecurityRepository {
         // Temporarily disable foreign key constraints to avoid issues during delete/insert
         conn.execute("PRAGMA foreign_keys = OFF", [])?;
         
+        let total = vulnerabilities.len();
+        
         // Delete existing vulnerabilities for this repository
         conn.execute(
             "DELETE FROM security_vulnerabilities WHERE repository_id = ?1",
             params![repository_id],
         )?;
         
-        // Insert new vulnerabilities (only if provided)
+        // Insert new vulnerabilities (only if provided) with progress logging
         if !vulnerabilities.is_empty() {
+            log::info!("Preparing to store {} security vulnerabilities...", total);
             let now = Utc::now();
+            let batch_size = 500; // Log every 500 vulnerabilities
+            let mut stored = 0;
+            
             for vuln in vulnerabilities {
                 let severity_str = self.severity_to_string(&vuln.severity);
                 
@@ -141,7 +179,15 @@ impl SecurityRepository {
                         now.to_rfc3339()
                     ],
                 )?;
+                
+                stored += 1;
+                if stored % batch_size == 0 || stored == total {
+                    let percent = (stored as f64 / total as f64 * 100.0) as u32;
+                    log::info!("  Stored {}/{} vulnerabilities ({}%)...", stored, total, percent);
+                }
             }
+            
+            log::info!("✓ Successfully stored all {} security vulnerabilities", total);
         }
         
         // Re-enable foreign key constraints

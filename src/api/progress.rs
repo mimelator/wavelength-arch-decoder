@@ -1,8 +1,25 @@
 use actix_web::{web, HttpResponse, Responder, HttpRequest};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer, Deserializer};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
+
+fn serialize_datetime<S>(dt: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&dt.to_rfc3339())
+}
+
+fn deserialize_datetime<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    DateTime::parse_from_rfc3339(&s)
+        .map(|dt| dt.with_timezone(&Utc))
+        .map_err(serde::de::Error::custom)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisProgress {
@@ -13,7 +30,9 @@ pub struct AnalysisProgress {
     pub progress_percent: f64,
     pub status_message: String,
     pub details: Option<serde_json::Value>,
+    #[serde(serialize_with = "serialize_datetime", deserialize_with = "deserialize_datetime")]
     pub started_at: DateTime<Utc>,
+    #[serde(serialize_with = "serialize_datetime", deserialize_with = "deserialize_datetime")]
     pub last_updated: DateTime<Utc>,
 }
 
@@ -109,7 +128,17 @@ pub async fn get_analysis_progress(
 ) -> impl Responder {
     let repository_id = path.into_inner();
     match state.get_progress(&repository_id) {
-        Some(progress) => HttpResponse::Ok().json(progress),
+        Some(progress) => {
+            match serde_json::to_value(&progress) {
+                Ok(json_value) => HttpResponse::Ok().json(json_value),
+                Err(e) => {
+                    log::error!("Failed to serialize progress: {}", e);
+                    HttpResponse::InternalServerError().json(serde_json::json!({
+                        "error": format!("Failed to serialize progress: {}", e)
+                    }))
+                }
+            }
+        },
         None => HttpResponse::NotFound().json(serde_json::json!({
             "error": "No analysis in progress for this repository"
         })),
