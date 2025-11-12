@@ -710,6 +710,11 @@ body {
     margin-top: 1rem;
 }
 
+[data-theme="dark"] .api-key-warning {
+    color: var(--warning-color);
+    opacity: 0.9;
+}
+
 /* Auth Forms */
 .auth-container {
     max-width: 500px;
@@ -1083,6 +1088,13 @@ body {
 
 .detail-badge.badge-warning {
     background-color: var(--warning-color);
+    color: #1e293b; /* Dark text for light background */
+}
+
+[data-theme="dark"] .detail-badge.badge-warning {
+    background-color: var(--warning-color);
+    color: #1e293b; /* Keep dark text for visibility */
+    border: 1px solid rgba(251, 191, 36, 0.5);
 }
 
 .detail-badge.badge-info {
@@ -1100,6 +1112,7 @@ body {
     font-family: 'Courier New', monospace;
     font-weight: 500;
     cursor: help;
+    pointer-events: none; /* Prevent badge from intercepting clicks */
 }
 
 .entity-id-badge:hover {
@@ -1146,6 +1159,12 @@ body {
     border-radius: 0.375rem;
     margin-bottom: 0.5rem;
     background-color: var(--bg-color);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .vulnerability-item {
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
 .vulnerability-item.severity-critical {
@@ -1168,14 +1187,32 @@ body {
     display: block;
     margin-bottom: 0.25rem;
     color: var(--text-primary);
+    font-weight: 600;
+}
+
+.vulnerability-item p {
+    color: var(--text-primary);
+    margin: 0.25rem 0;
+}
+
+.vulnerability-item .vulnerability-description {
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
 }
 
 .vulnerability-recommendation {
     margin-top: 0.5rem;
     padding: 0.5rem;
-    background-color: #f0f9ff;
+    background-color: rgba(59, 130, 246, 0.1);
+    color: var(--text-primary);
     border-radius: 0.25rem;
     font-size: 0.875rem;
+}
+
+[data-theme="dark"] .vulnerability-recommendation {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: var(--text-primary);
+    border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
 .detail-meta {
@@ -1190,12 +1227,22 @@ body {
     padding: 2rem;
 }
 
+[data-theme="dark"] .loading-text {
+    color: var(--text-primary);
+}
+
 .error-text {
     color: var(--danger-color);
     padding: 1rem;
     background: rgba(239, 68, 68, 0.1);
     border-radius: 0.375rem;
     border: 1px solid var(--danger-color);
+}
+
+[data-theme="dark"] .error-text {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171; /* Lighter red for dark mode */
+    border-color: rgba(239, 68, 68, 0.4);
 }
 
 /* Node Details Modal */

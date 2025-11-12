@@ -535,15 +535,14 @@ impl GraphBuilder {
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-        // Get edges
+        // Get edges - only include edges where BOTH source and target nodes belong to this repository
+        // This prevents showing data from other repositories
         let mut stmt = conn.prepare(
-            "SELECT id, source_node_id, target_node_id, edge_type, properties
-             FROM graph_edges
-             WHERE source_node_id IN (
-                 SELECT id FROM graph_nodes WHERE repository_id = ?1
-             ) OR target_node_id IN (
-                 SELECT id FROM graph_nodes WHERE repository_id = ?1
-             )"
+            "SELECT e.id, e.source_node_id, e.target_node_id, e.edge_type, e.properties
+             FROM graph_edges e
+             INNER JOIN graph_nodes source_nodes ON e.source_node_id = source_nodes.id
+             INNER JOIN graph_nodes target_nodes ON e.target_node_id = target_nodes.id
+             WHERE source_nodes.repository_id = ?1 AND target_nodes.repository_id = ?1"
         )?;
 
         let edges = stmt.query_map([repository_id], |row| {
@@ -561,6 +560,8 @@ impl GraphBuilder {
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+        
+        log::debug!("Retrieved {} nodes and {} edges for repository {}", nodes.len(), edges.len(), repository_id);
 
         Ok(KnowledgeGraph { nodes, edges })
     }

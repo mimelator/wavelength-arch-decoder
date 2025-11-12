@@ -9,4 +9,5 @@ pub mod security;
 pub mod graph;
 pub mod graphql;
 pub mod crawler;
+pub mod report;
 

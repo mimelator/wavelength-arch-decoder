@@ -163,6 +163,19 @@ class WavelengthAPI {
     async getAnalysisProgress(repoId) {
         return this.request(`/repositories/${repoId}/progress`);
     }
+
+    async getReport(repoId) {
+        // Report endpoint returns HTML, not JSON
+        const url = `${this.baseURL}/repositories/${repoId}/report`;
+        return fetch(url).then(response => {
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.error || `HTTP ${response.status}`);
+                });
+            }
+            return response.text(); // Return HTML as text
+        });
+    }
 }
 
 // Global API instance

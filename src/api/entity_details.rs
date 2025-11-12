@@ -238,7 +238,7 @@ pub async fn get_entity_details(
     
     if details.is_empty() {
         HttpResponse::NotFound().json(ErrorResponse {
-            error: "Entity not found".to_string(),
+            error: format!("Entity not found: ID '{}' (type: '{}', repo: '{}'). This may be a short ID - ensure you're using the full UUID.", entity_id, entity_type, repo_id),
         })
     } else {
         HttpResponse::Ok().json(details)

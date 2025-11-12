@@ -14,6 +14,7 @@ pub mod security;
 pub mod jobs;
 pub mod entity_details;
 pub mod progress;
+pub mod reports;
 
 pub struct ApiState {
     pub auth_service: AuthService,

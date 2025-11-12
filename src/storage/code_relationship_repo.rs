@@ -116,5 +116,37 @@ impl CodeRelationshipRepository {
 
         Ok(relationships)
     }
+
+    pub fn get_by_repository(&self, repository_id: &str) -> Result<Vec<CodeRelationship>> {
+        let conn = self.db.get_connection();
+        let conn = conn.lock().unwrap();
+
+        let mut stmt = conn.prepare(
+            "SELECT id, code_element_id, target_type, target_id, relationship_type, confidence, evidence
+             FROM code_relationships WHERE repository_id = ?1"
+        )?;
+
+        let relationships = stmt.query_map(params![repository_id], |row| {
+            let target_type_str: String = row.get(2)?;
+            let target_type_enum = match target_type_str.as_str() {
+                "service" => RelationshipTargetType::Service,
+                "dependency" => RelationshipTargetType::Dependency,
+                _ => RelationshipTargetType::Service,
+            };
+
+            Ok(CodeRelationship {
+                id: row.get(0)?,
+                code_element_id: row.get(1)?,
+                target_type: target_type_enum,
+                target_id: row.get(3)?,
+                relationship_type: row.get(4)?,
+                confidence: row.get(5)?,
+                evidence: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(relationships)
+    }
 }
 

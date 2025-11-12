@@ -104,6 +104,15 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **REST & GraphQL APIs**: Choose your preferred API style
 - **Progress Tracking**: Real-time analysis progress with detailed step information
 
+### 📄 **Report Generation**
+- **HTML Reports**: Generate comprehensive, shareable HTML reports for any repository
+- **Complete Overview**: Includes all dependencies, services, code structure, security findings, and tools
+- **Statistics Dashboard**: Visual statistics cards showing key metrics
+- **Grouped Data**: Dependencies grouped by package manager, services by provider
+- **Security Highlights**: Prominent display of vulnerabilities and security issues
+- **Knowledge Graph Summary**: Graph statistics and node type breakdowns
+- **Print-Friendly**: Clean, professional formatting suitable for documentation
+
 ---
 
 ## 🚀 Quick Start
@@ -138,6 +147,27 @@ The server will start on `http://localhost:8080` by default.
    - Branch (defaults to `main`)
 3. **Analyze**: Click "Analyze" and watch real-time progress
 4. **Explore**: Browse dependencies, services, code structure, security, and the knowledge graph
+5. **Generate Report**: Click "Generate Report" to create a comprehensive HTML report
+
+<div align="center">
+
+### Dashboard View
+![Dashboard View](docs/screenshots/dashboard.png)
+*Dashboard showing all repositories and their analysis status*
+
+### Repository Overview
+![Repository Overview](docs/screenshots/overview.png)
+*Repository detail page with comprehensive analysis overview*
+
+### Knowledge Graph Visualization
+![Knowledge Graph](docs/screenshots/knowledge-graph.png)
+*Interactive knowledge graph showing relationships between entities*
+
+### Generated Report
+![Report View](docs/screenshots/report.png)
+*Comprehensive HTML report with architecture overview*
+
+</div>
 
 ---
 
@@ -217,6 +247,7 @@ Track which services and dependencies are used across multiple repositories for 
 7. **Relationship Detection**: Map code-to-service and code-to-dependency relationships
 8. **Knowledge Graph Construction**: Build unified graph of all entities
 9. **Storage**: Persist all data in SQLite database
+10. **Report Generation**: Generate comprehensive HTML reports on demand
 
 ---
 
@@ -431,6 +462,11 @@ GET    /api/v1/repositories/{id}/graph/nodes/{id}/neighbors  # Get node neighbor
 GET    /api/v1/repositories/{repo_id}/entities/{type}/{id}  # Get entity details
 ```
 
+#### Reports
+```http
+GET    /api/v1/repositories/{id}/report                     # Generate HTML report
+```
+
 ### GraphQL API
 
 Access GraphQL playground at `/graphql` endpoint.
@@ -595,6 +631,16 @@ curl http://localhost:8080/api/v1/repositories/{repo-id}/dependencies
 curl "http://localhost:8080/api/v1/dependencies/search?q=react"
 ```
 
+### Example 5: Generate Report
+
+```bash
+# Generate HTML report
+curl http://localhost:8080/api/v1/repositories/{repo-id}/report -o report.html
+
+# Or open in browser
+open http://localhost:8080/api/v1/repositories/{repo-id}/report
+```
+
 ---
 
 ## 🛠️ Development
@@ -681,6 +727,17 @@ Built with:
 - [ ] Performance optimizations for large repositories
 - [ ] Additional language support (Java, C#, PHP)
 - [ ] Relationship confidence learning
+
+---
+
+## 📸 Screenshots
+
+See the tool in action! All screenshots are available in the [`docs/screenshots/`](docs/screenshots/) directory.
+
+- **[Dashboard](docs/screenshots/dashboard.png)** - Overview of all repositories and analysis status
+- **[Repository Overview](docs/screenshots/overview.png)** - Detailed analysis with tabs for dependencies, services, code, security, and more
+- **[Knowledge Graph](docs/screenshots/knowledge-graph.png)** - Interactive visualization of relationships between entities
+- **[Generated Report](docs/screenshots/report.png)** - Comprehensive HTML report with all analysis data
 
 ---
 

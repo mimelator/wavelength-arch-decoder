@@ -1451,6 +1451,42 @@ window.deleteRepository = async function(repoId, repoName) {
     }
 };
 
+async function generateReport(repoId, repoName) {
+    try {
+        // Show loading indicator
+        const reportBtn = document.getElementById('btn-generate-report');
+        const originalText = reportBtn.textContent;
+        reportBtn.disabled = true;
+        reportBtn.textContent = 'Generating...';
+        
+        // Fetch the HTML report
+        const html = await api.getReport(repoId);
+        
+        // Create a new window and write the HTML
+        const reportWindow = window.open('', '_blank');
+        if (!reportWindow) {
+            alert('Please allow pop-ups to generate the report');
+            reportBtn.disabled = false;
+            reportBtn.textContent = originalText;
+            return;
+        }
+        
+        reportWindow.document.write(html);
+        reportWindow.document.close();
+        
+        // Reset button
+        reportBtn.disabled = false;
+        reportBtn.textContent = originalText;
+        
+    } catch (error) {
+        console.error('Failed to generate report:', error);
+        alert(`Failed to generate report: ${error.message}`);
+        const reportBtn = document.getElementById('btn-generate-report');
+        reportBtn.disabled = false;
+        reportBtn.textContent = '📄 Generate Report';
+    }
+}
+
 let currentRepoId = null;
 
 async function loadRepositoryDetail(repoId, initialTab = null) {
@@ -1481,6 +1517,12 @@ async function loadRepositoryDetail(repoId, initialTab = null) {
         const deleteBtn = document.getElementById('btn-delete-detail');
         deleteBtn.onclick = () => {
             deleteRepository(repoId, repo.name);
+        };
+        
+        // Setup report generation button
+        const reportBtn = document.getElementById('btn-generate-report');
+        reportBtn.onclick = () => {
+            generateReport(repoId, repo.name);
         };
         
         // Setup tabs
@@ -2445,6 +2487,18 @@ async function loadRepositoryGraph(repoId) {
 // currentRepoId is declared earlier in the file
 
 function showEntityDetail(repoId, entityType, entityId) {
+    // Validate entity ID - ensure it's not a short ID (UUIDs are typically 36 chars with dashes, or 32 without)
+    if (!entityId || (entityId.length < 32 && !entityId.includes('-'))) {
+        console.error('[ENTITY] Invalid entity ID (too short):', entityId, 'Length:', entityId.length);
+        const modal = document.getElementById('entity-detail-modal');
+        const title = document.getElementById('entity-detail-title');
+        const body = document.getElementById('entity-detail-body');
+        modal.style.display = 'flex';
+        title.textContent = 'Error';
+        body.innerHTML = `<p class="error-text">Invalid entity ID: "${escapeHtml(entityId)}" (length: ${entityId.length}).<br><br>This appears to be a short ID. Please click on the entity name or row, not just the ID badge.</p>`;
+        return;
+    }
+    
     currentRepoId = repoId;
     const modal = document.getElementById('entity-detail-modal');
     const title = document.getElementById('entity-detail-title');
@@ -2454,12 +2508,15 @@ function showEntityDetail(repoId, entityType, entityId) {
     title.textContent = 'Loading...';
     body.innerHTML = '<p class="loading-text">Loading entity details...</p>';
     
+    console.log('[ENTITY] Loading entity details:', { repoId, entityType, entityId: entityId.substring(0, 8) + '...' });
+    
     api.getEntityDetails(repoId, entityType, entityId)
         .then(details => {
             title.textContent = getEntityTitle(entityType, details.entity);
             body.innerHTML = renderEntityDetails(entityType, details);
         })
         .catch(error => {
+            console.error('[ENTITY] Failed to load entity details:', error);
             title.textContent = 'Error';
             body.innerHTML = `<p class="error-text">Failed to load entity details: ${escapeHtml(error.message)}</p>`;
         });
