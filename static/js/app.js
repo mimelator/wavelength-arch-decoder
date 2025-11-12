@@ -34,19 +34,18 @@ function handleDeepLinks() {
         const entityType = urlParams.get('entityType');
         
         if (repoId && entityId && entityType) {
-            // Navigate to repository detail page first
-            setTimeout(() => {
-                showRepositoryDetail(repoId).then(() => {
-                    // Then open the entity detail modal
-                    setTimeout(() => {
-                        showEntityDetail(repoId, entityType, entityId);
-                    }, 500);
-                });
+            // Navigate to repository detail page first, then open entity modal
+            setTimeout(async () => {
+                await viewRepository(repoId);
+                // Wait a bit for the page to load, then open entity detail
+                setTimeout(() => {
+                    showEntityDetail(repoId, entityType, entityId);
+                }, 800);
             }, 300);
         } else if (repoId) {
             // Just navigate to repository detail
-            setTimeout(() => {
-                showRepositoryDetail(repoId);
+            setTimeout(async () => {
+                await viewRepository(repoId);
             }, 300);
         }
     }
