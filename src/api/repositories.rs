@@ -218,9 +218,13 @@ pub async fn analyze_repository(
     };
 
     // Store dependencies
-    log::info!("Storing dependencies in database...");
+    let total_deps_to_store: usize = manifests.iter().map(|m| m.dependencies.len()).sum();
+    log::info!("Storing {} dependencies from {} manifest file(s) in database...", total_deps_to_store, manifests.len());
     let mut stored_deps = 0;
+    let mut manifest_count = 0;
     for manifest in &manifests {
+        manifest_count += 1;
+        log::info!("  Processing manifest {}/{}: {} ({} dependencies)", manifest_count, manifests.len(), manifest.file_path, manifest.dependencies.len());
         if let Err(e) = state.dep_repo.store_dependencies(
             &repo.id,
             &manifest.dependencies,
@@ -233,7 +237,7 @@ pub async fn analyze_repository(
         }
         stored_deps += manifest.dependencies.len();
     }
-    log::info!("✓ Stored {} dependencies", stored_deps);
+    log::info!("✓ Successfully stored {} dependencies from {} manifest file(s)", stored_deps, manifests.len());
 
     // Detect services
     state.progress_tracker.update_progress(&repository_id, 5, "Detecting external services", "Scanning for AWS, Firebase, Clerk, AI services, and other integrations...", None);
@@ -256,7 +260,12 @@ pub async fn analyze_repository(
     };
     let services = match detector.detect_services(&repo_path) {
         Ok(s) => {
-            log::info!("✓ Detected {} services", s.len());
+            if !s.is_empty() {
+                let service_names: Vec<String> = s.iter().map(|svc| format!("{} ({})", svc.name, svc.provider)).collect();
+                log::info!("✓ Detected {} service(s): {}", s.len(), service_names.join(", "));
+            } else {
+                log::info!("✓ No external services detected");
+            }
             s
         },
         Err(e) => {
@@ -268,14 +277,14 @@ pub async fn analyze_repository(
     };
 
     // Store services
-    log::info!("Storing services in database...");
+    log::info!("Storing {} service(s) in database...", services.len());
     if let Err(e) = state.service_repo.store_services(&repo.id, &services) {
         log::error!("✗ Failed to store services: {}", e);
         return HttpResponse::InternalServerError().json(ErrorResponse {
             error: format!("Failed to store services: {}", e),
         });
     }
-    log::info!("✓ Stored {} services", services.len());
+    log::info!("✓ Successfully stored {} service(s)", services.len());
 
     // Detect developer tools and scripts
     state.progress_tracker.update_progress(&repository_id, 6, "Detecting developer tools", "Scanning for build tools, test frameworks, linters, and scripts...", None);
@@ -283,7 +292,12 @@ pub async fn analyze_repository(
     let tool_detector = ToolDetector::new();
     let tools = match tool_detector.detect_tools(&repo_path) {
         Ok(t) => {
-            log::info!("✓ Detected {} tools", t.len());
+            if !t.is_empty() {
+                let tool_names: Vec<String> = t.iter().map(|tool| format!("{} ({})", tool.name, tool.category)).collect();
+                log::info!("✓ Detected {} tool(s): {}", t.len(), tool_names.join(", "));
+            } else {
+                log::info!("✓ No developer tools detected");
+            }
             t
         },
         Err(e) => {
@@ -295,14 +309,14 @@ pub async fn analyze_repository(
     };
 
     // Store tools
-    log::info!("Storing tools in database...");
+    log::info!("Storing {} tool(s) in database...", tools.len());
     if let Err(e) = state.tool_repo.store_tools(&repo.id, &tools) {
         log::error!("✗ Failed to store tools: {}", e);
         return HttpResponse::InternalServerError().json(ErrorResponse {
             error: format!("Failed to store tools: {}", e),
         });
     }
-    log::info!("✓ Stored {} tools", tools.len());
+    log::info!("✓ Successfully stored {} tool(s)", tools.len());
 
     // Build and store knowledge graph
     state.progress_tracker.update_progress(&repository_id, 7, "Building knowledge graph", "Creating relationships between repositories, dependencies, services, and code elements...", None);
@@ -316,16 +330,29 @@ pub async fn analyze_repository(
         state.code_relationship_repo.clone(),
     );
     
+    log::info!("Building knowledge graph from stored data (dependencies, services, code elements)...");
     match graph_builder.build_for_repository(&repo.id) {
         Ok(graph) => {
-            log::info!("✓ Knowledge graph built: {} nodes, {} edges", graph.nodes.len(), graph.edges.len());
+            // Count node types for better diagnostics
+            use std::collections::HashMap;
+            let mut node_type_counts: HashMap<String, usize> = HashMap::new();
+            for node in &graph.nodes {
+                *node_type_counts.entry(node.node_type.clone()).or_insert(0) += 1;
+            }
+            let node_type_summary: Vec<String> = node_type_counts.iter()
+                .map(|(k, v)| format!("{}: {}", k, v))
+                .collect();
+            log::info!("✓ Knowledge graph built: {} nodes ({}), {} edges", 
+                graph.nodes.len(), node_type_summary.join(", "), graph.edges.len());
+            
+            log::info!("Storing knowledge graph in database...");
             if let Err(e) = graph_builder.store_graph(&repo.id, &graph) {
                 log::error!("✗ Failed to store graph: {}", e);
                 return HttpResponse::InternalServerError().json(ErrorResponse {
                     error: format!("Failed to store graph: {}", e),
                 });
             }
-            log::info!("✓ Graph stored successfully");
+            log::info!("✓ Successfully stored knowledge graph");
         }
         Err(e) => {
             log::error!("✗ Failed to build graph: {}", e);
@@ -336,12 +363,31 @@ pub async fn analyze_repository(
     }
 
     // Analyze code structure
-    state.progress_tracker.update_progress(&repository_id, 8, "Analyzing code structure", "Extracting functions, classes, modules, and their relationships...", None);
+    state.progress_tracker.update_progress(&repository_id, 8, "Analyzing code structure", "Scanning source files and extracting functions, classes, modules, and their relationships...", None);
     log::info!("Step 8/10: Analyzing code structure...");
+    log::info!("Scanning repository for source code files (this may take a while for large repositories)...");
     let code_analyzer = CodeAnalyzer::new();
     let code_structure = match code_analyzer.analyze_repository(&repo_path) {
         Ok(structure) => {
-            log::info!("✓ Code analysis complete: {} elements, {} calls", structure.elements.len(), structure.calls.len());
+            // Count element types for better diagnostics
+            use std::collections::HashMap;
+            let mut element_type_counts: HashMap<String, usize> = HashMap::new();
+            let mut language_counts: HashMap<String, usize> = HashMap::new();
+            for element in &structure.elements {
+                *element_type_counts.entry(format!("{:?}", element.element_type)).or_insert(0) += 1;
+                *language_counts.entry(element.language.clone()).or_insert(0) += 1;
+            }
+            let element_summary: Vec<String> = element_type_counts.iter()
+                .map(|(k, v)| format!("{}: {}", k, v))
+                .collect();
+            let language_summary: Vec<String> = language_counts.iter()
+                .map(|(k, v)| format!("{}: {}", k, v))
+                .collect();
+            log::info!("✓ Code analysis complete: {} elements ({}), {} calls", 
+                structure.elements.len(), element_summary.join(", "), structure.calls.len());
+            if !language_summary.is_empty() {
+                log::info!("  Languages detected: {}", language_summary.join(", "));
+            }
             structure
         },
         Err(e) => {
@@ -353,7 +399,7 @@ pub async fn analyze_repository(
     };
 
     // Store code elements and calls
-    log::info!("Storing code elements...");
+    log::info!("Storing {} code elements in database...", code_structure.elements.len());
     if let Err(e) = state.code_repo.store_elements(&repo.id, &code_structure.elements) {
         log::error!("✗ Failed to store code elements: {}", e);
         state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to store code elements: {}", e));
@@ -363,7 +409,7 @@ pub async fn analyze_repository(
     }
     log::info!("✓ Stored {} code elements", code_structure.elements.len());
     
-    log::info!("Storing code calls...");
+    log::info!("Storing {} code calls in database...", code_structure.calls.len());
     if let Err(e) = state.code_repo.store_calls(&repo.id, &code_structure.calls) {
         log::error!("✗ Failed to store code calls: {}", e);
         state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to store code calls: {}", e));
@@ -374,30 +420,43 @@ pub async fn analyze_repository(
     log::info!("✓ Stored {} code calls", code_structure.calls.len());
 
     // Detect relationships between code elements and services/dependencies
-    log::info!("Detecting code-to-service/dependency relationships...");
+    log::info!("Detecting relationships between code elements and services/dependencies...");
     use crate::analysis::CodeRelationshipDetector;
     let relationship_detector = CodeRelationshipDetector::new(&repo_path);
     
     // Get stored services and dependencies for relationship detection
+    log::info!("  Loading {} service(s) and dependencies for relationship detection...", services.len());
     let stored_services = match state.service_repo.get_by_repository(&repo.id) {
-        Ok(s) => s,
+        Ok(s) => {
+            log::info!("  Loaded {} service(s) from database", s.len());
+            s
+        },
         Err(e) => {
-            log::warn!("Failed to get services for relationship detection: {}", e);
+            log::warn!("⚠ Failed to get services for relationship detection: {}", e);
             Vec::new()
         }
     };
     
     let stored_deps_vec = match state.dep_repo.get_by_repository(&repo.id) {
-        Ok(d) => d,
+        Ok(d) => {
+            log::info!("  Loaded {} dependencies from database", d.len());
+            d
+        },
         Err(e) => {
-            log::warn!("Failed to get dependencies for relationship detection: {}", e);
+            log::warn!("⚠ Failed to get dependencies for relationship detection: {}", e);
             Vec::new()
         }
     };
     
+    log::info!("  Analyzing {} code element(s) for relationships to {} service(s) and {} dependencies...", 
+        code_structure.elements.len(), stored_services.len(), stored_deps_vec.len());
     let code_relationships = match relationship_detector.detect_relationships(&code_structure, &stored_services, &stored_deps_vec) {
         Ok(rels) => {
-            log::info!("✓ Detected {} code relationships", rels.len());
+            if !rels.is_empty() {
+                log::info!("✓ Detected {} code-to-service/dependency relationship(s)", rels.len());
+            } else {
+                log::info!("✓ No code relationships detected");
+            }
             rels
         },
         Err(e) => {
@@ -408,21 +467,32 @@ pub async fn analyze_repository(
     
     // Store code relationships
     if !code_relationships.is_empty() {
+        log::info!("Storing {} code relationship(s) in database...", code_relationships.len());
         if let Err(e) = state.code_relationship_repo.store_relationships(&repo.id, &code_relationships) {
             log::error!("✗ Failed to store code relationships: {}", e);
         } else {
-            log::info!("✓ Stored {} code relationships", code_relationships.len());
+            log::info!("✓ Successfully stored {} code relationship(s)", code_relationships.len());
         }
     }
 
     // Analyze security configuration
-    state.progress_tracker.update_progress(&repository_id, 9, "Analyzing security configuration", "Scanning for security entities, API keys, and vulnerabilities...", None);
+    state.progress_tracker.update_progress(&repository_id, 9, "Analyzing security configuration", "Scanning configuration files and source code for security entities, API keys, and vulnerabilities...", None);
     log::info!("Step 9/10: Analyzing security configuration...");
+    log::info!("Scanning repository for security entities (API keys, secrets, IAM roles, etc.)...");
     let security_analyzer = SecurityAnalyzer::new();
     let security_analysis = match security_analyzer.analyze_repository(&repo_path, Some(&code_structure), Some(&services)) {
         Ok(analysis) => {
-            log::info!("✓ Security analysis complete: {} entities, {} relationships, {} vulnerabilities", 
-                analysis.entities.len(), analysis.relationships.len(), analysis.vulnerabilities.len());
+            // Count entity types for better diagnostics
+            use std::collections::HashMap;
+            let mut entity_type_counts: HashMap<String, usize> = HashMap::new();
+            for entity in &analysis.entities {
+                *entity_type_counts.entry(format!("{:?}", entity.entity_type)).or_insert(0) += 1;
+            }
+            let entity_summary: Vec<String> = entity_type_counts.iter()
+                .map(|(k, v)| format!("{}: {}", k, v))
+                .collect();
+            log::info!("✓ Security analysis complete: {} entities ({}), {} relationships, {} vulnerabilities", 
+                analysis.entities.len(), entity_summary.join(", "), analysis.relationships.len(), analysis.vulnerabilities.len());
             state.progress_tracker.update_progress(&repository_id, 9, "Analyzing security configuration", 
                 format!("Found {} security entities, {} relationships, {} vulnerabilities", 
                     analysis.entities.len(), analysis.relationships.len(), analysis.vulnerabilities.len()).as_str(),
@@ -445,9 +515,11 @@ pub async fn analyze_repository(
     // Store security entities, relationships, and vulnerabilities
     // IMPORTANT: Delete in reverse dependency order to avoid foreign key constraint issues
     // Delete vulnerabilities and relationships first (they reference entities), then entities
-    log::info!("Storing security data...");
+    log::info!("Storing security data: {} entities, {} relationships, {} vulnerabilities...", 
+        security_analysis.entities.len(), security_analysis.relationships.len(), security_analysis.vulnerabilities.len());
     
     // First, delete old vulnerabilities and relationships (they reference entities)
+    log::info!("Clearing existing security data...");
     if let Err(e) = state.security_repo.store_vulnerabilities(&repo.id, &[]) {
         log::warn!("Failed to clear old vulnerabilities: {}", e);
     }
@@ -456,6 +528,7 @@ pub async fn analyze_repository(
     }
     
     // Now store entities (they can be deleted safely)
+    log::info!("Storing {} security entities...", security_analysis.entities.len());
     if let Err(e) = state.security_repo.store_entities(&repo.id, &security_analysis.entities) {
         log::error!("✗ Failed to store security entities: {}", e);
         return HttpResponse::InternalServerError().json(ErrorResponse {
@@ -465,6 +538,7 @@ pub async fn analyze_repository(
     log::info!("✓ Stored {} security entities", security_analysis.entities.len());
 
     // Now store relationships (entities exist now)
+    log::info!("Storing {} security relationships...", security_analysis.relationships.len());
     if let Err(e) = state.security_repo.store_relationships(&repo.id, &security_analysis.relationships) {
         log::error!("✗ Failed to store security relationships: {}", e);
         return HttpResponse::InternalServerError().json(ErrorResponse {
@@ -474,6 +548,7 @@ pub async fn analyze_repository(
     log::info!("✓ Stored {} security relationships", security_analysis.relationships.len());
 
     // Finally store vulnerabilities (entities exist now)
+    log::info!("Storing {} security vulnerabilities...", security_analysis.vulnerabilities.len());
     if let Err(e) = state.security_repo.store_vulnerabilities(&repo.id, &security_analysis.vulnerabilities) {
         log::error!("✗ Failed to store security vulnerabilities: {}", e);
         return HttpResponse::InternalServerError().json(ErrorResponse {
