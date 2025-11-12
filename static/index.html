@@ -388,12 +388,17 @@
                 </div>
                 <div class="form-group">
                     <label for="repo-url">Repository URL</label>
-                    <input type="url" id="repo-url" required placeholder="https://github.com/user/repo.git">
+                    <input type="text" id="repo-url" required placeholder="https://github.com/user/repo.git or file:///path/to/repo">
                     <small style="color: var(--text-secondary); font-size: 0.875rem; display: block; margin-top: 0.5rem;">
-                        Enter a Git repository URL (e.g., GitHub, GitLab, Bitbucket). Examples:<br>
+                        Enter a Git repository URL or local file path. Examples:<br>
+                        <strong>Remote repositories:</strong><br>
                         • https://github.com/user/repo.git<br>
                         • https://gitlab.com/user/repo.git<br>
-                        • git@github.com:user/repo.git (SSH)
+                        • git@github.com:user/repo.git (SSH)<br>
+                        <strong>Local repositories:</strong><br>
+                        • file:///path/to/local/repo (Unix/Mac: use 3 slashes)<br>
+                        • file:///C:/path/to/local/repo (Windows: use 3 slashes with drive letter)<br>
+                        • file:///Volumes/5bits/current/my-project (macOS example)
                     </small>
                 </div>
                 <div class="form-group">
