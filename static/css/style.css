@@ -531,37 +531,45 @@ body {
 
 .modal-content {
     background-color: var(--card-bg);
-    padding: 2rem;
-    border-radius: 0.5rem;
+    padding: 0;
+    border-radius: 0.75rem;
     max-width: 500px;
     width: 90%;
     position: relative;
-    box-shadow: var(--shadow-lg);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
 }
 
 .modal-content.modal-large {
     max-width: 900px;
     max-height: 90vh;
-    overflow-y: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
+    padding: 1.5rem 2rem;
     border-bottom: 1px solid var(--border-color);
+    background: var(--bg-color);
 }
 
 .modal-header h2 {
     margin: 0;
     color: var(--text-primary);
+    font-size: 1.5rem;
+    font-weight: 600;
 }
 
 .modal-body {
-    max-height: calc(90vh - 150px);
+    padding: 2rem;
+    max-height: calc(90vh - 100px);
     overflow-y: auto;
+    flex: 1;
 }
 
 .clickable {
@@ -647,17 +655,32 @@ body {
     color: var(--primary-color);
 }
 
-.modal-close {
-    position: absolute;
-    right: 1rem;
-    top: 1rem;
-    font-size: 1.5rem;
+.modal-close,
+.modal-close-btn {
+    background: transparent;
+    border: none;
     cursor: pointer;
     color: var(--text-secondary);
+    padding: 0.5rem;
+    border-radius: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    width: 32px;
+    height: 32px;
 }
 
-.modal-close:hover {
+.modal-close:hover,
+.modal-close-btn:hover {
     color: var(--text-primary);
+    background: var(--bg-color);
+    transform: rotate(90deg);
+}
+
+.modal-close-btn svg {
+    width: 20px;
+    height: 20px;
 }
 
 

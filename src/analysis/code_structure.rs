@@ -139,6 +139,16 @@ impl CodeAnalyzer {
                         elements.extend(file_elements);
                         calls.extend(file_calls);
                     }
+                    Some("swift") => {
+                        let (file_elements, file_calls) = self.analyze_swift(&content, &normalized_path)?;
+                        elements.extend(file_elements);
+                        calls.extend(file_calls);
+                    }
+                    Some("objective-c") => {
+                        let (file_elements, file_calls) = self.analyze_objective_c(&content, &normalized_path)?;
+                        elements.extend(file_elements);
+                        calls.extend(file_calls);
+                    }
                     _ => {}
                 }
             }
@@ -157,6 +167,18 @@ impl CodeAnalyzer {
                     "py" => Some("python".to_string()),
                     "rs" => Some("rust".to_string()),
                     "go" => Some("go".to_string()),
+                    "swift" => Some("swift".to_string()),
+                    "m" | "mm" => Some("objective-c".to_string()),
+                    "h" => {
+                        // Header files could be C, C++, or Objective-C
+                        // Check if it's likely Objective-C by looking at the directory structure
+                        let path_str = path.to_string_lossy().to_lowercase();
+                        if path_str.contains(".xcodeproj") || path_str.contains("ios") || path_str.contains("iphone") || path_str.contains("macos") {
+                            Some("objective-c".to_string())
+                        } else {
+                            None // Skip C/C++ headers for now
+                        }
+                    },
                     _ => None,
                 }
             })
@@ -787,6 +809,428 @@ impl CodeAnalyzer {
             let after_params = &line[start + 1..];
             if let Some(end) = after_params.find('{') {
                 return Some(after_params[..end].trim().to_string());
+            }
+        }
+        None
+    }
+
+    /// Analyze Swift files
+    fn analyze_swift(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
+        let mut elements = Vec::new();
+        let mut calls = Vec::new();
+        let mut element_map: HashMap<String, String> = HashMap::new();
+
+        let lines: Vec<&str> = content.lines().collect();
+        
+        for (line_num, line) in lines.iter().enumerate() {
+            let line = line.trim();
+            let line_idx = line_num + 1;
+
+            // Detect function declarations: func functionName(...)
+            if line.starts_with("func ") {
+                if let Some(name) = self.extract_function_name_swift(line) {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    element_map.insert(name.clone(), id.clone());
+                    
+                    elements.push(CodeElement {
+                        id: id.clone(),
+                        name,
+                        element_type: CodeElementType::Function,
+                        file_path: normalized_path.to_string(),
+                        line_number: line_idx,
+                        language: "swift".to_string(),
+                        signature: Some(line.to_string()),
+                        doc_comment: self.extract_doc_comment(&lines, line_num),
+                        visibility: self.extract_visibility_swift(line),
+                        parameters: self.extract_parameters_swift(line),
+                        return_type: self.extract_return_type_swift(line),
+                    });
+                }
+            }
+
+            // Detect class declarations: class ClassName
+            if line.starts_with("class ") || line.starts_with("final class ") {
+                if let Some(name) = self.extract_class_name_swift(line) {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    element_map.insert(name.clone(), id.clone());
+                    
+                    elements.push(CodeElement {
+                        id: id.clone(),
+                        name,
+                        element_type: CodeElementType::Class,
+                        file_path: normalized_path.to_string(),
+                        line_number: line_idx,
+                        language: "swift".to_string(),
+                        signature: Some(line.to_string()),
+                        doc_comment: self.extract_doc_comment(&lines, line_num),
+                        visibility: self.extract_visibility_swift(line),
+                        parameters: Vec::new(),
+                        return_type: None,
+                    });
+                }
+            }
+
+            // Detect struct declarations: struct StructName
+            if line.starts_with("struct ") {
+                if let Some(name) = self.extract_struct_name_swift(line) {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    element_map.insert(name.clone(), id.clone());
+                    
+                    elements.push(CodeElement {
+                        id: id.clone(),
+                        name,
+                        element_type: CodeElementType::Struct,
+                        file_path: normalized_path.to_string(),
+                        line_number: line_idx,
+                        language: "swift".to_string(),
+                        signature: Some(line.to_string()),
+                        doc_comment: self.extract_doc_comment(&lines, line_num),
+                        visibility: self.extract_visibility_swift(line),
+                        parameters: Vec::new(),
+                        return_type: None,
+                    });
+                }
+            }
+
+            // Detect enum declarations: enum EnumName
+            if line.starts_with("enum ") {
+                if let Some(name) = self.extract_enum_name_swift(line) {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    element_map.insert(name.clone(), id.clone());
+                    
+                    elements.push(CodeElement {
+                        id: id.clone(),
+                        name,
+                        element_type: CodeElementType::Enum,
+                        file_path: normalized_path.to_string(),
+                        line_number: line_idx,
+                        language: "swift".to_string(),
+                        signature: Some(line.to_string()),
+                        doc_comment: self.extract_doc_comment(&lines, line_num),
+                        visibility: self.extract_visibility_swift(line),
+                        parameters: Vec::new(),
+                        return_type: None,
+                    });
+                }
+            }
+
+            // Detect imports: import ModuleName
+            if line.starts_with("import ") {
+                if let Some(module) = self.extract_import_swift(line) {
+                    let module_id = Uuid::new_v4().to_string();
+                    if !element_map.contains_key(&module_id) {
+                        elements.push(CodeElement {
+                            id: module_id.clone(),
+                            name: module.clone(),
+                            element_type: CodeElementType::Module,
+                            file_path: normalized_path.to_string(),
+                            line_number: line_idx,
+                            language: "swift".to_string(),
+                            signature: None,
+                            doc_comment: None,
+                            visibility: None,
+                            parameters: Vec::new(),
+                            return_type: None,
+                        });
+                        element_map.insert(module_id.clone(), module_id.clone());
+                    }
+                }
+            }
+        }
+
+        Ok((elements, calls))
+    }
+
+    /// Analyze Objective-C files
+    fn analyze_objective_c(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
+        let mut elements = Vec::new();
+        let mut calls = Vec::new();
+        let mut element_map: HashMap<String, String> = HashMap::new();
+
+        let lines: Vec<&str> = content.lines().collect();
+        
+        for (line_num, line) in lines.iter().enumerate() {
+            let line = line.trim();
+            let line_idx = line_num + 1;
+
+            // Detect method declarations: - (returnType)methodName or + (returnType)methodName
+            if (line.starts_with("- ") || line.starts_with("+ ")) && line.contains('(') {
+                if let Some(name) = self.extract_method_name_objc(line) {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    element_map.insert(name.clone(), id.clone());
+                    
+                    elements.push(CodeElement {
+                        id: id.clone(),
+                        name,
+                        element_type: CodeElementType::Method,
+                        file_path: normalized_path.to_string(),
+                        line_number: line_idx,
+                        language: "objective-c".to_string(),
+                        signature: Some(line.to_string()),
+                        doc_comment: self.extract_doc_comment(&lines, line_num),
+                        visibility: if line.starts_with("+") { Some("public".to_string()) } else { Some("private".to_string()) },
+                        parameters: Vec::new(),
+                        return_type: self.extract_return_type_objc(line),
+                    });
+                }
+            }
+
+            // Detect interface declarations: @interface ClassName
+            if line.starts_with("@interface ") {
+                if let Some(name) = self.extract_class_name_objc(line) {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    element_map.insert(name.clone(), id.clone());
+                    
+                    elements.push(CodeElement {
+                        id: id.clone(),
+                        name,
+                        element_type: CodeElementType::Class,
+                        file_path: normalized_path.to_string(),
+                        line_number: line_idx,
+                        language: "objective-c".to_string(),
+                        signature: Some(line.to_string()),
+                        doc_comment: self.extract_doc_comment(&lines, line_num),
+                        visibility: Some("public".to_string()),
+                        parameters: Vec::new(),
+                        return_type: None,
+                    });
+                }
+            }
+
+            // Detect implementation: @implementation ClassName
+            if line.starts_with("@implementation ") {
+                if let Some(name) = self.extract_class_name_objc(line) {
+                    // Implementation is usually already tracked as a class
+                    if !element_map.contains_key(&name) {
+                        let id = uuid::Uuid::new_v4().to_string();
+                        element_map.insert(name.clone(), id.clone());
+                        
+                        elements.push(CodeElement {
+                            id: id.clone(),
+                            name,
+                            element_type: CodeElementType::Class,
+                            file_path: normalized_path.to_string(),
+                            line_number: line_idx,
+                            language: "objective-c".to_string(),
+                            signature: Some(line.to_string()),
+                            doc_comment: self.extract_doc_comment(&lines, line_num),
+                            visibility: Some("public".to_string()),
+                            parameters: Vec::new(),
+                            return_type: None,
+                        });
+                    }
+                }
+            }
+
+            // Detect imports: #import "file.h" or #import <Module/file.h>
+            if line.starts_with("#import ") {
+                if let Some(module) = self.extract_import_objc(line) {
+                    let module_id = Uuid::new_v4().to_string();
+                    if !element_map.contains_key(&module_id) {
+                        elements.push(CodeElement {
+                            id: module_id.clone(),
+                            name: module.clone(),
+                            element_type: CodeElementType::Module,
+                            file_path: normalized_path.to_string(),
+                            line_number: line_idx,
+                            language: "objective-c".to_string(),
+                            signature: None,
+                            doc_comment: None,
+                            visibility: None,
+                            parameters: Vec::new(),
+                            return_type: None,
+                        });
+                        element_map.insert(module_id.clone(), module_id.clone());
+                    }
+                }
+            }
+        }
+
+        Ok((elements, calls))
+    }
+
+    // Swift helper functions
+    fn extract_function_name_swift(&self, line: &str) -> Option<String> {
+        if let Some(start) = line.find("func ") {
+            let after_func = &line[start + 5..];
+            if let Some(end) = after_func.find('(') {
+                let name_part = &after_func[..end].trim();
+                // Handle async, throws, etc.
+                let name = name_part.split_whitespace().next().unwrap_or("").to_string();
+                if !name.is_empty() {
+                    return Some(name);
+                }
+            }
+        }
+        None
+    }
+
+    fn extract_class_name_swift(&self, line: &str) -> Option<String> {
+        if let Some(start) = line.find("class ") {
+            let after_class = &line[start + 6..];
+            if let Some(end) = after_class.find(|c: char| c.is_whitespace()) {
+                return Some(after_class[..end].trim().to_string());
+            } else if let Some(end) = after_class.find(':') {
+                return Some(after_class[..end].trim().to_string());
+            } else if let Some(end) = after_class.find('{') {
+                return Some(after_class[..end].trim().to_string());
+            } else {
+                return Some(after_class.trim().to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_struct_name_swift(&self, line: &str) -> Option<String> {
+        if let Some(start) = line.find("struct ") {
+            let after_struct = &line[start + 7..];
+            if let Some(end) = after_struct.find(|c: char| c.is_whitespace()) {
+                return Some(after_struct[..end].trim().to_string());
+            } else if let Some(end) = after_struct.find(':') {
+                return Some(after_struct[..end].trim().to_string());
+            } else if let Some(end) = after_struct.find('{') {
+                return Some(after_struct[..end].trim().to_string());
+            } else {
+                return Some(after_struct.trim().to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_enum_name_swift(&self, line: &str) -> Option<String> {
+        if let Some(start) = line.find("enum ") {
+            let after_enum = &line[start + 5..];
+            if let Some(end) = after_enum.find(|c: char| c.is_whitespace()) {
+                return Some(after_enum[..end].trim().to_string());
+            } else if let Some(end) = after_enum.find(':') {
+                return Some(after_enum[..end].trim().to_string());
+            } else if let Some(end) = after_enum.find('{') {
+                return Some(after_enum[..end].trim().to_string());
+            } else {
+                return Some(after_enum.trim().to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_import_swift(&self, line: &str) -> Option<String> {
+        if let Some(start) = line.find("import ") {
+            let after_import = &line[start + 7..];
+            let module = after_import.trim();
+            if !module.is_empty() {
+                return Some(module.to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_visibility_swift(&self, line: &str) -> Option<String> {
+        if line.contains("private ") || line.contains("fileprivate ") {
+            Some("private".to_string())
+        } else if line.contains("public ") || line.contains("open ") {
+            Some("public".to_string())
+        } else if line.contains("internal ") {
+            Some("internal".to_string())
+        } else {
+            Some("internal".to_string()) // Default in Swift
+        }
+    }
+
+    fn extract_parameters_swift(&self, line: &str) -> Vec<String> {
+        if let Some(start) = line.find('(') {
+            if let Some(end) = line[start+1..].find(')') {
+                let params = &line[start+1..start+1+end];
+                return params.split(',')
+                    .map(|p| {
+                        let param = p.trim();
+                        // Extract parameter name (before colon in Swift)
+                        if let Some(colon) = param.find(':') {
+                            param[..colon].trim().to_string()
+                        } else {
+                            param.to_string()
+                        }
+                    })
+                    .filter(|p| !p.is_empty())
+                    .collect();
+            }
+        }
+        Vec::new()
+    }
+
+    fn extract_return_type_swift(&self, line: &str) -> Option<String> {
+        // Swift return types come after -> : func name() -> ReturnType
+        if let Some(arrow) = line.find("->") {
+            let after_arrow = &line[arrow + 2..];
+            let return_type = after_arrow.trim();
+            if let Some(end) = return_type.find('{') {
+                return Some(return_type[..end].trim().to_string());
+            } else if let Some(end) = return_type.find(|c: char| c.is_whitespace()) {
+                return Some(return_type[..end].trim().to_string());
+            } else {
+                return Some(return_type.to_string());
+            }
+        }
+        None
+    }
+
+    // Objective-C helper functions
+    fn extract_method_name_objc(&self, line: &str) -> Option<String> {
+        // Format: - (returnType)methodName:param1:param2
+        if let Some(start) = line.find(')') {
+            let after_return = &line[start + 1..];
+            if let Some(end) = after_return.find(':') {
+                return Some(after_return[..end].trim().to_string());
+            } else if let Some(end) = after_return.find('{') {
+                return Some(after_return[..end].trim().to_string());
+            } else {
+                return Some(after_return.trim().to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_class_name_objc(&self, line: &str) -> Option<String> {
+        if let Some(start) = line.find("@interface ") {
+            let after_interface = &line[start + 11..];
+            if let Some(end) = after_interface.find(|c: char| c.is_whitespace()) {
+                return Some(after_interface[..end].trim().to_string());
+            } else if let Some(end) = after_interface.find(':') {
+                return Some(after_interface[..end].trim().to_string());
+            } else {
+                return Some(after_interface.trim().to_string());
+            }
+        } else if let Some(start) = line.find("@implementation ") {
+            let after_impl = &line[start + 16..];
+            if let Some(end) = after_impl.find(|c: char| c.is_whitespace()) {
+                return Some(after_impl[..end].trim().to_string());
+            } else if let Some(end) = after_impl.find('{') {
+                return Some(after_impl[..end].trim().to_string());
+            } else {
+                return Some(after_impl.trim().to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_import_objc(&self, line: &str) -> Option<String> {
+        // #import "file.h" or #import <Module/file.h>
+        if let Some(start) = line.find('"') {
+            if let Some(end) = line[start+1..].find('"') {
+                return Some(line[start+1..start+1+end].to_string());
+            }
+        } else if let Some(start) = line.find('<') {
+            if let Some(end) = line[start+1..].find('>') {
+                return Some(line[start+1..start+1+end].to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_return_type_objc(&self, line: &str) -> Option<String> {
+        // Format: - (returnType)methodName
+        if let Some(start) = line.find('(') {
+            if let Some(end) = line[start+1..].find(')') {
+                return Some(line[start+1..start+1+end].trim().to_string());
             }
         }
         None

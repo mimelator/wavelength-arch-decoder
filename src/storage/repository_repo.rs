@@ -243,6 +243,8 @@ impl DependencyRepository {
                 PackageManager::Go => "go",
                 PackageManager::Composer => "composer",
                 PackageManager::NuGet => "nuget",
+                PackageManager::SwiftPackageManager => "swift-package-manager",
+                PackageManager::CocoaPods => "cocoapods",
             };
             
             conn.execute(

@@ -213,7 +213,10 @@ impl ServiceDetector {
                       file_name.ends_with(".tsx") ||
                       file_name.ends_with(".py") ||
                       file_name.ends_with(".rs") ||
-                      file_name.ends_with(".go") {
+                      file_name.ends_with(".go") ||
+                      file_name.ends_with(".swift") ||
+                      file_name.ends_with(".m") ||
+                      file_name.ends_with(".mm") {
                 FileType::Code
             } else {
                 continue;
@@ -237,6 +240,8 @@ impl ServiceDetector {
                                 "py" => "python",
                                 "rs" => "rust",
                                 "go" => "go",
+                                "swift" => "swift",
+                                "m" | "mm" => "objective-c",
                                 _ => ext, // Keep original if unknown
                             }
                         })

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum PackageManager {
@@ -12,6 +13,8 @@ pub enum PackageManager {
     Go,
     Composer,
     NuGet,
+    SwiftPackageManager,
+    CocoaPods,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +66,21 @@ impl DependencyExtractor {
 
         // Look for go.mod (go)
         if let Some(manifest) = self.extract_go(repo_path)? {
+            manifests.push(manifest);
+        }
+
+        // Look for Package.swift (Swift Package Manager)
+        if let Some(manifest) = self.extract_swift_package_manager(repo_path)? {
+            manifests.push(manifest);
+        }
+
+        // Look for Podfile (CocoaPods)
+        if let Some(manifest) = self.extract_cocoapods(repo_path)? {
+            manifests.push(manifest);
+        }
+
+        // Look for Xcode project files (.xcodeproj/project.pbxproj) for Swift Package Manager dependencies
+        if let Some(manifest) = self.extract_xcode_packages(repo_path)? {
             manifests.push(manifest);
         }
 
@@ -427,6 +445,362 @@ impl DependencyExtractor {
             package_manager: PackageManager::Go,
             dependencies,
             file_path: "go.mod".to_string(),
+        }))
+    }
+
+    /// Extract Swift Package Manager dependencies from Package.swift
+    fn extract_swift_package_manager(&self, repo_path: &Path) -> Result<Option<DependencyManifest>> {
+        // Look for Package.swift in the root or any subdirectory
+        let mut package_swift = repo_path.join("Package.swift");
+        if !package_swift.exists() {
+            // Try to find it in subdirectories (SPM allows nested Package.swift)
+            let mut found = None;
+            for entry in std::fs::read_dir(repo_path)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    let nested_package = path.join("Package.swift");
+                    if nested_package.exists() {
+                        found = Some(nested_package);
+                        break;
+                    }
+                }
+            }
+            if let Some(found_path) = found {
+                package_swift = found_path;
+            } else {
+                return Ok(None);
+            }
+        }
+        let content = std::fs::read_to_string(&package_swift)?;
+        let mut dependencies = Vec::new();
+
+        // Parse Package.swift - look for .package(url:from:) or .package(url:exact:) patterns
+        let lines: Vec<&str> = content.lines().collect();
+        let mut in_dependencies = false;
+        
+        for line in lines {
+            let line = line.trim();
+            
+            // Detect dependencies section
+            if line.contains("dependencies:") || line.contains("dependencies =") {
+                in_dependencies = true;
+                continue;
+            }
+            
+            if in_dependencies {
+                // Look for .package(url:from:) or .package(url:exact:)
+                if line.contains(".package(") {
+                    // Extract URL and version
+                    if let Some(url_start) = line.find("url:") {
+                        let after_url = &line[url_start + 4..];
+                        let url = if let Some(url_end) = after_url.find(',') {
+                            after_url[..url_end].trim_matches(|c| c == '"' || c == ' ' || c == '\'')
+                        } else if let Some(url_end) = after_url.find(')') {
+                            after_url[..url_end].trim_matches(|c| c == '"' || c == ' ' || c == '\'')
+                        } else {
+                            continue;
+                        };
+                        
+                        // Extract package name from URL (last component)
+                        let name = url.split('/').last().unwrap_or("unknown").trim_end_matches(".git");
+                        
+                        // Extract version
+                        let version = if line.contains("from:") {
+                            if let Some(version_start) = line.find("from:") {
+                                let after_from = &line[version_start + 5..];
+                                if let Some(version_end) = after_from.find(',') {
+                                    after_from[..version_end].trim_matches(|c| c == '"' || c == ' ' || c == '\'')
+                                } else if let Some(version_end) = after_from.find(')') {
+                                    after_from[..version_end].trim_matches(|c| c == '"' || c == ' ' || c == '\'')
+                                } else {
+                                    "unknown"
+                                }
+                            } else {
+                                "unknown"
+                            }
+                        } else if line.contains("exact:") {
+                            if let Some(version_start) = line.find("exact:") {
+                                let after_exact = &line[version_start + 6..];
+                                if let Some(version_end) = after_exact.find(',') {
+                                    after_exact[..version_end].trim_matches(|c| c == '"' || c == ' ' || c == '\'')
+                                } else if let Some(version_end) = after_exact.find(')') {
+                                    after_exact[..version_end].trim_matches(|c| c == '"' || c == ' ' || c == '\'')
+                                } else {
+                                    "unknown"
+                                }
+                            } else {
+                                "unknown"
+                            }
+                        } else {
+                            "latest"
+                        };
+                        
+                        dependencies.push(PackageDependency {
+                            name: name.to_string(),
+                            version: version.to_string(),
+                            package_manager: PackageManager::SwiftPackageManager,
+                            is_dev: false,
+                            is_optional: false,
+                        });
+                    }
+                }
+                
+                // Stop if we hit another top-level declaration
+                if line.starts_with("targets:") || line.starts_with("products:") || line.starts_with("name:") {
+                    break;
+                }
+            }
+        }
+
+        if dependencies.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(DependencyManifest {
+            package_manager: PackageManager::SwiftPackageManager,
+            dependencies,
+            file_path: "Package.swift".to_string(),
+        }))
+    }
+
+    /// Extract CocoaPods dependencies from Podfile
+    fn extract_cocoapods(&self, repo_path: &Path) -> Result<Option<DependencyManifest>> {
+        let podfile = repo_path.join("Podfile");
+        if !podfile.exists() {
+            return Ok(None);
+        }
+
+        let content = std::fs::read_to_string(&podfile)?;
+        let mut dependencies = Vec::new();
+
+        // Parse Podfile - look for pod 'Name', 'version' patterns
+        for line in content.lines() {
+            let line = line.trim();
+            
+            // Skip comments and empty lines
+            if line.starts_with('#') || line.is_empty() {
+                continue;
+            }
+            
+            // Look for pod declarations: pod 'Name', '~> version' or pod 'Name'
+            if line.starts_with("pod ") || line.starts_with("pod '") || line.starts_with("pod \"") {
+                let pod_line = line.strip_prefix("pod ").unwrap_or(line);
+                let pod_line = pod_line.trim();
+                
+                // Extract pod name (first quoted string)
+                let name = if let Some(start) = pod_line.find('\'') {
+                    if let Some(end) = pod_line[start+1..].find('\'') {
+                        pod_line[start+1..start+1+end].to_string()
+                    } else if let Some(start) = pod_line.find('"') {
+                        if let Some(end) = pod_line[start+1..].find('"') {
+                            pod_line[start+1..start+1+end].to_string()
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                } else if let Some(start) = pod_line.find('"') {
+                    if let Some(end) = pod_line[start+1..].find('"') {
+                        pod_line[start+1..start+1+end].to_string()
+                    } else {
+                        continue;
+                    }
+                } else {
+                    continue;
+                };
+                
+                // Extract version (look for '~>', '>=', '<=', '==', or quoted version)
+                let version = if let Some(version_op) = pod_line.find("~>") {
+                    let after_op = &pod_line[version_op + 2..];
+                    if let Some(end) = after_op.find('\'') {
+                        after_op[..end].trim().to_string()
+                    } else if let Some(end) = after_op.find('"') {
+                        after_op[..end].trim().to_string()
+                    } else if let Some(end) = after_op.find(',') {
+                        after_op[..end].trim().to_string()
+                    } else {
+                        after_op.trim().to_string()
+                    }
+                } else if let Some(version_start) = pod_line.find(',') {
+                    let after_comma = &pod_line[version_start + 1..];
+                    let version_str = after_comma.trim();
+                    if let Some(start) = version_str.find('\'') {
+                        if let Some(end) = version_str[start+1..].find('\'') {
+                            version_str[start+1..start+1+end].to_string()
+                        } else {
+                            "latest".to_string()
+                        }
+                    } else if let Some(start) = version_str.find('"') {
+                        if let Some(end) = version_str[start+1..].find('"') {
+                            version_str[start+1..start+1+end].to_string()
+                        } else {
+                            "latest".to_string()
+                        }
+                    } else {
+                        "latest".to_string()
+                    }
+                } else {
+                    "latest".to_string()
+                };
+                
+                dependencies.push(PackageDependency {
+                    name,
+                    version,
+                    package_manager: PackageManager::CocoaPods,
+                    is_dev: false,
+                    is_optional: false,
+                });
+            }
+        }
+
+        if dependencies.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(DependencyManifest {
+            package_manager: PackageManager::CocoaPods,
+            dependencies,
+            file_path: "Podfile".to_string(),
+        }))
+    }
+
+    /// Extract Swift Package Manager dependencies from Xcode project files
+    fn extract_xcode_packages(&self, repo_path: &Path) -> Result<Option<DependencyManifest>> {
+        // Find all .xcodeproj directories
+        let mut xcode_projects = Vec::new();
+        for entry in WalkDir::new(repo_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_dir())
+        {
+            let path = entry.path();
+            if path.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.ends_with(".xcodeproj"))
+                .unwrap_or(false)
+            {
+                let project_pbxproj = path.join("project.pbxproj");
+                if project_pbxproj.exists() {
+                    xcode_projects.push(project_pbxproj);
+                }
+            }
+        }
+
+        if xcode_projects.is_empty() {
+            return Ok(None);
+        }
+
+        let mut all_dependencies = Vec::new();
+        let mut seen_packages: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for project_file in xcode_projects {
+            let content = std::fs::read_to_string(&project_file)?;
+            
+            // Parse XCRemoteSwiftPackageReference sections
+            // Format: XCRemoteSwiftPackageReference "package-name" = { isa = XCRemoteSwiftPackageReference; repositoryURL = "https://..."; ... }
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_package_ref = false;
+            let mut current_name: Option<String> = None;
+            let mut current_url: Option<String> = None;
+
+            for line in lines {
+                let line = line.trim();
+                
+                // Detect start of XCRemoteSwiftPackageReference
+                if line.contains("XCRemoteSwiftPackageReference") && line.contains('"') {
+                    // Extract package name from: XCRemoteSwiftPackageReference "package-name"
+                    if let Some(start) = line.find('"') {
+                        if let Some(end) = line[start+1..].find('"') {
+                            current_name = Some(line[start+1..start+1+end].to_string());
+                            in_package_ref = true;
+                            current_url = None;
+                        }
+                    }
+                }
+                
+                // Extract repositoryURL
+                if in_package_ref && line.contains("repositoryURL") {
+                    if let Some(start) = line.find('"') {
+                        if let Some(end) = line[start+1..].find('"') {
+                            current_url = Some(line[start+1..start+1+end].to_string());
+                        }
+                    } else if let Some(start) = line.find('=') {
+                        // Sometimes URL is on next line or without quotes
+                        let url_part = line[start+1..].trim();
+                        if !url_part.is_empty() && (url_part.starts_with("http") || url_part.starts_with("git@")) {
+                            current_url = Some(url_part.trim_matches(|c| c == '"' || c == ';' || c == ' ').to_string());
+                        }
+                    }
+                }
+                
+                // Detect end of package reference block
+                if in_package_ref && line == "};" {
+                    if let (Some(name), Some(url)) = (current_name.take(), current_url.take()) {
+                        // Create a unique key from URL to avoid duplicates
+                        let url_key = url.clone();
+                        if !seen_packages.contains(&url_key) {
+                            seen_packages.insert(url_key.clone());
+                            
+                            // Extract version/revision if available (look for requirementKind, branch, version, etc.)
+                            let version = if let Some(url_pos) = content.find(&format!("repositoryURL = \"{}\"", url)) {
+                                // Try to find version requirement after this URL
+                                let after_url = &content[url_pos..];
+                                // Look for requirementKind, branch, version, or revision
+                                if let Some(branch_start) = after_url.find("branch =") {
+                                    if let Some(branch_quote) = after_url[branch_start..].find('"') {
+                                        if let Some(branch_end) = after_url[branch_start+branch_quote+1..].find('"') {
+                                            let branch = &after_url[branch_start+branch_quote+1..branch_start+branch_quote+1+branch_end];
+                                            format!("branch:{}", branch)
+                                        } else {
+                                            "latest".to_string()
+                                        }
+                                    } else {
+                                        "latest".to_string()
+                                    }
+                                } else if let Some(version_start) = after_url.find("version =") {
+                                    if let Some(version_quote) = after_url[version_start..].find('"') {
+                                        if let Some(version_end) = after_url[version_start+version_quote+1..].find('"') {
+                                            let version_str = &after_url[version_start+version_quote+1..version_start+version_quote+1+version_end];
+                                            format!("version:{}", version_str)
+                                        } else {
+                                            "latest".to_string()
+                                        }
+                                    } else {
+                                        "latest".to_string()
+                                    }
+                                } else {
+                                    "latest".to_string()
+                                }
+                            } else {
+                                "latest".to_string()
+                            };
+                            
+                            all_dependencies.push(PackageDependency {
+                                name: name.clone(),
+                                version,
+                                package_manager: PackageManager::SwiftPackageManager,
+                                is_dev: false,
+                                is_optional: false,
+                            });
+                        }
+                    }
+                    in_package_ref = false;
+                    current_name = None;
+                    current_url = None;
+                }
+            }
+        }
+
+        if all_dependencies.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(DependencyManifest {
+            package_manager: PackageManager::SwiftPackageManager,
+            dependencies: all_dependencies,
+            file_path: "project.pbxproj".to_string(),
         }))
     }
 }
