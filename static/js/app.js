@@ -1234,8 +1234,20 @@ window.analyzeRepository = async function(repoId) {
                     </div>
                 `;
                 
-                // Scroll into view
+                // Scroll into view and ensure it stays visible
                 statusDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                
+                // Force it to stay visible - prevent any CSS from hiding it
+                setTimeout(() => {
+                    if (statusDiv && statusDiv.parentNode) {
+                        statusDiv.style.display = 'block';
+                        statusDiv.style.visibility = 'visible';
+                        statusDiv.style.opacity = '1';
+                        console.log('Forced statusDiv visibility');
+                    }
+                }, 100);
+            } else {
+                console.error('statusDiv is null - cannot display results!');
             }
             
             if (analyzeBtn) {
