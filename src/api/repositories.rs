@@ -86,13 +86,13 @@ pub async fn analyze_repository(
     let repository_id = body.repository_id.clone();
     log::info!("Starting analysis for repository ID: {}", repository_id);
     
-    // Start progress tracking
-    state.progress_tracker.start_analysis(&repository_id, 8);
+    // Start progress tracking (10 steps including documentation indexing)
+    state.progress_tracker.start_analysis(&repository_id, 10);
     
     // API key validation removed for local tool simplicity
     // Get repository
     state.progress_tracker.update_progress(&repository_id, 1, "Fetching repository information", "Loading repository details...", None);
-    log::info!("Step 1/8: Fetching repository information...");
+    log::info!("Step 1/10: Fetching repository information...");
     let repo = match state.repo_repo.find_by_id(&repository_id) {
         Ok(Some(repo)) => {
             log::info!("Found repository: {} ({})", repo.name, repo.url);
@@ -116,7 +116,7 @@ pub async fn analyze_repository(
 
     // Clone/update repository
     state.progress_tracker.update_progress(&repository_id, 2, "Initializing crawler", "Setting up repository crawler...", None);
-    log::info!("Step 2/8: Initializing repository crawler...");
+    log::info!("Step 2/10: Initializing repository crawler...");
     let storage_config = StorageConfig {
         repository_cache_path: "./cache/repos".to_string(),
         max_cache_size: "10GB".to_string(),
@@ -143,7 +143,7 @@ pub async fn analyze_repository(
             format!("Fetching repository from {}...", repo.url)
         }.as_str(), 
         Some(serde_json::json!({"url": repo.url, "branch": repo.branch, "is_local": crate::ingestion::crawler::RepositoryCrawler::is_local_path(&repo.url)})));
-    log::info!("Step 3/8: Preparing repository from {} (branch: {})...", repo.url, repo.branch);
+    log::info!("Step 3/10: Preparing repository from {} (branch: {})...", repo.url, repo.branch);
     let credentials = repo.auth_type.as_ref().and_then(|auth_type| {
         repo.auth_value.as_ref().map(|auth_value| {
             match auth_type.as_str() {
@@ -200,7 +200,7 @@ pub async fn analyze_repository(
     };
 
     // Extract dependencies
-    log::info!("Step 4/8: Extracting dependencies from repository...");
+    log::info!("Step 4/10: Extracting dependencies from repository...");
     let extractor = DependencyExtractor::new();
     let manifests = match extractor.extract_from_repository(&repo_path) {
         Ok(m) => {
@@ -235,7 +235,7 @@ pub async fn analyze_repository(
     log::info!("✓ Stored {} dependencies", stored_deps);
 
     // Detect services
-    log::info!("Step 5/8: Detecting external services...");
+    log::info!("Step 5/10: Detecting external services...");
     // Load plugins from config/plugins directory if it exists
     let plugin_dir = Path::new("config/plugins");
     let detector = if plugin_dir.exists() && plugin_dir.is_dir() {
@@ -277,7 +277,7 @@ pub async fn analyze_repository(
 
     // Detect developer tools and scripts
     state.progress_tracker.update_progress(&repository_id, 6, "Detecting developer tools", "Scanning for build tools, test frameworks, linters, and scripts...", None);
-    log::info!("Step 6/9: Detecting developer tools...");
+    log::info!("Step 6/10: Detecting developer tools...");
     let tool_detector = ToolDetector::new();
     let tools = match tool_detector.detect_tools(&repo_path) {
         Ok(t) => {
@@ -303,7 +303,7 @@ pub async fn analyze_repository(
     log::info!("✓ Stored {} tools", tools.len());
 
     // Build and store knowledge graph
-    log::info!("Step 7/9: Building knowledge graph...");
+    log::info!("Step 7/10: Building knowledge graph...");
     let graph_builder = GraphBuilder::new(
         state.repo_repo.db.clone(),
         state.repo_repo.clone(),
@@ -333,7 +333,7 @@ pub async fn analyze_repository(
     }
 
     // Analyze code structure
-    log::info!("Step 8/9: Analyzing code structure...");
+    log::info!("Step 8/10: Analyzing code structure...");
     let code_analyzer = CodeAnalyzer::new();
     let code_structure = match code_analyzer.analyze_repository(&repo_path) {
         Ok(structure) => {
@@ -413,7 +413,7 @@ pub async fn analyze_repository(
 
     // Analyze security configuration
     state.progress_tracker.update_progress(&repository_id, 9, "Analyzing security configuration", "Scanning for security entities, API keys, and vulnerabilities...", None);
-    log::info!("Step 9/9: Analyzing security configuration...");
+    log::info!("Step 9/10: Analyzing security configuration...");
     let security_analyzer = SecurityAnalyzer::new();
     let security_analysis = match security_analyzer.analyze_repository(&repo_path, Some(&code_structure), Some(&services)) {
         Ok(analysis) => {
@@ -478,6 +478,34 @@ pub async fn analyze_repository(
     }
     log::info!("✓ Stored {} security vulnerabilities", security_analysis.vulnerabilities.len());
 
+    // Index documentation files (experimental - may be removed)
+    state.progress_tracker.update_progress(&repository_id, 10, "Indexing developer documentation", "Scanning for README, API docs, and other documentation files...", None);
+    log::info!("Step 10/10: Indexing developer documentation...");
+    use crate::analysis::DocumentationIndexer;
+    let doc_indexer = DocumentationIndexer::new();
+    match doc_indexer.index_repository(&repo_path, &repo.id) {
+        Ok(docs) => {
+            log::info!("✓ Indexed {} documentation files", docs.len());
+            state.progress_tracker.update_progress(&repository_id, 10, "Indexing developer documentation", 
+                format!("Indexed {} documentation files", docs.len()).as_str(),
+                Some(serde_json::json!({
+                    "documentation_files": docs.len()
+                })));
+            
+            // Store documentation
+            if let Err(e) = state.documentation_repo.store_documentation(&docs) {
+                log::warn!("⚠ Failed to store documentation: {}", e);
+                // Don't fail the entire analysis if documentation storage fails
+            } else {
+                log::info!("✓ Stored {} documentation files", docs.len());
+            }
+        },
+        Err(e) => {
+            log::warn!("⚠ Failed to index documentation: {}", e);
+            // Don't fail the entire analysis if documentation indexing fails
+        }
+    }
+
     // Update last analyzed timestamp
     log::info!("Updating repository timestamp...");
     if let Err(e) = state.repo_repo.update_last_analyzed(&repo.id) {
@@ -505,7 +533,8 @@ pub async fn analyze_repository(
             "code_calls_found": code_structure.calls.len(),
             "security_entities_found": security_analysis.entities.len(),
             "security_relationships_found": security_analysis.relationships.len(),
-            "security_vulnerabilities_found": security_analysis.vulnerabilities.len()
+            "security_vulnerabilities_found": security_analysis.vulnerabilities.len(),
+            "documentation_indexed": true
         }
     }))
 }

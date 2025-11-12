@@ -17,9 +17,10 @@ use crate::api::entity_details::get_entity_details;
 use crate::api::jobs::{create_job, get_job_status, list_jobs, create_scheduled_job, batch_analyze};
 use crate::api::progress::get_analysis_progress;
 use crate::api::reports::generate_report;
+use crate::api::documentation::{get_documentation, get_documentation_by_type, search_documentation};
 use crate::crawler::webhooks::{handle_github_webhook, handle_gitlab_webhook};
 use crate::config::Config;
-use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository};
+use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository, DocumentationRepository};
 use crate::api::progress::ProgressTracker;
 use std::sync::Arc;
 use actix_web::HttpResponse;
@@ -46,6 +47,7 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
     let code_relationship_repo = CodeRelationshipRepository::new(db.clone());
     let security_repo = SecurityRepository::new(db.clone());
     let tool_repo = ToolRepository::new(db.clone());
+    let documentation_repo = DocumentationRepository::new(db.clone());
     
     // Initialize progress tracker
     let progress_tracker = Arc::new(ProgressTracker::new());
@@ -59,6 +61,7 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
         code_relationship_repo: code_relationship_repo.clone(),
         security_repo: security_repo.clone(),
         tool_repo: tool_repo.clone(),
+        documentation_repo: documentation_repo.clone(),
         progress_tracker: progress_tracker.clone(),
     });
     
@@ -99,6 +102,8 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
             .route("/health", web::get().to(health))
             .route("/graphql", web::post().to(graphql_handler))
             .route("/graphiql", web::get().to(graphiql_handler))
+            // Serve favicon (return 204 No Content to prevent 404)
+            .route("/favicon.ico", web::get().to(|| async { HttpResponse::NoContent().finish() }))
             // Serve static files for UI
             .service(Files::new("/static", "./static").show_files_listing())
             // Serve index.html for root path
@@ -140,6 +145,10 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     .route("/repositories/{repo_id}/entities/{entity_type}/{entity_id}", web::get().to(get_entity_details))
                     // Report endpoints
                     .route("/repositories/{id}/report", web::get().to(generate_report))
+                    // Documentation endpoints (experimental)
+                    .route("/repositories/{id}/documentation", web::get().to(get_documentation))
+                    .route("/repositories/{id}/documentation/type/{doc_type}", web::get().to(get_documentation_by_type))
+                    .route("/repositories/{id}/documentation/search", web::get().to(search_documentation))
                     // Job endpoints (Phase 8)
                     .route("/jobs", web::post().to(create_job))
                     .route("/jobs", web::get().to(list_jobs))

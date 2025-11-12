@@ -751,11 +751,12 @@ impl ServiceDetector {
                 // If no explicit match found, check word boundaries to avoid false positives
                 // e.g., "together" should not match "turbopack"
                 if match_positions.is_empty() && content_lower.contains(&pattern_lower) {
-                    // Find all word boundary matches
+                    // Find all word boundary matches at specific positions
                     let mut start = 0;
                     while let Some(pos) = content_lower[start..].find(&pattern_lower) {
                         let actual_pos = start + pos;
-                        if self.is_word_boundary_match(&content_lower, &pattern_lower) {
+                        // Check if this specific position is at a word boundary
+                        if self.is_position_at_word_boundary(&content_lower, actual_pos, pattern_lower.len()) {
                             match_positions.push(actual_pos);
                         }
                         start = actual_pos + 1;
@@ -984,39 +985,44 @@ impl ServiceDetector {
         let mut start = 0;
         while let Some(pos) = content[start..].find(pattern) {
             let actual_pos = start + pos;
-            let before = if actual_pos > 0 {
-                content.chars().nth(actual_pos - 1)
-            } else {
-                None
-            };
-            let after_pos = actual_pos + pattern.len();
-            let after = if after_pos < content.len() {
-                content.chars().nth(after_pos)
-            } else {
-                None
-            };
-            
-            // Check if it's at a word boundary (preceded/followed by non-alphanumeric or start/end)
-            let is_boundary = match (before, after) {
-                (None, _) => true, // Start of content
-                (_, None) => true,  // End of content
-                (Some(b), Some(a)) => {
-                    // Word boundary if before/after are non-alphanumeric (or underscore/hyphen for package names)
-                    (!b.is_alphanumeric() || b == '_' || b == '-' || b == '/') &&
-                    (!a.is_alphanumeric() || a == '_' || a == '-' || a == '/')
-                }
-                (Some(b), None) => !b.is_alphanumeric() || b == '_' || b == '-' || b == '/',
-                (None, Some(a)) => !a.is_alphanumeric() || a == '_' || a == '-' || a == '/',
-            };
-            
-            if is_boundary {
+            if self.is_position_at_word_boundary(content, actual_pos, pattern.len()) {
                 return true;
             }
-            
             start = actual_pos + 1;
         }
         
         false
+    }
+    
+    /// Check if a pattern at a specific position is at a word boundary
+    fn is_position_at_word_boundary(&self, content: &str, pos: usize, pattern_len: usize) -> bool {
+        let before = if pos > 0 {
+            content.chars().nth(pos - 1)
+        } else {
+            None
+        };
+        let after_pos = pos + pattern_len;
+        let after = if after_pos < content.len() {
+            content.chars().nth(after_pos)
+        } else {
+            None
+        };
+        
+        // Check if it's at a word boundary (preceded/followed by non-alphanumeric or start/end)
+        // This prevents "together" from matching inside "turbopack"
+        match (before, after) {
+            (None, _) => true, // Start of content
+            (_, None) => true,  // End of content
+            (Some(b), Some(a)) => {
+                // Word boundary if before/after are non-alphanumeric
+                // This ensures "together" doesn't match inside "turbopack" (where b='r', a='p' are alphanumeric)
+                let before_is_boundary = !b.is_alphanumeric();
+                let after_is_boundary = !a.is_alphanumeric();
+                before_is_boundary && after_is_boundary
+            }
+            (Some(b), None) => !b.is_alphanumeric(),
+            (None, Some(a)) => !a.is_alphanumeric(),
+        }
     }
 }
 

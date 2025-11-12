@@ -200,6 +200,9 @@ impl RepositoryRepository {
         // Dependencies
         conn.execute("DELETE FROM dependencies WHERE repository_id = ?1", params![id])?;
         
+        // Delete documentation (experimental - may be removed)
+        conn.execute("DELETE FROM documentation WHERE repository_id = ?1", params![id])?;
+        
         // Finally, delete the repository itself
         conn.execute("DELETE FROM repositories WHERE id = ?1", params![id])?;
         

@@ -307,8 +307,35 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
         'related_to': '',
     };
     
+    // Helper function to check if a node type should be shown
+    const isNodeTypeEnabled = (nodeType) => {
+        const typeLower = (nodeType || '').toLowerCase();
+        if (typeLower.includes('repository')) return enabledNodeTypes.repository;
+        if (typeLower.includes('dependency') || typeLower.includes('package')) return enabledNodeTypes.dependency;
+        if (typeLower.includes('service') || typeLower.includes('provider')) return enabledNodeTypes.service;
+        if (typeLower.includes('code') || typeLower.includes('function') || typeLower.includes('class')) return enabledNodeTypes.code;
+        if (typeLower.includes('security')) return enabledNodeTypes.security;
+        return true; // Default to showing unknown types
+    };
+    
+    // Filter nodes based on enabled types
+    const filteredNodes = graphData.nodes.filter(node => {
+        const nodeType = (node.node_type || node.type || 'unknown').toLowerCase();
+        return isNodeTypeEnabled(nodeType);
+    });
+    
+    // Get IDs of filtered nodes for edge filtering
+    const enabledNodeIds = new Set(filteredNodes.map(n => n.id));
+    
+    // Filter edges to only include those connecting enabled nodes
+    const filteredEdges = graphData.edges.filter(edge => {
+        const sourceId = edge.source_node_id || edge.source;
+        const targetId = edge.target_node_id || edge.target;
+        return enabledNodeIds.has(sourceId) && enabledNodeIds.has(targetId);
+    });
+    
     // Prepare nodes with enhanced information
-    const nodes = graphData.nodes.map(node => {
+    const nodes = filteredNodes.map(node => {
         // Handle both node_type (from enum) and type (from GraphQL)
         let nodeType = (node.node_type || node.type || 'unknown').toLowerCase();
         // Normalize enum serialization (e.g., "Repository" -> "repository")
@@ -354,8 +381,8 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
         };
     });
     
-    // Prepare edges with relationship labels
-    const edges = graphData.edges.map(edge => {
+    // Prepare edges with relationship labels (using filtered edges)
+    const edges = filteredEdges.map(edge => {
         // Handle both edge_type (from enum) and relationship_type
         const edgeType = edge.edge_type || edge.relationship_type || edge.type || 'RelatedTo';
         const edgeLabel = edgeTypeLabels[edgeType] || edgeTypeLabels[edgeType.toLowerCase()] || '';
@@ -394,8 +421,14 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
         };
     });
     
-    // Create network with enhanced options
+    // Create network with enhanced options (using filtered data)
     const data = { nodes, edges };
+    
+    // Store filtered graph data for node details
+    const filteredGraphData = {
+        nodes: filteredNodes,
+        edges: filteredEdges
+    };
     
     // Get theme-aware colors
     const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -473,8 +506,8 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
     
     const network = new vis.Network(container, data, options);
     
-    // Store graph data and repo ID for navigation
-    network.graphData = graphData;
+    // Store graph data and repo ID for navigation (use filtered data for node lookup)
+    network.graphData = filteredGraphData;
     // Determine repo ID: use provided repoId, or check if we're in repository detail view
     network.repoId = repoId || (container.closest('.page')?.id === 'repository-detail' ? currentRepoId : null);
     
@@ -482,9 +515,9 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
     network.on('click', function(params) {
         if (params.nodes.length > 0) {
             const nodeId = params.nodes[0];
-            const node = graphData.nodes.find(n => n.id === nodeId);
+            const node = filteredGraphData.nodes.find(n => n.id === nodeId);
             if (node) {
-                showNodeDetails(node, graphData, network.repoId);
+                showNodeDetails(node, filteredGraphData, network.repoId);
             }
         }
     });
@@ -1371,6 +1404,9 @@ async function loadRepositoryDetail(repoId, initialTab = null) {
     console.log('[LOAD] loadRepositoryDetail called:', { repoId, initialTab });
     currentRepoId = repoId;
     
+    // Clear all cached data when switching repositories
+    allDocumentation = [];
+    
     try {
         // Load repository info
         const repo = await api.getRepository(repoId);
@@ -1479,6 +1515,10 @@ function switchTab(tabName, repoId) {
         case 'tools':
             console.log('[TAB] Loading tools');
             loadTools(repoId);
+            break;
+        case 'documentation':
+            console.log('[TAB] Loading documentation');
+            loadDocumentation(repoId);
             break;
         case 'graph':
             console.log('[TAB] Loading graph');
@@ -2342,9 +2382,21 @@ window.loadMoreSecurityEntities = function() {
     filterAndRenderSecurity();
 };
 
+// Store enabled node types for graph filtering
+let enabledNodeTypes = {
+    repository: true,
+    dependency: true,
+    service: true,
+    code: false, // Code elements off by default
+    security: true,
+};
+
 async function loadRepositoryGraph(repoId) {
     const container = document.getElementById('repo-graph-container');
     container.innerHTML = '<p class="loading-text">Loading graph...</p>';
+    
+    // Setup node type toggles
+    setupGraphNodeTypeToggles(repoId);
     
     try {
         const graph = await api.getGraph(repoId);
@@ -2354,11 +2406,37 @@ async function loadRepositoryGraph(repoId) {
             return;
         }
         
+        // Store graph data globally for filtering
+        window.currentGraphData = graph;
+        window.currentGraphRepoId = repoId;
+        
         // Render enhanced graph with repository ID
         renderEnhancedGraph(graph, container, repoId);
     } catch (error) {
         container.innerHTML = `<p class="error-text">Failed to load graph: ${escapeHtml(error.message)}</p>`;
     }
+}
+
+function setupGraphNodeTypeToggles(repoId) {
+    const toggles = document.querySelectorAll('.node-type-toggle');
+    
+    // Set initial state
+    toggles.forEach(toggle => {
+        const nodeType = toggle.getAttribute('data-node-type');
+        toggle.checked = enabledNodeTypes[nodeType] || false;
+        
+        // Add change listener
+        toggle.addEventListener('change', function() {
+            const nodeType = this.getAttribute('data-node-type');
+            enabledNodeTypes[nodeType] = this.checked;
+            
+            // Re-render graph with filtered nodes
+            if (window.currentGraphData && window.currentGraphRepoId) {
+                const container = document.getElementById('repo-graph-container');
+                renderEnhancedGraph(window.currentGraphData, container, window.currentGraphRepoId);
+            }
+        });
+    });
 }
 
 // Entity Detail Modal Functions
@@ -2859,9 +2937,141 @@ async function loadVersion() {
         const versionElement = document.getElementById('app-version');
         if (versionElement && response.version) {
             versionElement.textContent = `v${response.version}`;
+            console.log('Version loaded:', response.version);
         }
     } catch (error) {
         console.error('Failed to load version:', error);
+        // Keep the fallback version from HTML if API fails
     }
+}
+
+// Store documentation for filtering
+let allDocumentation = [];
+
+async function loadDocumentation(repoId) {
+    currentRepoId = repoId;
+    const container = document.getElementById('documentation-list');
+    container.innerHTML = '<p class="loading-text">Loading documentation...</p>';
+    
+    // Clear previous documentation data
+    allDocumentation = [];
+    
+    try {
+        const docs = await api.getDocumentation(repoId);
+        // Double-check: filter by repository_id as a safety measure
+        allDocumentation = docs.filter(doc => doc.repository_id === repoId);
+        
+        if (allDocumentation.length === 0) {
+            container.innerHTML = '<p>No documentation files found. Documentation indexing is experimental and may not be available for all repositories.</p>';
+            return;
+        }
+        
+        // Setup filter event listeners
+        const searchInput = document.getElementById('documentation-search');
+        const typeFilter = document.getElementById('documentation-type-filter');
+        
+        if (searchInput) {
+            searchInput.oninput = () => filterAndRenderDocumentation(repoId);
+        }
+        if (typeFilter) {
+            typeFilter.onchange = () => filterAndRenderDocumentation(repoId);
+        }
+        
+        // Initial render
+        filterAndRenderDocumentation(repoId);
+    } catch (error) {
+        container.innerHTML = `<p class="error-text">Failed to load documentation: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+function filterAndRenderDocumentation(repoId) {
+    const searchTerm = document.getElementById('documentation-search')?.value.toLowerCase() || '';
+    const typeFilter = document.getElementById('documentation-type-filter')?.value || '';
+    
+    // Ensure we only show documentation for the current repository
+    const repoIdToUse = repoId || currentRepoId;
+    
+    let filtered = allDocumentation.filter(doc => {
+        // Safety check: ensure documentation belongs to current repository
+        if (repoIdToUse && doc.repository_id !== repoIdToUse) {
+            return false;
+        }
+        const matchesSearch = !searchTerm || 
+            doc.file_name.toLowerCase().includes(searchTerm) ||
+            (doc.title && doc.title.toLowerCase().includes(searchTerm)) ||
+            (doc.description && doc.description.toLowerCase().includes(searchTerm)) ||
+            doc.content_preview.toLowerCase().includes(searchTerm);
+        const matchesType = !typeFilter || doc.doc_type === typeFilter;
+        return matchesSearch && matchesType;
+    });
+    
+    // Update filter info
+    const filterInfo = document.getElementById('documentation-filter-info');
+    if (filterInfo) {
+        const activeFilters = [];
+        if (searchTerm) activeFilters.push(`search: "${searchTerm}"`);
+        if (typeFilter) activeFilters.push(`type: ${typeFilter}`);
+        filterInfo.textContent = activeFilters.length > 0 
+            ? `Showing ${filtered.length} of ${allDocumentation.length} files (${activeFilters.join(', ')})`
+            : `Showing ${filtered.length} documentation files`;
+    }
+    
+    // Group by type
+    const grouped = {};
+    filtered.forEach(doc => {
+        const groupKey = doc.doc_type || 'Other';
+        if (!grouped[groupKey]) grouped[groupKey] = [];
+        grouped[groupKey].push(doc);
+    });
+    
+    // Render
+    const container = document.getElementById('documentation-list');
+    if (Object.keys(grouped).length === 0) {
+        container.innerHTML = '<p>No documentation files match the current filters.</p>';
+        return;
+    }
+    
+    const sortedGroups = Object.keys(grouped).sort();
+    container.innerHTML = sortedGroups.map(type => {
+        const typeDocs = grouped[type];
+        return `
+            <div class="detail-group">
+                <h4 class="detail-group-header">${escapeHtml(type)} <span class="detail-group-count">${typeDocs.length}</span></h4>
+                <div class="detail-group-content">
+                    ${typeDocs.map(doc => renderDocumentationItem(doc)).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderDocumentationItem(doc) {
+    const badges = [];
+    if (doc.has_code_examples) badges.push('<span class="detail-badge badge-info">Code Examples</span>');
+    if (doc.has_api_references) badges.push('<span class="detail-badge badge-info">API References</span>');
+    if (doc.has_diagrams) badges.push('<span class="detail-badge badge-info">Diagrams</span>');
+    
+    return `
+        <div class="detail-item">
+            <div class="detail-item-header">
+                <strong>${escapeHtml(doc.file_name)}</strong>
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <span class="entity-id-badge" title="Documentation ID: ${doc.id}">ID: ${getShortId(doc.id)}</span>
+                    <span class="detail-badge">${escapeHtml(doc.doc_type)}</span>
+                    ${badges.join('')}
+                </div>
+            </div>
+            <div class="detail-meta">
+                <p><strong>Path:</strong> <code>${escapeHtml(doc.file_path)}</code></p>
+                ${doc.title ? `<p><strong>Title:</strong> ${escapeHtml(doc.title)}</p>` : ''}
+                ${doc.description ? `<p><strong>Description:</strong> ${escapeHtml(doc.description)}</p>` : ''}
+                <p><strong>Stats:</strong> ${doc.word_count} words, ${doc.line_count} lines</p>
+                <div style="margin-top: 0.5rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px; font-size: 0.85rem;">
+                    <strong>Preview:</strong>
+                    <pre style="margin-top: 0.25rem; white-space: pre-wrap; word-wrap: break-word; max-height: 150px; overflow-y: auto;">${escapeHtml(doc.content_preview)}</pre>
+                </div>
+            </div>
+        </div>
+    `;
 }
 

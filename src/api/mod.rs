@@ -1,6 +1,6 @@
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
-use crate::storage::{RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository};
+use crate::storage::{RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository, DocumentationRepository};
 use std::sync::Arc;
 
 pub mod server;
@@ -14,6 +14,7 @@ pub mod jobs;
 pub mod entity_details;
 pub mod progress;
 pub mod reports;
+pub mod documentation;
 
 pub struct ApiState {
     pub repo_repo: RepositoryRepository,
@@ -23,6 +24,7 @@ pub struct ApiState {
     pub code_relationship_repo: CodeRelationshipRepository,
     pub security_repo: SecurityRepository,
     pub tool_repo: ToolRepository,
+    pub documentation_repo: DocumentationRepository,
     pub progress_tracker: Arc<progress::ProgressTracker>,
 }
 
@@ -41,10 +43,22 @@ pub async fn health() -> impl Responder {
 
 // Version endpoint
 pub async fn version() -> impl Responder {
+    // Try multiple paths for VERSION file (current dir, parent, or use env var)
     let version = match std::fs::read_to_string("VERSION") {
         Ok(v) => v.trim().to_string(),
-        Err(_) => "0.1.0".to_string(),
+        Err(_) => {
+            // Try parent directory
+            match std::fs::read_to_string("../VERSION") {
+                Ok(v) => v.trim().to_string(),
+                Err(_) => {
+                    // Try from env or default
+                    std::env::var("WAVELENGTH_VERSION")
+                        .unwrap_or_else(|_| "0.6.3".to_string())
+                }
+            }
+        }
     };
+    log::debug!("Version endpoint returning: {}", version);
     HttpResponse::Ok().json(serde_json::json!({
         "version": version
     }))

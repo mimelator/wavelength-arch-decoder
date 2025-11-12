@@ -11,6 +11,7 @@ pub mod code_repo;
 pub mod code_relationship_repo;
 pub mod security_repo;
 pub mod tool_repo;
+pub mod documentation_repo;
 // UserRepository and ApiKeyRepository kept for database schema but not exported (auth removed)
 pub use repository_repo::{RepositoryRepository, DependencyRepository, Repository, StoredDependency};
 pub use service_repo::{ServiceRepository, StoredService};
@@ -18,6 +19,7 @@ pub use code_repo::CodeElementRepository;
 pub use code_relationship_repo::CodeRelationshipRepository;
 pub use security_repo::SecurityRepository;
 pub use tool_repo::{ToolRepository, StoredTool, StoredToolScript};
+pub use documentation_repo::{DocumentationRepository, StoredDocumentation};
 
 #[derive(Clone)]
 pub struct Database {
@@ -316,6 +318,30 @@ impl Database {
             [],
         )?;
 
+        // Documentation table (experimental - may be removed)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS documentation (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                doc_type TEXT NOT NULL,
+                title TEXT,
+                description TEXT,
+                content_preview TEXT NOT NULL,
+                word_count INTEGER NOT NULL,
+                line_count INTEGER NOT NULL,
+                has_code_examples INTEGER NOT NULL,
+                has_api_references INTEGER NOT NULL,
+                has_diagrams INTEGER NOT NULL,
+                metadata TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE CASCADE,
+                UNIQUE(repository_id, file_path)
+            )",
+            [],
+        )?;
+
         // Create indexes
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_graph_nodes_repository ON graph_nodes(repository_id)",
@@ -367,6 +393,14 @@ impl Database {
         )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_code_relationships_target ON code_relationships(target_type, target_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_documentation_repository ON documentation(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_documentation_type ON documentation(doc_type)",
             [],
         )?;
         conn.execute(

@@ -150,6 +150,10 @@ class WavelengthAPI {
             return response.text(); // Return HTML as text
         });
     }
+
+    async getDocumentation(repoId) {
+        return this.request(`/repositories/${repoId}/documentation`);
+    }
 }
 
 // Global API instance

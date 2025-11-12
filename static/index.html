@@ -101,6 +101,7 @@
                     <button class="repo-tab" data-tab="code" data-entity-type="code">Code Structure</button>
                     <button class="repo-tab" data-tab="security" data-entity-type="security">Security</button>
                     <button class="repo-tab" data-tab="tools" data-entity-type="tools">Tools</button>
+                    <button class="repo-tab" data-tab="documentation" data-entity-type="documentation">📄 Documentation</button>
                     <button class="repo-tab" data-tab="graph">Graph</button>
                 </div>
                 <div class="repo-detail-content">
@@ -256,7 +257,63 @@
                             <p class="loading-text">Loading tools...</p>
                         </div>
                     </div>
+                    <div id="tab-documentation" class="repo-tab-content">
+                        <div class="code-filters">
+                            <div class="filter-row">
+                                <input type="text" id="documentation-search" placeholder="Search documentation..." class="search-input" style="flex: 1;">
+                                <select id="documentation-type-filter" class="select-input">
+                                    <option value="">All Types</option>
+                                    <option value="Readme">README</option>
+                                    <option value="Contributing">Contributing</option>
+                                    <option value="Changelog">Changelog</option>
+                                    <option value="License">License</option>
+                                    <option value="ApiDocs">API Docs</option>
+                                    <option value="Architecture">Architecture</option>
+                                    <option value="Setup">Setup</option>
+                                    <option value="Tutorial">Tutorial</option>
+                                    <option value="Reference">Reference</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div class="filter-info" id="documentation-filter-info"></div>
+                        </div>
+                        <div id="documentation-list" class="detail-list">
+                            <p class="loading-text">Loading documentation...</p>
+                        </div>
+                    </div>
                     <div id="tab-graph" class="repo-tab-content">
+                        <div class="graph-controls">
+                            <div class="graph-legend">
+                                <h4>Node Types</h4>
+                                <div class="graph-legend-items">
+                                    <label class="graph-legend-item">
+                                        <input type="checkbox" class="node-type-toggle" data-node-type="repository" checked>
+                                        <span class="graph-legend-color" style="background: var(--entity-repository, #f59e0b);"></span>
+                                        <span>Repositories</span>
+                                    </label>
+                                    <label class="graph-legend-item">
+                                        <input type="checkbox" class="node-type-toggle" data-node-type="dependency" checked>
+                                        <span class="graph-legend-color" style="background: var(--entity-dependency, #3b82f6);"></span>
+                                        <span>Dependencies</span>
+                                    </label>
+                                    <label class="graph-legend-item">
+                                        <input type="checkbox" class="node-type-toggle" data-node-type="service" checked>
+                                        <span class="graph-legend-color" style="background: var(--entity-service, #10b981);"></span>
+                                        <span>Services</span>
+                                    </label>
+                                    <label class="graph-legend-item">
+                                        <input type="checkbox" class="node-type-toggle" data-node-type="code">
+                                        <span class="graph-legend-color" style="background: var(--entity-code, #8b5cf6);"></span>
+                                        <span>Code Elements</span>
+                                    </label>
+                                    <label class="graph-legend-item">
+                                        <input type="checkbox" class="node-type-toggle" data-node-type="security" checked>
+                                        <span class="graph-legend-color" style="background: var(--entity-security, #ef4444);"></span>
+                                        <span>Security</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
                         <div id="repo-graph-container" class="graph-container">
                             <p class="loading-text">Loading graph...</p>
                         </div>
@@ -394,7 +451,7 @@
     
     <footer class="app-footer">
         <div class="footer-content">
-            <p>Wavelength Architecture Decoder <span id="app-version">v0.1.0</span></p>
+            <p>Wavelength Architecture Decoder <span id="app-version">v0.6.3</span></p>
             <p><a href="https://hub.wavelengthlore.com/consulting-services" target="_blank" rel="noopener noreferrer">Wavelength Consulting</a></p>
         </div>
     </footer>
