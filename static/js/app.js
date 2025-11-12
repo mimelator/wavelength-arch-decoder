@@ -2665,7 +2665,9 @@ function renderRelationships(entityType, details) {
             const confidence = svc.confidence ? ` (${(svc.confidence * 100).toFixed(0)}% confidence)` : '';
             const evidence = svc.evidence ? `<br><small class="text-muted">${escapeHtml(svc.evidence)}</small>` : '';
             html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'service', '${svc.id}')">
-                <strong>${escapeHtml(svc.name)}</strong> (${escapeHtml(svc.provider)})${confidence}${evidence}
+                <div><strong>${escapeHtml(svc.name)}</strong></div>
+                <div>${escapeHtml(svc.provider)}${confidence}</div>
+                ${evidence}
             </div>`;
         });
         html += '</div></div>';

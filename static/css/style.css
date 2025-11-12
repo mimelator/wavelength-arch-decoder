@@ -569,7 +569,9 @@ body {
     padding: 2rem;
     max-height: calc(90vh - 100px);
     overflow-y: auto;
+    overflow-x: hidden;
     flex: 1;
+    word-wrap: break-word;
 }
 
 .clickable {
@@ -612,6 +614,32 @@ body {
     border-radius: 0.375rem;
     border: 1px solid var(--border-color);
     transition: all 0.2s;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+
+.related-item code {
+    word-break: break-all;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+.related-item strong {
+    display: block;
+    margin-bottom: 0.25rem;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.related-item > div {
+    word-break: break-word;
+    overflow-wrap: break-word;
+    margin-bottom: 0.25rem;
+}
+
+.related-item > div:last-child {
+    margin-bottom: 0;
 }
 
 .related-item.clickable:hover {
@@ -1086,6 +1114,30 @@ body {
     border-radius: 0.375rem;
     border: 1px solid var(--border-color);
     transition: all 0.2s;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+
+.detail-item pre {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-width: 100%;
+    word-wrap: normal;
+    white-space: pre;
+    background: var(--bg-color);
+    padding: 0.75rem;
+    border-radius: 0.25rem;
+    border: 1px solid var(--border-color);
+    margin: 0.5rem 0 0 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.detail-item code {
+    word-break: break-all;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
 }
 
 .detail-item:hover {
