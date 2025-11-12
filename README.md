@@ -1,430 +1,701 @@
 # Wavelength Architecture Decoder
 
-A self-contained hosted server that enables Software Engineers to understand the complete architecture of repositories through an intelligent knowledge graph system.
+<div align="center">
 
-## Project Overview
+**🔍 Understand Your Codebase Architecture Through Intelligent Analysis**
 
-The Wavelength Architecture Decoder analyzes code repositories to build a comprehensive knowledge graph that maps:
-- **External Service Dependencies**: Clerk, Vercel, AWS services, databases, APIs, etc.
-- **Package Dependencies**: npm, pip, cargo, maven, etc. with version tracking
-- **Security Relationships**: IAM roles, Lambda functions, S3 buckets, security groups, network policies
-- **Code Structure**: Modules, functions, classes, and their relationships
-- **Deployment Entities**: Infrastructure as Code (Terraform, CloudFormation), CI/CD pipelines, containers
+A self-contained, powerful tool that automatically discovers and visualizes the complete architecture of your repositories—from dependencies and services to security configurations and code relationships.
 
-### Core Purposes
+[![Version](https://img.shields.io/badge/version-0.4.0--beta-blue)](VERSION)
+[![Rust](https://img.shields.io/badge/rust-1.70+-orange)](https://www.rust-lang.org/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-1. **Human Exploration**: Interactive visualization and exploration of architectural relationships
-2. **AI Assistant Integration**: Structured knowledge graph for AI tools to reason about dependencies and find solutions
-3. **Multi-Source Updates**: Updatable by humans, AI assistance, or automated crawlers
+</div>
 
-## Architecture Principles
+---
+
+## 🎯 What Is This?
+
+**Wavelength Architecture Decoder** is a comprehensive analysis tool that automatically builds a knowledge graph of your repository's architecture. It discovers:
+
+- **What external services** your code uses (AWS, Vercel, Clerk, Firebase, AI services, etc.)
+- **What dependencies** you have and how they relate
+- **What security configurations** exist (IAM roles, Lambda functions, S3 buckets, API keys)
+- **How your code is structured** (functions, classes, modules, and their relationships)
+- **What tools and scripts** are configured (build tools, test frameworks, linters)
+- **How everything connects** through an interactive knowledge graph
+
+Perfect for **onboarding new developers**, **understanding legacy codebases**, **security audits**, and **AI assistant integration**.
+
+---
+
+## ✨ Key Features
+
+### 🔗 **Intelligent Relationship Discovery**
+- **Automatic Code-to-Service Mapping**: Discovers which functions use which services (e.g., `getAdminStorage` → Firebase SDK)
+- **Code-to-Dependency Relationships**: Maps which code elements import or use specific dependencies
+- **Confidence Scoring**: Each relationship includes confidence scores and evidence
+- **No Hard-Coding Required**: Uses pattern matching, word boundaries, and code analysis
+
+### 📦 **Comprehensive Dependency Analysis**
+- **Multi-Package Manager Support**: npm, pip, Cargo, Maven, Go modules
+- **Dependency Graph Construction**: Visualizes dependency trees and relationships
+- **Version Conflict Detection**: Identifies potential version conflicts
+- **Transitive Dependency Resolution**: Maps indirect dependencies
+- **Search & Filter**: Powerful filtering by package manager, type, and name
+
+### 🔌 **Service Detection**
+- **Cloud Providers**: AWS (S3, Lambda, DynamoDB, etc.), Vercel, Netlify
+- **Authentication Services**: Clerk, Auth0, Firebase Auth
+- **AI Services**: OpenAI, Anthropic, GitHub Copilot, Together AI, Mistral AI
+- **Databases**: PostgreSQL, MongoDB, Redis, Firebase Firestore
+- **APIs & SDKs**: Stripe, Twilio, SendGrid, and 50+ more services
+- **Configurable Patterns**: Extend detection via JSON configuration files
+- **Plugin System**: Add custom service detection rules
+- **Comment Filtering**: Ignores service mentions in comments to reduce false positives
+
+### 🛠️ **Tool Discovery**
+- **Build Tools**: Webpack, Vite, Rollup, esbuild
+- **Test Frameworks**: Jest, Mocha, pytest, cargo test
+- **Linters & Formatters**: ESLint, Prettier, rustfmt, black
+- **Deployment Tools**: Docker, Kubernetes, GitHub Actions, GitLab CI
+- **Custom Scripts**: Detects npm scripts, shell scripts, and executables
+- **Tool Relationships**: Maps tools to dependencies and services they use
+
+### 🔒 **Security Analysis**
+- **Infrastructure as Code**: Analyzes Terraform, CloudFormation, Serverless Framework, AWS SAM
+- **IAM Roles & Policies**: Extracts AWS IAM configurations and permissions
+- **Lambda Functions**: Identifies serverless functions and their configurations
+- **S3 Buckets**: Detects bucket configurations and access policies
+- **API Key Detection**: Finds hardcoded API keys and environment variable references
+- **Security Vulnerabilities**: Identifies wildcard permissions, public access, missing encryption
+- **Firebase Rules**: Analyzes Firebase security rules
+- **Environment Templates**: Detects `.env.example` and security configuration files
+
+### 📝 **Code Structure Analysis**
+- **Multi-Language Support**: JavaScript/TypeScript, Python, Rust, Go
+- **Function & Class Extraction**: Identifies functions, classes, modules, interfaces
+- **Call Graph Construction**: Maps function calls and relationships
+- **Import/Export Tracking**: Tracks module dependencies
+- **Filtering**: Automatically excludes compiled classes and minified code
+- **Search & Navigation**: Powerful search, filtering, and grouping capabilities
+
+### 🕸️ **Interactive Knowledge Graph**
+- **Visual Exploration**: Interactive graph visualization using vis.js
+- **Node Types**: Repositories, Dependencies, Services, Code Elements, Security Entities, Tools
+- **Relationship Types**: Uses, Depends On, Calls, Configures, Secures, and more
+- **Smart Navigation**: Click nodes to see details, navigate to related entities
+- **Dark/Light Theme**: Beautiful visualization in both themes
+- **Entity Color Coding**: Visual distinction between entity types
+
+### 🎨 **Modern Web UI**
+- **Dashboard**: Overview of all repositories and statistics
+- **Repository Detail View**: Comprehensive tabs for each analysis aspect
+- **Real-Time Progress**: Live progress tracking with server polling
+- **Entity Detail Modals**: Deep dive into any entity with relationships
+- **Search & Filter**: Advanced filtering across all entity types
+- **Responsive Design**: Works on desktop and mobile devices
+
+### 🔧 **Developer-Friendly**
+- **Self-Contained**: No external services required—runs entirely locally
+- **Embedded Database**: SQLite for zero-configuration setup
+- **Local Repository Support**: Analyze local file paths directly
+- **Private Repository Support**: SSH keys, tokens, and username/password auth
+- **REST & GraphQL APIs**: Choose your preferred API style
+- **Progress Tracking**: Real-time analysis progress with detailed step information
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- **Rust 1.70+** ([Install Rust](https://www.rust-lang.org/tools/install))
+- **Git** (for repository cloning)
+- **4GB+ RAM** recommended
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/mimelator/wavelength-arch-decoder.git
+cd wavelength-arch-decoder
+
+# Build the project
+cargo build --release
+
+# Run the server
+cargo run --release
+```
+
+The server will start on `http://localhost:8080` by default.
+
+### First Analysis
+
+1. **Open the Web UI**: Navigate to `http://localhost:8080`
+2. **Add a Repository**: Click "Add Repository" and provide:
+   - Repository name
+   - URL (GitHub, GitLab, or local file path)
+   - Branch (defaults to `main`)
+3. **Analyze**: Click "Analyze" and watch real-time progress
+4. **Explore**: Browse dependencies, services, code structure, security, and the knowledge graph
+
+---
+
+## 📖 Use Cases
+
+### 🎓 **Onboarding New Developers**
+Quickly understand a codebase's architecture, dependencies, and service integrations without reading thousands of lines of code.
+
+### 🔍 **Legacy Codebase Exploration**
+Discover hidden dependencies, undocumented service integrations, and security configurations in older repositories.
+
+### 🔒 **Security Audits**
+Identify hardcoded API keys, analyze IAM policies, detect security vulnerabilities, and map security relationships.
+
+### 🤖 **AI Assistant Integration**
+Provide structured knowledge graphs to AI assistants for better code understanding and problem-solving.
+
+### 📊 **Architecture Documentation**
+Automatically generate up-to-date architecture documentation and dependency graphs.
+
+### 🔄 **Migration Planning**
+Understand service dependencies and relationships when planning migrations or refactoring.
+
+### 🛡️ **Compliance & Governance**
+Track which services and dependencies are used across multiple repositories for compliance reporting.
+
+---
+
+## 🏗️ Architecture
 
 ### Self-Contained Design
-- **No External Dependencies**: All services run locally or in a single deployment
-- **Embedded Database**: SQLite or embedded graph database (Neo4j embedded, Dgraph, or custom)
-- **Built-in Crawler**: Repository ingestion without external services
-- **Local Processing**: All analysis runs on the server without cloud dependencies
 
-### Security & API Keys
+**No External Dependencies** - Everything runs locally:
+- ✅ Embedded SQLite database
+- ✅ Built-in repository crawler
+- ✅ Local file processing
+- ✅ No cloud services required
+- ✅ No third-party APIs needed
 
-**Best Practices for API Key Management:**
-
-1. **Environment Variables**: All API keys stored in environment variables, never in code
-2. **Encrypted Storage**: API keys encrypted at rest in the database
-3. **Key Rotation**: Support for key rotation without service interruption
-4. **Scoped Access**: API keys have scoped permissions (read-only, write, admin)
-5. **Audit Logging**: All API key usage logged for security auditing
-6. **Key Validation**: Server validates API keys before processing requests
-7. **Rate Limiting**: Per-key rate limiting to prevent abuse
-8. **Documentation**: Clear documentation on how to obtain and use API keys
-
-**API Key Storage Format:**
-```
-API_KEY_<SERVICE>_<ENVIRONMENT>=encrypted_value
-```
-
-## System Architecture
-
-### Components
+### Core Components
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    API Gateway Layer                         │
-│  (Authentication, Rate Limiting, Request Routing)            │
-└─────────────────────────────────────────────────────────────┘
-                            │
-        ┌───────────────────┼───────────────────┐
-        │                   │                   │
-┌───────▼────────┐  ┌───────▼────────┐  ┌───────▼────────┐
-│  Ingestion     │  │  Analysis      │  │  Query         │
-│  Service       │  │  Engine        │  │  Service       │
-└───────┬────────┘  └───────┬────────┘  └───────┬────────┘
-        │                   │                   │
-        └───────────────────┼───────────────────┘
-                            │
-┌───────────────────────────▼───────────────────────────────┐
-│              Knowledge Graph Database                      │
-│  (Graph Structure: Nodes, Edges, Properties, Metadata)    │
-└────────────────────────────────────────────────────────────┘
-                            │
-        ┌───────────────────┼───────────────────┐
-        │                   │                   │
-┌───────▼────────┐  ┌───────▼────────┐  ┌───────▼────────┐
-│  Repository    │  │  File System   │  │  Cache Layer   │
-│  Crawler       │  │  Index         │  │  (Optional)    │
-└────────────────┘  └────────────────┘  └────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    Web UI (React-like)                   │
+│         Dashboard | Repository Browser | Graph           │
+└───────────────────────┬─────────────────────────────────┘
+                        │
+┌───────────────────────▼─────────────────────────────────┐
+│                    REST & GraphQL APIs                    │
+│     /repositories | /graph | /code | /security | /tools   │
+└───────────────────────┬─────────────────────────────────┘
+                        │
+        ┌───────────────┼───────────────┐
+        │               │               │
+┌───────▼──────┐ ┌─────▼──────┐ ┌─────▼──────┐
+│  Ingestion    │ │  Analysis   │ │   Graph    │
+│  Service      │ │  Engine     │ │  Builder   │
+└───────┬───────┘ └─────┬───────┘ └─────┬──────┘
+        │               │               │
+        └───────────────┼───────────────┘
+                        │
+        ┌───────────────▼───────────────┐
+        │      SQLite Database          │
+        │  (Repositories | Dependencies │
+        │   Services | Code | Security) │
+        └──────────────────────────────┘
 ```
 
-### Core Services
+### Analysis Pipeline
 
-#### 1. Ingestion Service
-- **Repository Crawler**: Clones/accesses repositories (Git, SVN, etc.)
-- **File Parser**: Parses various file types (code, config, IaC, CI/CD)
-- **Dependency Extractor**: Identifies package dependencies from lock files
-- **Service Detector**: Finds references to external services in code/config
-- **Security Scanner**: Extracts IAM roles, policies, security configurations
+1. **Repository Ingestion**: Clone or access repository (Git, local path)
+2. **Dependency Extraction**: Parse package.json, requirements.txt, Cargo.toml, etc.
+3. **Service Detection**: Scan code and config files for service patterns
+4. **Tool Discovery**: Identify build tools, test frameworks, scripts
+5. **Code Structure Analysis**: Extract functions, classes, modules
+6. **Security Analysis**: Analyze IaC files, detect API keys, vulnerabilities
+7. **Relationship Detection**: Map code-to-service and code-to-dependency relationships
+8. **Knowledge Graph Construction**: Build unified graph of all entities
+9. **Storage**: Persist all data in SQLite database
 
-#### 2. Analysis Engine
-- **Relationship Mapper**: Builds connections between entities
-- **Dependency Resolver**: Resolves transitive dependencies
-- **Security Analyzer**: Identifies security relationships and vulnerabilities
-- **Graph Builder**: Constructs and updates the knowledge graph
+---
 
-#### 3. Query Service
-- **GraphQL API**: Flexible querying of the knowledge graph
-- **REST API**: Standard REST endpoints for common queries
-- **Visualization API**: Endpoints for graph visualization tools
-- **Search Engine**: Full-text search across all entities
+## 🎨 Features in Detail
 
-#### 4. Knowledge Graph Database
-- **Node Types**: Repository, File, Function, Service, Dependency, SecurityEntity
-- **Edge Types**: DEPENDS_ON, CALLS, USES, CONFIGURES, SECURES, DEPLOYS_TO
-- **Properties**: Metadata, versions, locations, configurations
+### 🔗 Code Relationships
 
-## Data Model
+**Discoverable, Not Hard-Coded**
 
-### Node Types
+The system automatically detects relationships between code elements and services/dependencies by analyzing:
 
+- **Import Statements**: `import firebase from 'firebase/app'`
+- **SDK Usage**: `const s3 = new AWS.S3()`
+- **API Calls**: `fetch('https://api.service.com')`
+- **Environment Variables**: `process.env.SERVICE_API_KEY`
+- **Pattern Matching**: Service names in code context
+
+**Example**: 
 ```
-Repository
-  - id: string
-  - name: string
-  - url: string
-  - branch: string
-  - last_analyzed: timestamp
-
-File
-  - id: string
-  - path: string
-  - type: enum (code, config, iac, cicd, readme)
-  - language: string
-  - content_hash: string
-
-Function/Class/Module
-  - id: string
-  - name: string
-  - type: enum (function, class, module, component)
-  - language: string
-  - file_id: reference
-  - line_start: int
-  - line_end: int
-
-ExternalService
-  - id: string
-  - name: string (e.g., "AWS S3", "Clerk", "Vercel")
-  - type: enum (saas, cloud, database, api)
-  - configuration: json
-
-PackageDependency
-  - id: string
-  - name: string
-  - version: string
-  - package_manager: enum (npm, pip, cargo, maven, etc.)
-  - repository_id: reference
-
-SecurityEntity
-  - id: string
-  - type: enum (iam_role, lambda, s3_bucket, security_group, policy)
-  - name: string
-  - configuration: json
-  - permissions: json
+Function: getAdminStorage
+  ↓ Uses (85% confidence)
+Service: Firebase SDK
+  Evidence: "firebase/app" import found; "firebase" used in code
 ```
 
-### Edge Types
+### 📦 Dependency Analysis
 
+**Comprehensive Package Management**
+
+- **Supported Managers**: npm, yarn, pip, poetry, Cargo, Maven, Gradle, Go modules
+- **Lock File Support**: package-lock.json, yarn.lock, Pipfile.lock, Cargo.lock
+- **Dependency Graphs**: Visualize transitive dependencies
+- **Version Analysis**: Track versions and detect conflicts
+- **Dev Dependencies**: Separate production and development dependencies
+
+### 🔌 Service Detection
+
+**50+ Services Pre-Configured**
+
+**Cloud Providers**:
+- AWS (S3, Lambda, DynamoDB, CloudFront, etc.)
+- Vercel, Netlify
+- Firebase (Auth, Firestore, Storage, Functions)
+
+**Authentication**:
+- Clerk, Auth0, Firebase Auth, AWS Cognito
+
+**AI Services**:
+- OpenAI, Anthropic, GitHub Copilot, Together AI, Mistral AI, Perplexity
+
+**Databases**:
+- PostgreSQL, MongoDB, Redis, MySQL, Firebase Firestore
+
+**APIs**:
+- Stripe, Twilio, SendGrid, Mailgun, and many more
+
+**Extensible**: Add custom services via JSON configuration files or plugins.
+
+### 🛠️ Tool Discovery
+
+**Automatically Detect Developer Tools**
+
+- **Build Tools**: Webpack, Vite, Rollup, esbuild, Parcel
+- **Test Frameworks**: Jest, Mocha, pytest, unittest, cargo test
+- **Linters**: ESLint, Prettier, pylint, rustfmt, golangci-lint
+- **Formatters**: Prettier, black, rustfmt, gofmt
+- **Deployment**: Docker, Kubernetes, GitHub Actions, GitLab CI
+- **Package Scripts**: npm scripts, cargo scripts
+- **Custom Scripts**: Shell scripts, Python scripts, executable files
+
+### 🔒 Security Analysis
+
+**Comprehensive Security Scanning**
+
+**Infrastructure Analysis**:
+- Terraform: IAM roles, Lambda functions, S3 buckets, security groups
+- CloudFormation: Resources, policies, configurations
+- Serverless Framework: Functions, events, resources
+- AWS SAM: Serverless applications
+
+**API Key Detection**:
+- Hardcoded keys in code
+- Environment variable references
+- Key type identification (AWS, GitHub, Stripe, etc.)
+- Provider matching
+
+**Vulnerability Detection**:
+- Wildcard IAM permissions
+- Public S3 bucket access
+- Missing encryption
+- Overly permissive security groups
+- Hardcoded credentials
+
+**Security Relationships**:
+- IAM roles → Lambda functions
+- Security groups → EC2 instances
+- Policies → Resources
+
+### 📝 Code Structure
+
+**Multi-Language Code Analysis**
+
+**Supported Languages**:
+- **JavaScript/TypeScript**: Functions, classes, modules, imports
+- **Python**: Functions, classes, modules, decorators
+- **Rust**: Functions, structs, enums, traits, modules
+- **Go**: Functions, structs, interfaces, packages
+
+**Features**:
+- Function/class extraction with signatures
+- Call graph construction
+- Import/export relationship tracking
+- Parameter and return type detection
+- Documentation comment extraction
+- Visibility modifiers (public/private)
+
+**Smart Filtering**:
+- Excludes compiled classes
+- Skips minified JavaScript
+- Ignores build artifacts
+- Filters out generated code
+
+### 🕸️ Knowledge Graph
+
+**Interactive Visualization**
+
+**Node Types**:
+- Repositories
+- Dependencies (with package manager)
+- Services (with provider)
+- Code Elements (functions, classes)
+- Security Entities (IAM roles, Lambda, S3)
+- Tools (build tools, test frameworks)
+
+**Edge Types**:
+- `UsesService`: Repository → Service
+- `HasDependency`: Repository → Dependency
+- `CodeUsesService`: Code Element → Service
+- `CodeUsesDependency`: Code Element → Dependency
+- `DependsOn`: Dependency → Dependency
+- `Calls`: Function → Function
+- `Configures`: File → Security Entity
+- `Secures`: Security Entity → Security Entity
+- `UsesTool`: Repository → Tool
+
+**Visualization Features**:
+- Interactive node selection
+- Detailed node information on click
+- Navigation to entity details
+- Color-coded entity types
+- Dark/light theme support
+- Zoom and pan controls
+
+---
+
+## 🔌 API Reference
+
+### REST API
+
+#### Repository Management
+```http
+GET    /api/v1/repositories                    # List all repositories
+POST   /api/v1/repositories                     # Add repository
+GET    /api/v1/repositories/{id}                # Get repository details
+POST   /api/v1/repositories/{id}/analyze        # Start analysis
+DELETE /api/v1/repositories/{id}                # Delete repository
+GET    /api/v1/repositories/{id}/progress       # Get analysis progress
 ```
-DEPENDS_ON: PackageDependency -> PackageDependency
-IMPORTS: File -> File
-CALLS: Function -> Function
-USES_SERVICE: Code -> ExternalService
-CONFIGURES: File -> SecurityEntity
-SECURES: SecurityEntity -> SecurityEntity
-DEPLOYS_TO: Repository -> ExternalService
-REFERENCES: Any -> Any (generic relationship)
+
+#### Dependencies
+```http
+GET    /api/v1/repositories/{id}/dependencies   # Get dependencies
+GET    /api/v1/dependencies/search?q={query}     # Search dependencies
 ```
 
-## Technology Stack
-
-### Backend
-- **Language**: Rust (performance, memory safety) or Go (simplicity, concurrency)
-- **Web Framework**: Actix-web (Rust) or Gin/Echo (Go)
-- **Graph Database**: 
-  - Option A: Neo4j Embedded (Java-based, mature)
-  - Option B: Dgraph (Go-based, distributed)
-  - Option C: Custom graph layer on SQLite (lightweight, self-contained)
-- **Parser Libraries**: Tree-sitter (multi-language parsing)
-
-### Frontend (Optional)
-- **Visualization**: D3.js, Cytoscape.js, or vis.js for graph visualization
-- **Framework**: React or Vue.js for interactive UI
-- **API Client**: GraphQL client (Apollo, Relay)
-
-### Storage
-- **Primary**: Embedded graph database
-- **File Cache**: Local filesystem or embedded object store
-- **Metadata**: SQLite for indexing and search
-
-## API Design
-
-### Authentication
-```
-POST /api/v1/auth/register
-POST /api/v1/auth/login
-POST /api/v1/auth/refresh
-
-Headers:
-  Authorization: Bearer <api_key>
+#### Services
+```http
+GET    /api/v1/repositories/{id}/services       # Get services
+GET    /api/v1/services/search?provider={name}  # Search by provider
 ```
 
-### Repository Management
-```
-POST   /api/v1/repositories          # Add repository for analysis
-GET    /api/v1/repositories          # List repositories
-GET    /api/v1/repositories/{id}     # Get repository details
-POST   /api/v1/repositories/{id}/analyze  # Trigger analysis
-DELETE /api/v1/repositories/{id}     # Remove repository
+#### Code Structure
+```http
+GET    /api/v1/repositories/{id}/code/elements         # Get code elements
+GET    /api/v1/repositories/{id}/code/calls            # Get code calls
+GET    /api/v1/repositories/{id}/code/relationships    # Get code relationships
 ```
 
-### Query API (GraphQL)
+#### Security
+```http
+GET    /api/v1/repositories/{id}/security/entities        # Get security entities
+GET    /api/v1/repositories/{id}/security/relationships   # Get security relationships
+GET    /api/v1/repositories/{id}/security/vulnerabilities # Get vulnerabilities
+```
+
+#### Tools
+```http
+GET    /api/v1/repositories/{id}/tools           # Get tools
+GET    /api/v1/repositories/{id}/tools/{id}/scripts  # Get tool scripts
+GET    /api/v1/tools/search?q={query}            # Search tools
+```
+
+#### Graph
+```http
+GET    /api/v1/repositories/{id}/graph                    # Get knowledge graph
+GET    /api/v1/repositories/{id}/graph/statistics          # Get graph stats
+GET    /api/v1/repositories/{id}/graph/nodes/{id}/neighbors  # Get node neighbors
+```
+
+#### Entity Details
+```http
+GET    /api/v1/repositories/{repo_id}/entities/{type}/{id}  # Get entity details
+```
+
+### GraphQL API
+
+Access GraphQL playground at `/graphql` endpoint.
+
+**Example Query**:
 ```graphql
 query {
   repository(id: "repo-123") {
     name
-    files {
-      path
-      functions {
-        name
-        calls {
-          target {
-            name
-          }
-        }
-      }
-    }
     dependencies {
       name
       version
-      dependsOn {
-        name
-      }
+      packageManager
     }
-    externalServices {
+    services {
       name
-      type
+      provider
+      serviceType
+    }
+    codeElements {
+      name
+      elementType
+      language
     }
     securityEntities {
-      type
+      entityType
       name
-      permissions
+      provider
+    }
+  }
+  
+  repositoryGraph(repositoryId: "repo-123") {
+    nodes {
+      id
+      nodeType
+      name
+    }
+    edges {
+      sourceNodeId
+      targetNodeId
+      edgeType
     }
   }
 }
-
-query {
-  findDependencies(service: "AWS S3") {
-    repositories {
-      name
-    }
-    functions {
-      name
-      file {
-        path
-      }
-    }
-  }
-}
 ```
 
-### REST Query Endpoints
-```
-GET /api/v1/repositories/{id}/dependencies
-GET /api/v1/repositories/{id}/services
-GET /api/v1/repositories/{id}/security
-GET /api/v1/search?q={query}
-GET /api/v1/graph/visualize?repo_id={id}&depth={n}
-```
+---
 
-## Implementation Phases
-
-### Phase 1: Core Infrastructure (Weeks 1-4)
-- [ ] Set up project structure and build system
-- [ ] Implement embedded database layer
-- [ ] Create basic API server with authentication
-- [ ] Implement API key management system
-- [ ] Set up repository cloning/access mechanism
-- [ ] Basic file parsing (common file types)
-
-### Phase 2: Dependency Analysis (Weeks 5-8)
-- [ ] Package dependency extractors (npm, pip, cargo, etc.)
-- [ ] Dependency graph construction
-- [ ] Transitive dependency resolution
-- [ ] Version conflict detection
-- [ ] Dependency API endpoints
-
-### Phase 3: Service Detection (Weeks 9-12)
-- [ ] External service detection patterns
-- [ ] Configuration file parsing (AWS, Vercel, etc.)
-- [ ] Service relationship mapping
-- [ ] Service usage tracking
-- [ ] Service API endpoints
-
-### Phase 4: Security Analysis (Weeks 13-16)
-- [ ] IAM role and policy extraction
-- [ ] Lambda function analysis
-- [ ] S3 bucket and security group detection
-- [ ] Security relationship mapping
-- [ ] Security vulnerability detection
-- [ ] Security API endpoints
-
-### Phase 5: Code Structure Analysis (Weeks 17-20)
-- [ ] Multi-language code parsing (Tree-sitter integration)
-- [ ] Function/class/module extraction
-- [ ] Call graph construction
-- [ ] Import/export relationship mapping
-- [ ] Code structure API endpoints
-
-### Phase 6: Knowledge Graph & Query (Weeks 21-24)
-- [ ] Unified knowledge graph construction
-- [ ] GraphQL API implementation
-- [ ] Graph traversal algorithms
-- [ ] Relationship inference
-- [ ] Graph visualization endpoints
-
-### Phase 7: Crawler & Automation (Weeks 25-28)
-- [ ] Automated repository crawler
-- [ ] Scheduled analysis jobs
-- [ ] Webhook support for repository updates
-- [ ] Batch processing capabilities
-- [ ] Progress tracking and notifications
-
-### Phase 8: UI & Documentation (Weeks 29-32)
-- [ ] Graph visualization UI
-- [ ] Repository browser
-- [ ] Search interface
-- [ ] API documentation
-- [ ] User guides and tutorials
-
-## Security Considerations
-
-### API Key Security
-- Keys stored encrypted using AES-256
-- Keys never logged or exposed in error messages
-- Key rotation mechanism
-- Per-key rate limiting
-- Key expiration support
-
-### Repository Access
-- Support for private repositories via SSH keys or tokens
-- Secure credential storage
-- Access control per repository
-- Audit logging for all access
-
-### Data Privacy
-- Option to analyze repositories without storing full content
-- Content hashing instead of storing raw files
-- Configurable data retention policies
-- GDPR compliance considerations
-
-## Configuration
+## ⚙️ Configuration
 
 ### Environment Variables
+
+Create a `.env.local` file (optional):
+
 ```bash
 # Server Configuration
 PORT=8080
 HOST=0.0.0.0
-ENVIRONMENT=production
 
 # Database
 DATABASE_PATH=./data/wavelength.db
-GRAPH_DB_PATH=./data/graph.db
 
-# Security
-API_KEY_ENCRYPTION_KEY=<32-byte-key>
-JWT_SECRET=<secret>
-RATE_LIMIT_PER_KEY=1000  # requests per hour
-
-# Repository Access (if needed)
-GITHUB_TOKEN=<optional>
-GITLAB_TOKEN=<optional>
-SSH_KEY_PATH=<optional>
+# Repository Access (Optional)
+GITHUB_TOKEN=ghp_your_token_here
+GITLAB_TOKEN=your_gitlab_token
 
 # Storage
 REPOSITORY_CACHE_PATH=./cache/repos
-MAX_CACHE_SIZE=10GB
 ```
 
-## Development Setup
+### Service Pattern Configuration
 
-### Prerequisites
-- Rust 1.70+ (or Go 1.21+)
-- Git
-- SQLite3
-- 4GB+ RAM recommended
+Add custom service detection patterns in `config/service_patterns.json`:
 
-### Local Development
+```json
+{
+  "sdk_patterns": [
+    {
+      "pattern": "@mycompany/sdk",
+      "provider": "MyCompany",
+      "service_type": "API",
+      "confidence": 0.9
+    }
+  ]
+}
+```
+
+### Plugin System
+
+Create custom plugins in `config/plugins/`:
+
+```json
+{
+  "name": "My Custom Service",
+  "version": "1.0",
+  "sdk_patterns": [
+    {
+      "pattern": "my-service",
+      "provider": "MyService",
+      "service_type": "API",
+      "confidence": 0.8
+    }
+  ],
+  "api_endpoints": [
+    {
+      "pattern": "api.myservice.com",
+      "provider": "MyService",
+      "service_type": "API",
+      "confidence": 0.9
+    }
+  ]
+}
+```
+
+---
+
+## 🎯 Examples
+
+### Example 1: Discover All Services Used
+
 ```bash
-# Clone repository
-git clone <repo-url>
-cd wavelength-arch-decoder
+# Via REST API
+curl http://localhost:8080/api/v1/repositories/{repo-id}/services
 
-# Set up environment
-cp .env.example .env
-# Edit .env with your configuration
+# Via GraphQL
+query {
+  repository(id: "{repo-id}") {
+    services {
+      name
+      provider
+      serviceType
+      filePath
+    }
+  }
+}
+```
 
-# Build
-cargo build --release  # or: go build
+### Example 2: Find Functions Using a Service
 
-# Run
-cargo run  # or: ./wavelength-arch-decoder
+```bash
+# Get code relationships
+curl "http://localhost:8080/api/v1/repositories/{repo-id}/code/relationships?target_type=service&target_id={service-id}"
+```
+
+### Example 3: Security Audit
+
+```bash
+# Get all security vulnerabilities
+curl http://localhost:8080/api/v1/repositories/{repo-id}/security/vulnerabilities
+
+# Get API keys
+curl http://localhost:8080/api/v1/repositories/{repo-id}/security/entities?type=api_key
+```
+
+### Example 4: Dependency Analysis
+
+```bash
+# Get dependency graph
+curl http://localhost:8080/api/v1/repositories/{repo-id}/dependencies
+
+# Search dependencies
+curl "http://localhost:8080/api/v1/dependencies/search?q=react"
+```
+
+---
+
+## 🛠️ Development
+
+### Building
+
+```bash
+# Development build
+cargo build
+
+# Release build
+cargo build --release
 
 # Run tests
-cargo test  # or: go test ./...
+cargo test
+
+# Run with logging
+RUST_LOG=debug cargo run
 ```
 
-## API Key Best Practices Documentation
+### Project Structure
 
-See [API_KEYS.md](./docs/API_KEYS.md) for detailed documentation on:
-- How to obtain API keys
-- How to securely store API keys
-- Key rotation procedures
-- Scoped permissions
-- Rate limiting
-- Security best practices
+```
+wavelength-arch-decoder/
+├── src/
+│   ├── analysis/          # Code analysis (structure, dependencies, relationships)
+│   ├── api/               # REST API endpoints
+│   ├── security/          # Security analysis (IaC, API keys, vulnerabilities)
+│   ├── storage/           # Database repositories
+│   ├── graph/             # Knowledge graph construction
+│   ├── graphql/           # GraphQL schema and resolvers
+│   ├── ingestion/         # Repository cloning and file access
+│   └── crawler/           # Automated crawling and job processing
+├── static/                # Web UI (HTML, CSS, JavaScript)
+├── config/                # Service patterns and plugins
+├── data/                  # SQLite database (created on first run)
+└── cache/                 # Repository cache (created on first run)
+```
 
-## License
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Areas for Contribution
+
+- Additional service detection patterns
+- Support for more package managers
+- Additional language parsers
+- UI improvements
+- Documentation
+- Performance optimizations
+- Test coverage
+
+---
+
+## 📄 License
 
 MIT License - See [LICENSE](LICENSE) file for details.
 
-## Contributing
+---
 
-This is a public project. Contributions welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+## 🙏 Acknowledgments
 
-## Roadmap
+Built with:
+- [Rust](https://www.rust-lang.org/) - Systems programming language
+- [Actix-web](https://actix.rs/) - Web framework
+- [SQLite](https://www.sqlite.org/) - Embedded database
+- [vis.js](https://visjs.org/) - Graph visualization
+- [async-graphql](https://async-graphql.github.io/) - GraphQL implementation
 
-- [ ] Multi-repository analysis
+---
+
+## 🔮 Roadmap
+
+- [ ] Multi-repository analysis and comparison
 - [ ] Real-time updates via webhooks
 - [ ] AI-powered relationship inference
 - [ ] Export/import knowledge graphs
-- [ ] Plugin system for custom analyzers
-- [ ] Integration with popular IDEs
 - [ ] CLI tool for local analysis
+- [ ] IDE integrations (VS Code, IntelliJ)
+- [ ] Docker container support
+- [ ] Performance optimizations for large repositories
+- [ ] Additional language support (Java, C#, PHP)
+- [ ] Relationship confidence learning
+
+---
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](https://github.com/mimelator/wavelength-arch-decoder/issues)
+- **Documentation**: See `docs/` directory
+- **Version**: Check `VERSION` file or footer in UI
+
+---
+
+<div align="center">
+
+**Made with ❤️ for developers who want to understand their codebase**
+
+[Wavelength Consulting](https://hub.wavelengthlore.com/consulting-services)
+
+</div>
