@@ -1166,9 +1166,11 @@ window.analyzeRepository = async function(repoId) {
     try {
         console.log(`Starting analysis for repository ${repoId}...`);
         const result = await api.analyzeRepository(repoId);
+        console.log('Analysis API response:', result);
         
         // Show completion results
-        if (result.results) {
+        if (result && result.results) {
+            console.log('Results found:', result.results);
             if (statusDiv) {
                 // Ensure we display numbers, not objects or arrays
                 const totalDeps = typeof result.results.total_dependencies === 'number' 
@@ -1256,11 +1258,30 @@ window.analyzeRepository = async function(repoId) {
                 }
             }, 5000); // Increased delay to 5 seconds so results are visible
         } else {
-            // No results yet - analysis might still be running
-            console.log('Analysis started but no results yet:', result);
+            // No results - show a message
+            console.warn('No results in response:', result);
+            if (statusDiv) {
+                statusDiv.style.display = 'block';
+                statusDiv.style.visibility = 'visible';
+                statusDiv.style.opacity = '1';
+                statusDiv.innerHTML = `
+                    <div class="analysis-progress">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                            <div class="spinner" style="width: 16px; height: 16px; border: 2px solid rgba(37, 99, 235, 0.3); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                            <strong>Analysis in progress...</strong>
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                            The analysis is running. Check your server terminal for progress updates.
+                        </div>
+                        <div style="font-size: 0.9rem; color: var(--warning-color, #f59e0b); margin-top: 0.75rem; padding: 0.75rem; background: rgba(245, 158, 11, 0.1); border-left: 3px solid var(--warning-color, #f59e0b); border-radius: 4px; font-weight: 500;">
+                            ⚠️ <strong>Note:</strong> Analysis may take several minutes. Results will appear here when complete.
+                        </div>
+                    </div>
+                `;
+            }
         }
         
-        console.log('Analysis started:', result);
+        console.log('Analysis response processed:', result);
     } catch (error) {
         console.error('Analysis error:', error);
         
