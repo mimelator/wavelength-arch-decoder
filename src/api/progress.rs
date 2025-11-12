@@ -127,21 +127,69 @@ pub async fn get_analysis_progress(
     path: web::Path<String>,
 ) -> impl Responder {
     let repository_id = path.into_inner();
+    
+    if repository_id.is_empty() {
+        log::error!("Empty repository ID provided");
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "Repository ID is required"
+        }));
+    }
+    
+    log::info!("Getting progress for repository: {}", repository_id);
+    
     match state.get_progress(&repository_id) {
         Some(progress) => {
+            log::info!("Found progress: step {}/{} - {} ({}%)", 
+                progress.current_step, 
+                progress.total_steps, 
+                progress.step_name,
+                progress.progress_percent
+            );
+            log::debug!("Progress details: started_at={:?}, last_updated={:?}", 
+                progress.started_at, 
+                progress.last_updated
+            );
+            
             match serde_json::to_value(&progress) {
-                Ok(json_value) => HttpResponse::Ok().json(json_value),
+                Ok(json_value) => {
+                    log::info!("Successfully serialized progress for repository: {}", repository_id);
+                    HttpResponse::Ok().json(json_value)
+                },
                 Err(e) => {
-                    log::error!("Failed to serialize progress: {}", e);
+                    log::error!("Failed to serialize progress for repository {}: {}", repository_id, e);
+                    log::error!("Serialization error type: {:?}", e.classify());
+                    log::error!("Serialization error message: {}", e);
+                    log::error!("Progress struct: repository_id={}, current_step={}, total_steps={}", 
+                        progress.repository_id, 
+                        progress.current_step, 
+                        progress.total_steps
+                    );
+                    log::error!("DateTime fields: started_at={:?}, last_updated={:?}", 
+                        progress.started_at, 
+                        progress.last_updated
+                    );
+                    
+                    // Try to serialize just the DateTime fields to see if that's the issue
+                    match serde_json::to_value(&progress.started_at.to_rfc3339()) {
+                        Ok(_) => log::debug!("started_at serializes fine"),
+                        Err(e2) => log::error!("started_at serialization test failed: {}", e2),
+                    }
+                    
                     HttpResponse::InternalServerError().json(serde_json::json!({
-                        "error": format!("Failed to serialize progress: {}", e)
+                        "error": format!("Failed to serialize progress: {}", e),
+                        "error_type": format!("{:?}", e.classify()),
+                        "repository_id": repository_id
                     }))
                 }
             }
         },
-        None => HttpResponse::NotFound().json(serde_json::json!({
-            "error": "No analysis in progress for this repository"
-        })),
+        None => {
+            log::info!("No progress found for repository: {}", repository_id);
+            HttpResponse::NotFound().json(serde_json::json!({
+                "error": "No analysis in progress for this repository",
+                "repository_id": repository_id
+            }))
+        },
     }
 }
 
