@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Assistant - Architecture Decoder</title>
+    <link rel="stylesheet" href="/static/style.css?v=1">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 Architecture Decoder AI Assistant</h1>
+            <div class="header-controls">
+                <select id="repository-select" class="repo-select">
+                    <option value="">Select a repository...</option>
+                </select>
+                <button id="clear-chat" class="btn-secondary">Clear Chat</button>
+            </div>
+        </header>
+
+        <div class="chat-container">
+            <div id="chat-messages" class="chat-messages">
+                <div class="welcome-message">
+                    <h2>Welcome! 👋</h2>
+                    <p>Ask questions about your codebase architecture:</p>
+                    <ul>
+                        <li>"What functions are available?"</li>
+                        <li>"What services are used?"</li>
+                        <li>"What dependencies does this use?"</li>
+                        <li>"What functions use Firebase?"</li>
+                        <li>"What would break if I rename getAdminStorage?"</li>
+                    </ul>
+                    <p><strong>First, select a repository above to get started.</strong></p>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="query-input" 
+                        placeholder="Ask a question about your codebase..."
+                        rows="2"
+                    ></textarea>
+                    <button id="send-button" class="btn-primary" disabled>
+                        <span class="btn-text">Send</span>
+                        <span class="btn-spinner" style="display: none;">⏳</span>
+                    </button>
+                </div>
+                <div class="input-hints">
+                    <span class="hint">Press Enter to send, Shift+Enter for new line</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js?v=1"></script>
+</body>
+</html>
+

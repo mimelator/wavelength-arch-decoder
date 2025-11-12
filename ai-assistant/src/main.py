@@ -1,8 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 from src.query_parser import QueryParser
@@ -93,10 +96,33 @@ async def ai_query(request: QueryRequest):
             response = format_context_summary(context)
 
         # Format response with sources
+        graph_data = context.get("graph", {}) if request.include_graph else None
+        graph_stats = None
+        if graph_data and isinstance(graph_data, dict):
+            # Extract statistics if available
+            graph_stats = graph_data.get("statistics", {})
+            if not graph_stats and "nodes" in graph_data:
+                # Calculate basic stats if not provided
+                nodes = graph_data.get("nodes", [])
+                edges = graph_data.get("edges", [])
+                node_types = {}
+                for node in nodes:
+                    node_type = node.get("type", "unknown")
+                    node_types[node_type] = node_types.get(node_type, 0) + 1
+                graph_stats = {
+                    "total_nodes": len(nodes),
+                    "total_edges": len(edges),
+                    "node_types": node_types
+                }
+        
         return {
             "answer": response,
             "sources": context.get("sources", []),
-            "graph_context": context.get("graph", {}) if request.include_graph else None,
+            "graph_context": {
+                "statistics": graph_stats,
+                "nodes": graph_data.get("nodes", []) if graph_data else [],
+                "edges": graph_data.get("edges", []) if graph_data else []
+            } if graph_data else None,
             "related_entities": context.get("related", {}),
             "intent": intent.get("intent").value if hasattr(intent.get("intent"), "value") else str(intent.get("intent"))
         }
@@ -201,9 +227,30 @@ async def health():
     }
 
 
+@app.get("/api/v1/repositories")
+async def get_repositories():
+    """Proxy endpoint to get repositories from Architecture Decoder"""
+    try:
+        repos = await decoder_client.client.get(
+            f"{decoder_client.base_url}/api/v1/repositories"
+        )
+        repos.raise_for_status()
+        return repos.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch repositories: {str(e)}")
+
+
+# Serve static files
+static_dir = Path(__file__).parent.parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
 @app.get("/")
 async def root():
-    """Root endpoint with API information"""
+    """Serve the chat UI"""
+    static_file = Path(__file__).parent.parent / "static" / "index.html"
+    if static_file.exists():
+        return FileResponse(str(static_file))
     return {
         "service": "Architecture Decoder AI Assistant",
         "version": "0.1.0",
@@ -212,7 +259,8 @@ async def root():
             "refactor_analysis": "/api/v1/ai/refactor-analysis",
             "health": "/health"
         },
-        "docs": "/docs"
+        "docs": "/docs",
+        "ui": "/static/index.html"
     }
 
 
