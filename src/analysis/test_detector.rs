@@ -59,6 +59,10 @@ impl TestDetector {
     /// Detect tests in a repository
     pub fn detect_tests(&self, repo_path: &Path) -> Result<Vec<DetectedTest>> {
         let mut tests = Vec::new();
+        let mut files_checked = 0;
+        let mut files_skipped = 0;
+        let mut test_files_found = 0;
+        let mut test_files_analyzed = 0;
 
         // Walk through code files looking for test files
         for entry in WalkDir::new(repo_path)
@@ -75,14 +79,19 @@ impl TestDetector {
             // Skip hidden files and common ignore patterns
             let path_str = path.to_string_lossy().to_lowercase();
             if utils::should_skip_file(&file_name, &path_str) {
+                files_skipped += 1;
                 continue;
             }
+
+            files_checked += 1;
 
             // Check if file is a test file
             let is_test_file = self.is_test_file(&file_name, &path_str);
             if !is_test_file {
                 continue;
             }
+
+            test_files_found += 1;
 
             // Normalize path
             let normalized_path = path.strip_prefix(repo_path)
@@ -92,6 +101,7 @@ impl TestDetector {
             // Determine language
             let language = utils::detect_language(path);
             if language.is_none() {
+                log::debug!("Skipping test file {} - language not detected", normalized_path);
                 continue;
             }
 
@@ -99,12 +109,24 @@ impl TestDetector {
             if let Ok(content) = std::fs::read_to_string(path) {
                 // Skip minified/compiled code
                 if utils::is_minified_or_compiled(&content, &normalized_path) {
+                    log::debug!("Skipping test file {} - appears to be minified/compiled", normalized_path);
                     continue;
                 }
 
+                test_files_analyzed += 1;
+                let tests_before = tests.len();
+
                 match language.as_deref() {
                     Some("javascript") | Some("typescript") => {
-                        tests.extend(self.analyze_js_ts_tests(&content, &normalized_path, &language.unwrap())?);
+                        match self.analyze_js_ts_tests(&content, &normalized_path, &language.unwrap()) {
+                            Ok(file_tests) => {
+                                tests.extend(file_tests);
+                                log::debug!("Found {} tests in {} (framework detection)", tests.len() - tests_before, normalized_path);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to analyze test file {}: {}", normalized_path, e);
+                            }
+                        }
                     }
                     Some("python") => {
                         tests.extend(self.analyze_python_tests(&content, &normalized_path)?);
@@ -121,37 +143,80 @@ impl TestDetector {
                     Some("swift") => {
                         tests.extend(self.analyze_swift_tests(&content, &normalized_path)?);
                     }
-                    _ => {}
+                    _ => {
+                        log::debug!("Skipping test file {} - unsupported language: {:?}", normalized_path, language);
+                    }
                 }
+            } else {
+                log::warn!("Failed to read test file: {}", normalized_path);
             }
         }
+
+        log::info!("Test detection summary: checked {} files, skipped {} files, found {} test files, analyzed {} test files, detected {} total tests", 
+                   files_checked, files_skipped, test_files_found, test_files_analyzed, tests.len());
 
         Ok(tests)
     }
 
     /// Check if a file is likely a test file
     fn is_test_file(&self, file_name: &str, path_str: &str) -> bool {
-        // Common test file patterns
-        file_name.contains("test") ||
-        file_name.contains("spec") ||
-        file_name.ends_with(".test.js") ||
-        file_name.ends_with(".test.ts") ||
-        file_name.ends_with(".test.jsx") ||
-        file_name.ends_with(".test.tsx") ||
-        file_name.ends_with(".spec.js") ||
-        file_name.ends_with(".spec.ts") ||
-        file_name.ends_with(".spec.jsx") ||
-        file_name.ends_with(".spec.tsx") ||
-        file_name.ends_with("_test.py") ||
-        file_name.ends_with("_test.go") ||
-        file_name.ends_with("_test.rs") ||
-        file_name.ends_with("Test.java") ||
-        file_name.ends_with("Tests.swift") ||
-        path_str.contains("/test/") ||
-        path_str.contains("/tests/") ||
-        path_str.contains("/__tests__/") ||
-        path_str.contains("/spec/") ||
-        path_str.contains("/specs/")
+        // Check file name patterns first (most specific)
+        if file_name.ends_with(".test.js") ||
+           file_name.ends_with(".test.ts") ||
+           file_name.ends_with(".test.jsx") ||
+           file_name.ends_with(".test.tsx") ||
+           file_name.ends_with(".spec.js") ||
+           file_name.ends_with(".spec.ts") ||
+           file_name.ends_with(".spec.jsx") ||
+           file_name.ends_with(".spec.tsx") ||
+           file_name.ends_with("_test.py") ||
+           file_name.ends_with("_test.go") ||
+           file_name.ends_with("_test.rs") ||
+           file_name.ends_with("Test.java") ||
+           file_name.ends_with("Tests.swift") {
+            return true;
+        }
+
+        // Check if file name contains test/spec keywords
+        if file_name.contains("test") || file_name.contains("spec") {
+            return true;
+        }
+
+        // Check if file is in a test directory
+        // Match patterns like: /test/, /tests/, test/, tests/, __tests__/, etc.
+        // Also match any directory component that starts with "test" (test*, tests*, test_*, etc.)
+        let path_lower = path_str.to_lowercase();
+        if path_lower.contains("/test/") ||
+           path_lower.contains("/tests/") ||
+           path_lower.contains("/__tests__/") ||
+           path_lower.contains("/spec/") ||
+           path_lower.contains("/specs/") ||
+           path_lower.starts_with("test/") ||
+           path_lower.starts_with("tests/") ||
+           path_lower.starts_with("__tests__/") ||
+           path_lower.starts_with("spec/") ||
+           path_lower.starts_with("specs/") {
+            return true;
+        }
+
+        // Check for test directories anywhere in path (e.g., src/test/, lib/tests/, etc.)
+        // Match directory names that start with "test" followed by any characters
+        let path_components: Vec<&str> = path_str.split('/').collect();
+        for component in path_components {
+            let comp_lower = component.to_lowercase();
+            // Match: test, tests, test_*, tests_*, test-*, tests-*, __tests__, etc.
+            if comp_lower == "test" ||
+               comp_lower == "tests" ||
+               comp_lower == "__tests__" ||
+               comp_lower == "spec" ||
+               comp_lower == "specs" ||
+               comp_lower.starts_with("test") ||
+               comp_lower.starts_with("tests") {
+                return true;
+            }
+        }
+
+        false
     }
 
 
@@ -163,15 +228,22 @@ impl TestDetector {
         let mut framework = TestFramework::Unknown;
 
         // Detect framework
-        if content.contains("jest") || content.contains("from 'jest'") || content.contains("from \"jest\"") {
+        if content.contains("jest") || content.contains("from 'jest'") || content.contains("from \"jest\"") || 
+           content.contains("jest.mock") || content.contains("jest.fn") {
             framework = TestFramework::Jest;
+            log::debug!("Detected Jest framework in {}", file_path);
         } else if content.contains("mocha") || content.contains("from 'mocha'") || content.contains("from \"mocha\"") {
             framework = TestFramework::Mocha;
+            log::debug!("Detected Mocha framework in {}", file_path);
         } else if content.contains("vitest") || content.contains("from 'vitest'") || content.contains("from \"vitest\"") {
             framework = TestFramework::Vitest;
+            log::debug!("Detected Vitest framework in {}", file_path);
         } else if content.contains("describe") || content.contains("it(") || content.contains("test(") {
             // Generic test framework detection
             framework = TestFramework::Jest; // Default to Jest for describe/it patterns
+            log::debug!("Detected generic test framework (defaulting to Jest) in {}", file_path);
+        } else {
+            log::debug!("No test framework detected in {} - checking for test patterns anyway", file_path);
         }
 
         for (line_idx, line) in lines.iter().enumerate() {
@@ -194,6 +266,8 @@ impl TestDetector {
                     let mut assertions = Vec::new();
                     let mut setup_methods = Vec::new();
                     let mut teardown_methods = Vec::new();
+                    
+                    log::debug!("Found test '{}' at line {} in {}", test_name, line_num, file_path);
 
                     // Look ahead for assertions and setup/teardown
                     for next_line in lines.iter().skip(line_idx).take(20) {
@@ -225,10 +299,13 @@ impl TestDetector {
                         parameters: self.extract_parameters_js(line),
                         return_type: None,
                     });
+                } else {
+                    log::debug!("Found test pattern at line {} in {} but couldn't extract test name: {}", line_num, file_path, line);
                 }
             }
         }
 
+        log::debug!("Analyzed {} and found {} tests (framework: {:?})", file_path, tests.len(), framework);
         Ok(tests)
     }
 
