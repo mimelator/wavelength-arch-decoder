@@ -269,7 +269,7 @@ Discover hidden dependencies, undocumented service integrations, and security co
 Identify hardcoded API keys, analyze IAM policies, detect security vulnerabilities, and map security relationships.
 
 ### 🤖 **AI Assistant Integration**
-Provide structured knowledge graphs to AI assistants for better code understanding and problem-solving.
+Use the interactive AI Assistant chat interface (`http://localhost:8000`) to ask natural language questions about your codebase. Get AI-powered answers about functions, services, dependencies, and refactoring impact analysis. Perfect for quick codebase exploration and understanding.
 
 ### 📊 **Architecture Documentation**
 Automatically generate up-to-date architecture documentation and dependency graphs.
