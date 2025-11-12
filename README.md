@@ -6,7 +6,7 @@
 
 A self-contained, powerful tool that automatically discovers and visualizes the complete architecture of your repositories—from dependencies and services to security configurations and code relationships.
 
-[![Version](https://img.shields.io/badge/version-0.4.0--beta-blue)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.6.3-blue)](VERSION)
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
