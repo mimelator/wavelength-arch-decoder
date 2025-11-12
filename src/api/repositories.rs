@@ -261,7 +261,7 @@ pub async fn analyze_repository(
     let services = match detector.detect_services(&repo_path) {
         Ok(s) => {
             if !s.is_empty() {
-                let service_names: Vec<String> = s.iter().map(|svc| format!("{} ({})", svc.name, svc.provider)).collect();
+                let service_names: Vec<String> = s.iter().map(|svc| format!("{} ({:?})", svc.name, svc.provider)).collect();
                 log::info!("✓ Detected {} service(s): {}", s.len(), service_names.join(", "));
             } else {
                 log::info!("✓ No external services detected");
@@ -293,7 +293,7 @@ pub async fn analyze_repository(
     let tools = match tool_detector.detect_tools(&repo_path) {
         Ok(t) => {
             if !t.is_empty() {
-                let tool_names: Vec<String> = t.iter().map(|tool| format!("{} ({})", tool.name, tool.category)).collect();
+                let tool_names: Vec<String> = t.iter().map(|tool| format!("{} ({:?})", tool.name, tool.category)).collect();
                 log::info!("✓ Detected {} tool(s): {}", t.len(), tool_names.join(", "));
             } else {
                 log::info!("✓ No developer tools detected");
@@ -337,7 +337,8 @@ pub async fn analyze_repository(
             use std::collections::HashMap;
             let mut node_type_counts: HashMap<String, usize> = HashMap::new();
             for node in &graph.nodes {
-                *node_type_counts.entry(node.node_type.clone()).or_insert(0) += 1;
+                let node_type_str = format!("{:?}", node.node_type);
+                *node_type_counts.entry(node_type_str).or_insert(0) += 1;
             }
             let node_type_summary: Vec<String> = node_type_counts.iter()
                 .map(|(k, v)| format!("{}: {}", k, v))
