@@ -63,13 +63,11 @@ impl ApiKeyDetector {
             log::warn!("No code structure provided for API key detection");
         }
 
-        // Build service map by provider (for reference, but we won't create relationships to services
-        // since they're stored in a different table - services table, not security_entities)
+        // Build service map by provider and name for matching API keys
         let mut services_by_provider: HashMap<String, Vec<String>> = HashMap::new();
+        let mut services_by_name: HashMap<String, Vec<(String, String)>> = HashMap::new(); // provider -> [(service_name, service_id)]
         if let Some(svcs) = services {
-            log::info!("Found {} services (for reference only - relationships will be to code elements only)", svcs.len());
-            // We'll track which providers have services, but won't create relationships
-            // since services are in a different table than security_entities
+            log::info!("Found {} services for API key matching", svcs.len());
             for service in svcs {
                 let provider = match service.provider {
                     crate::security::ServiceProvider::Aws => "aws",
@@ -82,6 +80,17 @@ impl ApiKeyDetector {
                     crate::security::ServiceProvider::Twilio => "twilio",
                     crate::security::ServiceProvider::SendGrid => "sendgrid",
                     crate::security::ServiceProvider::Mailgun => "mailgun",
+                    // AI Providers
+                    crate::security::ServiceProvider::OpenAI => "openai",
+                    crate::security::ServiceProvider::Anthropic => "anthropic",
+                    crate::security::ServiceProvider::GitHubCopilot => "github_copilot",
+                    crate::security::ServiceProvider::GoogleAI => "google_ai",
+                    crate::security::ServiceProvider::Cohere => "cohere",
+                    crate::security::ServiceProvider::HuggingFace => "huggingface",
+                    crate::security::ServiceProvider::Replicate => "replicate",
+                    crate::security::ServiceProvider::TogetherAI => "together_ai",
+                    crate::security::ServiceProvider::MistralAI => "mistral_ai",
+                    crate::security::ServiceProvider::Perplexity => "perplexity",
                     crate::security::ServiceProvider::Unknown => "generic",
                     _ => "generic",
                 };
@@ -89,6 +98,10 @@ impl ApiKeyDetector {
                     .entry(provider.to_string())
                     .or_insert_with(Vec::new)
                     .push(service.name.clone());
+                services_by_name
+                    .entry(provider.to_string())
+                    .or_insert_with(Vec::new)
+                    .push((service.name.clone(), format!("service:{}", service.name.clone())));
             }
         } else {
             log::warn!("No services provided for API key detection");
@@ -232,14 +245,47 @@ impl ApiKeyDetector {
                     key.used_by.iter().take(20).map(|id| Value::String(id.clone())).collect()
                 ));
             }
-            // Store which services this key might authenticate (by provider)
+            // Store which services this key might authenticate (by provider and name matching)
+            let mut matched_services: Vec<String> = Vec::new();
+            
+            // Match by provider first (e.g., key.provider = "anthropic" matches Anthropic services)
             if let Some(service_names) = services_by_provider.get(&key.provider) {
+                matched_services.extend(service_names.iter().cloned());
+            }
+            
+            // Also try to match by key name patterns (e.g., ANTHROPIC_API_KEY -> Anthropic service)
+            // This handles cases where the provider detection might have missed it
+            let key_name_upper = key.name.to_uppercase();
+            for (provider, service_list) in &services_by_name {
+                // Check if key name contains provider name (with variations)
+                let provider_variations = vec![
+                    provider.to_uppercase(),
+                    provider.to_uppercase().replace("_", ""),
+                    provider.to_uppercase().replace("_", "_"),
+                ];
+                
+                for provider_variant in provider_variations {
+                    if key_name_upper.contains(&provider_variant) {
+                        matched_services.extend(service_list.iter().map(|(name, _)| name.clone()));
+                        break; // Found match, no need to check other variations
+                    }
+                }
+            }
+            
+            // Remove duplicates and sort for consistent display
+            matched_services.sort();
+            matched_services.dedup();
+            
+            if !matched_services.is_empty() {
                 config.insert("related_services".to_string(), Value::Array(
-                    service_names.iter().take(10).map(|n| Value::String(n.clone())).collect()
+                    matched_services.iter().take(10).map(|n| Value::String(n.clone())).collect()
                 ));
-                config.insert("service_count".to_string(), Value::Number(serde_json::Number::from(service_names.len())));
+                config.insert("service_count".to_string(), Value::Number(serde_json::Number::from(matched_services.len())));
+                log::info!("API key '{}' (provider: {}) matched to {} services: {:?}", 
+                    key.name, key.provider, matched_services.len(), matched_services);
             } else {
                 config.insert("service_count".to_string(), Value::Number(serde_json::Number::from(0)));
+                log::debug!("API key '{}' (provider: {}) did not match any services", key.name, key.provider);
             }
 
             entities.push(SecurityEntity {
@@ -497,7 +543,30 @@ impl ApiKeyDetector {
     fn determine_provider(&self, key_name: &str, value: Option<&str>) -> String {
         let name_lower = key_name.to_lowercase();
         
-        if name_lower.contains("aws") || name_lower.contains("amazon") {
+        // AI Services (check first for specificity)
+        if name_lower.contains("anthropic") || name_lower.contains("claude") {
+            "anthropic".to_string()
+        } else if name_lower.contains("openai") || name_lower.contains("gpt") {
+            "openai".to_string()
+        } else if name_lower.contains("copilot") {
+            "github_copilot".to_string()
+        } else if name_lower.contains("google_ai") || name_lower.contains("gemini") {
+            "google_ai".to_string()
+        } else if name_lower.contains("cohere") {
+            "cohere".to_string()
+        } else if name_lower.contains("huggingface") || name_lower.contains("hf_") {
+            "huggingface".to_string()
+        } else if name_lower.contains("replicate") {
+            "replicate".to_string()
+        } else if name_lower.contains("together") {
+            "together_ai".to_string()
+        } else if name_lower.contains("mistral") {
+            "mistral_ai".to_string()
+        } else if name_lower.contains("perplexity") {
+            "perplexity".to_string()
+        }
+        // Cloud Providers
+        else if name_lower.contains("aws") || name_lower.contains("amazon") {
             "aws".to_string()
         } else if name_lower.contains("github") || name_lower.contains("ghp_") {
             "github".to_string()

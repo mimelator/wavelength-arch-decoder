@@ -186,6 +186,17 @@ impl ServiceRepository {
             ServiceProvider::NewRelic => "newrelic",
             ServiceProvider::Sentry => "sentry",
             ServiceProvider::LogRocket => "logrocket",
+            // AI Providers
+            ServiceProvider::OpenAI => "openai",
+            ServiceProvider::Anthropic => "anthropic",
+            ServiceProvider::GitHubCopilot => "github_copilot",
+            ServiceProvider::GoogleAI => "google_ai",
+            ServiceProvider::Cohere => "cohere",
+            ServiceProvider::HuggingFace => "huggingface",
+            ServiceProvider::Replicate => "replicate",
+            ServiceProvider::TogetherAI => "together_ai",
+            ServiceProvider::MistralAI => "mistral_ai",
+            ServiceProvider::Perplexity => "perplexity",
             ServiceProvider::Unknown => "unknown",
         }.to_string()
     }
@@ -200,6 +211,7 @@ impl ServiceRepository {
             ServiceType::Monitoring => "monitoring",
             ServiceType::Auth => "auth",
             ServiceType::Payment => "payment",
+            ServiceType::AI => "ai",
             ServiceType::Other => "other",
         }.to_string()
     }

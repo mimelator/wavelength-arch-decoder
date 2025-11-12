@@ -158,14 +158,16 @@ impl GraphBuilder {
                 id
             };
 
-            // Repository has dependency
-            edges.push(GraphEdge {
-                id: Uuid::new_v4().to_string(),
-                source_node_id: repo_node_id.clone(),
-                target_node_id: dep_node_id.clone(),
-                edge_type: EdgeType::HasDependency,
-                properties: HashMap::new(),
-            });
+            // Skip creating "has dependency" edges - they're too generic and clutter the graph
+            // Dependencies are already connected to package managers, which is more informative
+            // Repository has dependency - REMOVED (too generic)
+            // edges.push(GraphEdge {
+            //     id: Uuid::new_v4().to_string(),
+            //     source_node_id: repo_node_id.clone(),
+            //     target_node_id: dep_node_id.clone(),
+            //     edge_type: EdgeType::HasDependency,
+            //     properties: HashMap::new(),
+            // });
 
             // Dependency uses package manager
             if let Some(pm_node_id) = node_map.get(&dep.package_manager) {

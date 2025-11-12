@@ -15,6 +15,7 @@ pub enum ServiceType {
     Monitoring,
     Auth,
     Payment,
+    AI,
     Other,
 }
 
@@ -62,6 +63,18 @@ pub enum ServiceProvider {
     NewRelic,
     Sentry,
     LogRocket,
+    
+    // AI Services
+    OpenAI,
+    Anthropic,
+    GitHubCopilot,
+    GoogleAI,
+    Cohere,
+    HuggingFace,
+    Replicate,
+    TogetherAI,
+    MistralAI,
+    Perplexity,
     
     // Other
     Unknown,
@@ -334,6 +347,20 @@ impl ServiceDetector {
             ("VERCEL", ServiceProvider::Vercel, ServiceType::CloudProvider),
             ("NETLIFY", ServiceProvider::Netlify, ServiceType::CloudProvider),
             ("CLOUDFLARE", ServiceProvider::Cloudflare, ServiceType::Cdn),
+            // AI Services
+            ("OPENAI", ServiceProvider::OpenAI, ServiceType::AI),
+            ("ANTHROPIC", ServiceProvider::Anthropic, ServiceType::AI),
+            ("GITHUB_COPILOT", ServiceProvider::GitHubCopilot, ServiceType::AI),
+            ("GOOGLE_AI", ServiceProvider::GoogleAI, ServiceType::AI),
+            ("GEMINI", ServiceProvider::GoogleAI, ServiceType::AI),
+            ("COHERE", ServiceProvider::Cohere, ServiceType::AI),
+            ("HUGGINGFACE", ServiceProvider::HuggingFace, ServiceType::AI),
+            ("HF_", ServiceProvider::HuggingFace, ServiceType::AI),
+            ("REPLICATE", ServiceProvider::Replicate, ServiceType::AI),
+            ("TOGETHER", ServiceProvider::TogetherAI, ServiceType::AI),
+            ("TOGETHER_AI", ServiceProvider::TogetherAI, ServiceType::AI),
+            ("MISTRAL", ServiceProvider::MistralAI, ServiceType::AI),
+            ("PERPLEXITY", ServiceProvider::Perplexity, ServiceType::AI),
         ];
         
         for line in content.lines() {
@@ -508,6 +535,29 @@ impl ServiceDetector {
             ("@datadog/", ServiceProvider::Datadog, ServiceType::Monitoring),
             ("@sentry/", ServiceProvider::Sentry, ServiceType::Monitoring),
             ("@vercel/", ServiceProvider::Vercel, ServiceType::CloudProvider),
+            // AI SDKs
+            ("openai", ServiceProvider::OpenAI, ServiceType::AI),
+            ("@openai/", ServiceProvider::OpenAI, ServiceType::AI),
+            ("anthropic", ServiceProvider::Anthropic, ServiceType::AI),
+            ("@anthropic-ai/", ServiceProvider::Anthropic, ServiceType::AI),
+            ("@anthropic-ai/sdk", ServiceProvider::Anthropic, ServiceType::AI),
+            ("github-copilot", ServiceProvider::GitHubCopilot, ServiceType::AI),
+            ("@copilot/", ServiceProvider::GitHubCopilot, ServiceType::AI),
+            ("@google/generative-ai", ServiceProvider::GoogleAI, ServiceType::AI),
+            ("@google-ai/generativelanguage", ServiceProvider::GoogleAI, ServiceType::AI),
+            ("google-generativeai", ServiceProvider::GoogleAI, ServiceType::AI),
+            ("cohere", ServiceProvider::Cohere, ServiceType::AI),
+            ("@cohere-ai/", ServiceProvider::Cohere, ServiceType::AI),
+            ("huggingface", ServiceProvider::HuggingFace, ServiceType::AI),
+            ("@huggingface/", ServiceProvider::HuggingFace, ServiceType::AI),
+            ("transformers", ServiceProvider::HuggingFace, ServiceType::AI),
+            ("replicate", ServiceProvider::Replicate, ServiceType::AI),
+            ("together", ServiceProvider::TogetherAI, ServiceType::AI),
+            ("@together-ai/", ServiceProvider::TogetherAI, ServiceType::AI),
+            ("mistralai", ServiceProvider::MistralAI, ServiceType::AI),
+            ("@mistralai/", ServiceProvider::MistralAI, ServiceType::AI),
+            ("perplexity", ServiceProvider::Perplexity, ServiceType::AI),
+            ("@perplexity/", ServiceProvider::Perplexity, ServiceType::AI),
         ];
         
         for (pattern, provider, service_type) in sdk_patterns {
@@ -595,6 +645,17 @@ impl ServiceDetector {
             ("api.gitlab.com", ServiceProvider::GitLab),
             ("api.linear.app", ServiceProvider::Linear),
             ("api.atlassian.com", ServiceProvider::Jira),
+            // AI API endpoints
+            ("api.openai.com", ServiceProvider::OpenAI),
+            ("api.anthropic.com", ServiceProvider::Anthropic),
+            ("api.cohere.ai", ServiceProvider::Cohere),
+            ("api-inference.huggingface.co", ServiceProvider::HuggingFace),
+            ("api.replicate.com", ServiceProvider::Replicate),
+            ("api.together.xyz", ServiceProvider::TogetherAI),
+            ("api.mistral.ai", ServiceProvider::MistralAI),
+            ("api.perplexity.ai", ServiceProvider::Perplexity),
+            ("generativelanguage.googleapis.com", ServiceProvider::GoogleAI),
+            ("generativeai.googleapis.com", ServiceProvider::GoogleAI),
         ];
         
         for (pattern, provider) in api_patterns {

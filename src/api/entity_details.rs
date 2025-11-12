@@ -44,14 +44,41 @@ pub async fn get_entity_details(
                         .collect();
                     details.insert("related_services".to_string(), serde_json::json!(related));
                     
-                    // Get related security entities
+                    // Get API keys that match this service
                     if let Ok(security_entities) = state.security_repo.get_entities(&repo_id) {
-                        let related_security: Vec<_> = security_entities.iter()
-                            .filter(|e| e.provider == service.provider)
-                            .take(10)
+                        // Filter for API keys that match this service
+                        let matching_api_keys: Vec<_> = security_entities.iter()
+                            .filter(|e| {
+                                // Only API keys
+                                use crate::security::SecurityEntityType;
+                                if !matches!(e.entity_type, SecurityEntityType::ApiKey) {
+                                    return false;
+                                }
+                                
+                                // Match by provider
+                                if e.provider == service.provider {
+                                    return true;
+                                }
+                                
+                                // Also check if the API key's related_services contains this service name
+                                if let Some(related_services) = e.configuration.get("related_services") {
+                                    if let Some(services_array) = related_services.as_array() {
+                                        for svc_name in services_array {
+                                            if let Some(name_str) = svc_name.as_str() {
+                                                if name_str == service.name {
+                                                    return true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                false
+                            })
+                            .take(20)
                             .map(|e| serde_json::to_value(e).unwrap())
                             .collect();
-                        details.insert("related_security_entities".to_string(), serde_json::json!(related_security));
+                        details.insert("api_keys".to_string(), serde_json::json!(matching_api_keys));
                     }
                 }
             }

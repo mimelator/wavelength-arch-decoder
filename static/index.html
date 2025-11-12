@@ -19,7 +19,6 @@
                 <li><a href="#repositories" class="nav-link" data-page="repositories">Repositories</a></li>
                 <li><a href="#graph" class="nav-link" data-page="graph">Graph</a></li>
                 <li><a href="#search" class="nav-link" data-page="search">Search</a></li>
-                <li><a href="#api-docs" class="nav-link" data-page="api-docs">API Docs</a></li>
                 <li><a href="#login" class="nav-link" id="nav-login" data-page="login">Login</a></li>
                 <li>
                     <button id="theme-toggle" class="theme-toggle" title="Toggle dark/light theme">
@@ -299,11 +298,11 @@
                     <form id="form-register">
                         <div class="form-group">
                             <label for="register-email">Email</label>
-                            <input type="email" id="register-email" required placeholder="your@email.com">
+                            <input type="email" id="register-email" required placeholder="your@email.com" autocomplete="email">
                         </div>
                         <div class="form-group">
                             <label for="register-password">Password</label>
-                            <input type="password" id="register-password" required placeholder="Choose a secure password">
+                            <input type="password" id="register-password" required placeholder="Choose a secure password" autocomplete="new-password">
                         </div>
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary">Register</button>
@@ -317,11 +316,11 @@
                     <form id="form-login">
                         <div class="form-group">
                             <label for="login-email">Email</label>
-                            <input type="email" id="login-email" required placeholder="your@email.com">
+                            <input type="email" id="login-email" required placeholder="your@email.com" autocomplete="email">
                         </div>
                         <div class="form-group">
                             <label for="login-password">Password</label>
-                            <input type="password" id="login-password" required placeholder="Your password">
+                            <input type="password" id="login-password" required placeholder="Your password" autocomplete="current-password">
                         </div>
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary">Login</button>
@@ -343,102 +342,6 @@
             </div>
         </div>
 
-        <!-- API Documentation Page -->
-        <div id="api-docs" class="page">
-            <div class="page-header">
-                <h2>API Documentation</h2>
-            </div>
-            <div class="api-docs-content">
-                <div class="api-section">
-                    <h3>Authentication</h3>
-                    <p>All API requests require authentication via API key in the Authorization header:</p>
-                    <pre><code>Authorization: Bearer YOUR_API_KEY</code></pre>
-                </div>
-                <div class="api-section">
-                    <h3>Endpoints</h3>
-                    <div class="endpoint-list">
-                        <div class="endpoint-item">
-                            <span class="method get">GET</span>
-                            <code>/api/v1/repositories</code>
-                            <p>List all repositories</p>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="method post">POST</span>
-                            <code>/api/v1/repositories</code>
-                            <p>Create a new repository</p>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="method get">GET</span>
-                            <code>/api/v1/repositories/{id}</code>
-                            <p>Get repository details</p>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="method post">POST</span>
-                            <code>/api/v1/repositories/{id}/analyze</code>
-                            <p>Analyze a repository</p>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="method get">GET</span>
-                            <code>/api/v1/repositories/{id}/dependencies</code>
-                            <p>Get repository dependencies</p>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="method get">GET</span>
-                            <code>/api/v1/repositories/{id}/services</code>
-                            <p>Get repository services</p>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="method get">GET</span>
-                            <code>/api/v1/repositories/{id}/graph</code>
-                            <p>Get knowledge graph</p>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="method get">GET</span>
-                            <code>/api/v1/repositories/{id}/code/elements</code>
-                            <p>Get code elements</p>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="method get">GET</span>
-                            <code>/api/v1/repositories/{id}/security/entities</code>
-                            <p>Get security entities</p>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="method post">POST</span>
-                            <code>/api/v1/jobs</code>
-                            <p>Create analysis job</p>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="method get">GET</span>
-                            <code>/api/v1/jobs</code>
-                            <p>List jobs</p>
-                        </div>
-                        <div class="endpoint-item">
-                            <span class="method post">POST</span>
-                            <code>/api/v1/webhooks/github</code>
-                            <p>GitHub webhook handler</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="api-section">
-                    <h3>GraphQL API</h3>
-                    <p>Access the GraphQL API at <code>/graphql</code> or use the interactive GraphiQL interface at <code>/graphiql</code>.</p>
-                    <p>Example query:</p>
-                    <pre><code>query {
-  repository(id: "repo-id") {
-    name
-    dependencies {
-      name
-      version
-    }
-    services {
-      name
-      provider
-    }
-  }
-}</code></pre>
-                </div>
-            </div>
-        </div>
     </main>
 
     <!-- Add Repository Modal -->
@@ -511,6 +414,7 @@
     <footer class="app-footer">
         <div class="footer-content">
             <p>Wavelength Architecture Decoder <span id="app-version">v0.1.0</span></p>
+            <p><a href="https://hub.wavelengthlore.com/consulting-services" target="_blank" rel="noopener noreferrer">Wavelength Consulting</a></p>
         </div>
     </footer>
 </body>

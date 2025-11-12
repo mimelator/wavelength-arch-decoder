@@ -413,20 +413,20 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
         'ServiceProvider': 'Provider',
     };
     
-    // Map edge types to readable labels
+    // Map edge types to readable labels (empty string = no label shown)
     const edgeTypeLabels = {
         'DependsOn': 'depends on',
         'depends_on': 'depends on',
-        'UsesService': 'uses',
-        'uses_service': 'uses',
-        'HasDependency': 'has dependency',
-        'has_dependency': 'has dependency',
-        'UsesPackageManager': 'uses',
-        'uses_package_manager': 'uses',
-        'ProvidedBy': 'provided by',
-        'provided_by': 'provided by',
-        'RelatedTo': 'related to',
-        'related_to': 'related to',
+        'UsesService': '',  // Hide "uses" - obvious from connection
+        'uses_service': '',
+        'HasDependency': '',  // Hide "has dependency" - too generic
+        'has_dependency': '',
+        'UsesPackageManager': '',  // Hide "uses" - obvious
+        'uses_package_manager': '',
+        'ProvidedBy': 'by',  // Shorten to just "by"
+        'provided_by': 'by',
+        'RelatedTo': '',  // Hide generic relationships
+        'related_to': '',
     };
     
     // Prepare nodes with enhanced information
@@ -439,51 +439,37 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
         }
         const nodeTypeLabel = nodeTypeLabels[node.node_type || node.type] || nodeTypeLabels[nodeType] || nodeType;
         
-        // Build tooltip with all properties
-        let tooltip = `<strong>${escapeHtml(node.name)}</strong><br>`;
-        tooltip += `<em>Type: ${nodeTypeLabel}</em><br>`;
+        // Build label - remove redundant type indicator for cleaner display
+        // Type is already indicated by color and shape
+        const label = node.name;
         
-        if (node.properties) {
-            // Handle both object and JSON string properties
-            let props = node.properties;
-            if (typeof props === 'string') {
-                try {
-                    props = JSON.parse(props);
-                } catch (e) {
-                    props = {};
-                }
-            }
-            const propEntries = Object.entries(props || {});
-            if (propEntries.length > 0) {
-                tooltip += '<br><strong>Properties:</strong><br>';
-                propEntries.forEach(([key, value]) => {
-                    tooltip += `${escapeHtml(key)}: ${escapeHtml(String(value))}<br>`;
-                });
-            }
-        }
-        
-        // Build label with type indicator
-        const label = `${node.name}\n(${nodeTypeLabel})`;
+        // Get text color based on theme
+        const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
+        const textColor = isDarkMode ? '#e2e8f0' : '#1e293b';
         
         return {
             id: node.id,
             label: label,
-            title: tooltip,
             color: getNodeColor(nodeType),
-            shape: getNodeShape(nodeType),
             font: {
                 size: 18,
                 face: 'Arial',
-                multi: 'html',
+                color: textColor,
+                multi: false,  // Don't use HTML for labels, just plain text
             },
+            shape: getNodeShape(nodeType),
             borderWidth: 2,
             size: 25,
             chosen: {
                 node: function(values, id, selected, hovering) {
                     if (hovering || selected) {
-                        values.borderWidth = 4;
-                        values.size = 35;
-                        values.font.size = 20;
+                        if (values) {
+                            values.borderWidth = 4;
+                            values.size = 35;
+                            if (values.font) {
+                                values.font.size = 20;
+                            }
+                        }
                     }
                 }
             }
@@ -494,34 +480,20 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
     const edges = graphData.edges.map(edge => {
         // Handle both edge_type (from enum) and relationship_type
         const edgeType = edge.edge_type || edge.relationship_type || edge.type || 'RelatedTo';
-        const edgeLabel = edgeTypeLabels[edgeType] || edgeTypeLabels[edgeType.toLowerCase()] || edgeType.toLowerCase().replace(/([A-Z])/g, ' $1').trim();
+        const edgeLabel = edgeTypeLabels[edgeType] || edgeTypeLabels[edgeType.toLowerCase()] || '';
         
-        // Build tooltip with properties
-        let tooltip = `<strong>${edgeLabel}</strong>`;
-        if (edge.properties) {
-            // Handle both object and JSON string properties
-            let props = edge.properties;
-            if (typeof props === 'string') {
-                try {
-                    props = JSON.parse(props);
-                } catch (e) {
-                    props = {};
-                }
-            }
-            const propEntries = Object.entries(props || {});
-            if (propEntries.length > 0) {
-                tooltip += '<br><br><strong>Properties:</strong><br>';
-                propEntries.forEach(([key, value]) => {
-                    tooltip += `${escapeHtml(key)}: ${escapeHtml(String(value))}<br>`;
-                });
-            }
-        }
+        // Only show label if it's not empty (filter out generic/obvious relationships)
+        const label = edgeLabel || undefined;
+        
+        // Get text color based on theme
+        const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
+        const textColor = isDarkMode ? '#cbd5e1' : '#475569';
         
         return {
+            id: edge.id,
             from: edge.source_node_id || edge.source,
             to: edge.target_node_id || edge.target,
-            label: edgeLabel,
-            title: tooltip,
+            label: label,  // Only show label if not empty/undefined
             arrows: 'to',
             color: {
                 color: '#64748b',
@@ -531,6 +503,10 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
             font: {
                 size: 11,
                 align: 'middle',
+                color: textColor,
+                background: isDarkMode ? '#1e293b' : 'white',
+                strokeWidth: isDarkMode ? 2 : 1,
+                strokeColor: isDarkMode ? '#1e293b' : 'white',
             },
             smooth: {
                 type: 'continuous',
@@ -542,12 +518,20 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
     
     // Create network with enhanced options
     const data = { nodes, edges };
+    
+    // Get theme-aware colors
+    const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
+    const nodeTextColor = isDarkMode ? '#e2e8f0' : '#1e293b';
+    const edgeTextColor = isDarkMode ? '#cbd5e1' : '#475569';
+    const edgeLabelBg = isDarkMode ? '#1e293b' : 'white';
+    
     const options = {
         nodes: {
             font: { 
                 size: 18,
                 face: 'Arial',
-                multi: 'html',
+                color: nodeTextColor,
+                multi: false,  // Plain text, not HTML
             },
             borderWidth: 2,
             shadow: true,
@@ -562,8 +546,10 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
             font: { 
                 size: 13, 
                 align: 'middle',
-                background: 'white',
-                strokeWidth: 2,
+                color: edgeTextColor,
+                background: edgeLabelBg,
+                strokeWidth: isDarkMode ? 2 : 1,
+                strokeColor: edgeLabelBg,
             },
             smooth: { 
                 type: 'continuous',
@@ -593,8 +579,8 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
             },
         },
         interaction: {
-            hover: true,
-            tooltipDelay: 100,
+            hover: false,  // Disable hover tooltips
+            tooltipDelay: 0,
             zoomView: true,
             dragView: true,
             zoomSpeed: 0.5,
@@ -642,7 +628,29 @@ function showNodeDetails(node, graphData, repoId = null) {
     );
     
     // Determine which tab this node type belongs to
-    const nodeType = (node.node_type || node.type || 'unknown').toLowerCase();
+    // Normalize node type - handle both enum serialization formats
+    let nodeType = (node.node_type || node.type || 'unknown').toLowerCase();
+    
+    // Handle variations: "serviceprovider" -> "service_provider", "packagemanager" -> "package_manager"
+    // Check for variations without underscores first
+    if (nodeType === 'serviceprovider' || nodeType.includes('serviceprovider')) {
+        nodeType = 'service_provider';
+    } else if (nodeType === 'service_provider' || nodeType.includes('service_provider')) {
+        nodeType = 'service_provider';
+    } else if (nodeType === 'packagemanager' || nodeType.includes('packagemanager')) {
+        nodeType = 'package_manager';
+    } else if (nodeType === 'package_manager' || nodeType.includes('package_manager')) {
+        nodeType = 'package_manager';
+    } else if (nodeType === 'codeelement' || nodeType.includes('codeelement')) {
+        nodeType = 'code_element';
+    } else if (nodeType === 'code_element' || nodeType.includes('code_element')) {
+        nodeType = 'code_element';
+    } else if (nodeType === 'securityentity' || nodeType.includes('securityentity')) {
+        nodeType = 'security_entity';
+    } else if (nodeType === 'security_entity' || nodeType.includes('security_entity')) {
+        nodeType = 'security_entity';
+    }
+    
     const tabMapping = {
         'dependency': 'dependencies',
         'service': 'services',
@@ -653,6 +661,8 @@ function showNodeDetails(node, graphData, repoId = null) {
         'service_provider': 'services',
     };
     const targetTab = tabMapping[nodeType] || null;
+    
+    console.log('[NODE] showNodeDetails - raw node type:', node.node_type || node.type, 'normalized:', nodeType, 'targetTab:', targetTab, 'repoId:', repoId);
     
     // Build details HTML
     let details = `<div class="node-details">`;
@@ -698,9 +708,11 @@ function showNodeDetails(node, graphData, repoId = null) {
     actionButtons += '<button onclick="this.closest(\'.node-details-modal\').remove()">Close</button>';
     
     if (repoId && targetTab) {
+        console.log('[NODE] Creating button for:', { repoId, targetTab, nodeName: node.name });
         actionButtons += `<button onclick="navigateToNodeInDetail('${repoId}', '${targetTab}', '${escapeHtml(node.name)}'); this.closest('.node-details-modal').remove();" style="background: var(--primary-color); color: white;">View in Repository Details</button>`;
     } else if (repoId) {
         // If we have a repo ID but no specific tab, just go to overview
+        console.log('[NODE] Creating button for overview:', { repoId, nodeName: node.name });
         actionButtons += `<button onclick="navigateToNodeInDetail('${repoId}', 'overview', '${escapeHtml(node.name)}'); this.closest('.node-details-modal').remove();" style="background: var(--primary-color); color: white;">View Repository Details</button>`;
     }
     actionButtons += '</div>';
@@ -717,21 +729,93 @@ function showNodeDetails(node, graphData, repoId = null) {
 
 // Navigate to a specific node in the repository detail view
 window.navigateToNodeInDetail = async function(repoId, tabName, nodeName) {
-    // If we're not already on the repository detail page, navigate there
+    console.log('[NAV] navigateToNodeInDetail called:', { repoId, tabName, nodeName });
+    
+    // If we're not already on the repository detail page, navigate there with the target tab
     const currentPage = document.querySelector('.page.active')?.id;
+    console.log('[NAV] Current page:', currentPage);
+    
     if (currentPage !== 'repository-detail') {
-        await window.viewRepository(repoId);
+        console.log('[NAV] Not on detail page, calling viewRepository with tab:', tabName);
+        await window.viewRepository(repoId, tabName);
         // Wait a bit for the page to load
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 500));
+    } else {
+        // We're already on the detail page, just switch tabs
+        console.log('[NAV] Already on detail page, switching to tab:', tabName);
+        switchTab(tabName, repoId);
     }
     
-    // Switch to the appropriate tab
-    switchTab(tabName, repoId);
-    
-    // Wait for tab content to load, then try to scroll to/highlight the item
-    setTimeout(() => {
+    // Wait for tab content to load, then try to find and navigate to the entity
+    setTimeout(async () => {
+        console.log('[NAV] Finding entity after tab switch:', { repoId, tabName, nodeName });
+        await findAndNavigateToEntity(repoId, tabName, nodeName);
+    }, 800);
+}
+
+async function findAndNavigateToEntity(repoId, tabName, nodeName) {
+    try {
+        let entityId = null;
+        let entityType = null;
+        
+        // Map tab names to entity types
+        const tabToEntityType = {
+            'dependencies': 'dependency',
+            'services': 'service',
+            'code': 'code_element',
+            'security': 'security_entity',
+        };
+        entityType = tabToEntityType[tabName];
+        
+        if (!entityType) {
+            // If no entity type mapping, just scroll to the item
+            highlightNodeInTab(tabName, nodeName);
+            return;
+        }
+        
+        // Try to find the entity by fetching the list and searching
+        let entities = [];
+        try {
+            switch (entityType) {
+                case 'dependency':
+                    entities = await api.getDependencies(repoId);
+                    break;
+                case 'service':
+                    entities = await api.getServices(repoId);
+                    break;
+                case 'code_element':
+                    entities = await api.getCodeElements(repoId);
+                    break;
+                case 'security_entity':
+                    entities = await api.getSecurityEntities(repoId);
+                    break;
+            }
+        } catch (error) {
+            console.error('Failed to fetch entities:', error);
+            // Fall back to highlighting by name
+            highlightNodeInTab(tabName, nodeName);
+            return;
+        }
+        
+        // Search for the entity by name (case-insensitive, partial match)
+        const searchName = nodeName.toLowerCase();
+        const matchingEntity = entities.find(entity => {
+            const entityName = (entity.name || '').toLowerCase();
+            return entityName === searchName || entityName.includes(searchName) || searchName.includes(entityName);
+        });
+        
+        if (matchingEntity && matchingEntity.id) {
+            // Found the entity - navigate to its detail view
+            showEntityDetail(repoId, entityType, matchingEntity.id);
+        } else {
+            // Entity not found by exact/partial name match - try to scroll to it
+            highlightNodeInTab(tabName, nodeName);
+        }
+    } catch (error) {
+        console.error('Error finding entity:', error);
+        // Fall back to highlighting by name
         highlightNodeInTab(tabName, nodeName);
-    }, 500);
+    }
 }
 
 function highlightNodeInTab(tabName, nodeName) {
@@ -785,21 +869,42 @@ function getNodeColor(type) {
     };
     
     const typeLower = (type || '').toLowerCase();
+    const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
     
     // Map node types to entity colors
+    let background, border;
     if (typeLower.includes('repository')) {
-        return getColor('--entity-repository', '#f59e0b');
+        background = getColor('--entity-repository', '#f59e0b');
+        border = isDarkMode ? '#fbbf24' : '#d97706';
     } else if (typeLower.includes('dependency') || typeLower.includes('package')) {
-        return getColor('--entity-dependency', '#3b82f6');
+        background = getColor('--entity-dependency', '#3b82f6');
+        border = isDarkMode ? '#60a5fa' : '#2563eb';
     } else if (typeLower.includes('service') || typeLower.includes('provider')) {
-        return getColor('--entity-service', '#10b981');
+        background = getColor('--entity-service', '#10b981');
+        border = isDarkMode ? '#34d399' : '#059669';
     } else if (typeLower.includes('code') || typeLower.includes('function') || typeLower.includes('class')) {
-        return getColor('--entity-code', '#8b5cf6');
+        background = getColor('--entity-code', '#8b5cf6');
+        border = isDarkMode ? '#a78bfa' : '#7c3aed';
     } else if (typeLower.includes('security') || typeLower.includes('iam') || typeLower.includes('lambda') || typeLower.includes('s3')) {
-        return getColor('--entity-security', '#ef4444');
+        background = getColor('--entity-security', '#ef4444');
+        border = isDarkMode ? '#f87171' : '#dc2626';
+    } else {
+        background = getColor('--secondary-color', '#64748b');
+        border = isDarkMode ? '#94a3b8' : '#475569';
     }
     
-    return getColor('--secondary-color', '#64748b');
+    return {
+        background: background,
+        border: border,
+        highlight: {
+            background: border,
+            border: background,
+        },
+        hover: {
+            background: border,
+            border: background,
+        },
+    };
 }
 
 function getNodeShape(type) {
@@ -1140,7 +1245,9 @@ window.analyzeRepository = async function(repoId) {
     }
 };
 
-window.viewRepository = async function(repoId) {
+window.viewRepository = async function(repoId, initialTab = null) {
+    console.log('[VIEW] viewRepository called:', { repoId, initialTab });
+    
     // Show repository detail page
     showPage('repository-detail');
     
@@ -1149,8 +1256,8 @@ window.viewRepository = async function(repoId) {
         link.classList.remove('active');
     });
     
-    // Load repository details
-    await loadRepositoryDetail(repoId);
+    // Load repository details with optional initial tab
+    await loadRepositoryDetail(repoId, initialTab);
 };
 
 // Delete repository function
@@ -1203,7 +1310,8 @@ window.deleteRepository = async function(repoId, repoName) {
 
 let currentRepoId = null;
 
-async function loadRepositoryDetail(repoId) {
+async function loadRepositoryDetail(repoId, initialTab = null) {
+    console.log('[LOAD] loadRepositoryDetail called:', { repoId, initialTab });
     currentRepoId = repoId;
     
     try {
@@ -1238,8 +1346,10 @@ async function loadRepositoryDetail(repoId) {
         // Load overview stats
         await loadRepositoryOverview(repoId);
         
-        // Load initial tab (overview)
-        switchTab('overview', repoId);
+        // Load initial tab (use provided tab or default to overview)
+        const tabToLoad = initialTab || 'overview';
+        console.log('[LOAD] Switching to tab:', tabToLoad, '(initialTab:', initialTab, ')');
+        switchTab(tabToLoad, repoId);
         
     } catch (error) {
         console.error('Failed to load repository details:', error);
@@ -1258,33 +1368,57 @@ function setupRepositoryTabs(repoId) {
 }
 
 function switchTab(tabName, repoId) {
+    console.log('[TAB] switchTab called:', { tabName, repoId });
+    
     // Update tab states
     document.querySelectorAll('.repo-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.repo-tab-content').forEach(c => c.classList.remove('active'));
     
-    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
-    document.getElementById(`tab-${tabName}`).classList.add('active');
+    const tabButton = document.querySelector(`[data-tab="${tabName}"]`);
+    const tabContent = document.getElementById(`tab-${tabName}`);
+    
+    console.log('[TAB] Tab button found:', !!tabButton, 'Tab content found:', !!tabContent);
+    
+    if (tabButton) {
+        tabButton.classList.add('active');
+    } else {
+        console.warn('[TAB] Tab button not found for:', tabName);
+    }
+    
+    if (tabContent) {
+        tabContent.classList.add('active');
+    } else {
+        console.warn('[TAB] Tab content not found for:', tabName);
+    }
     
     // Load tab content
     switch(tabName) {
         case 'overview':
+            console.log('[TAB] Loading overview');
             loadRepositoryOverview(repoId);
             break;
         case 'dependencies':
+            console.log('[TAB] Loading dependencies');
             loadDependencies(repoId);
             break;
         case 'services':
+            console.log('[TAB] Loading services');
             loadServices(repoId);
             break;
         case 'code':
+            console.log('[TAB] Loading code');
             loadCodeElements(repoId);
             break;
         case 'security':
+            console.log('[TAB] Loading security');
             loadSecurity(repoId);
             break;
         case 'graph':
+            console.log('[TAB] Loading graph');
             loadRepositoryGraph(repoId);
             break;
+        default:
+            console.warn('[TAB] Unknown tab name:', tabName);
     }
 }
 
@@ -2323,6 +2457,24 @@ function renderRelationships(entityType, details) {
         details.related_services.forEach(svc => {
             html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'service', '${svc.id}')">
                 <strong>${escapeHtml(svc.name)}</strong> (${escapeHtml(svc.provider)})
+            </div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    // API Keys (for services)
+    if (details.api_keys && details.api_keys.length > 0) {
+        html += '<div class="detail-section"><h3>API Keys</h3><div class="related-items">';
+        details.api_keys.forEach(key => {
+            const config = typeof key.configuration === 'string' ? JSON.parse(key.configuration) : key.configuration;
+            const keyName = config.key_name || key.name;
+            const keyType = config.key_type || 'unknown';
+            const provider = config.provider || key.provider || 'generic';
+            html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'security_entity', '${key.id}')">
+                <strong>${escapeHtml(keyName)}</strong> 
+                <span class="detail-badge ${keyType === 'hardcoded' ? 'badge-critical' : 'badge-info'}">${escapeHtml(keyType)}</span>
+                <span class="detail-badge">${escapeHtml(provider)}</span>
+                ${key.file_path ? `<br><small><code>${escapeHtml(key.file_path)}</code>${key.line_number ? `:${key.line_number}` : ''}</small>` : ''}
             </div>`;
         });
         html += '</div></div>';
