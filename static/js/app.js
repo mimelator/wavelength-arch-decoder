@@ -1249,14 +1249,11 @@ window.analyzeRepository = async function(repoId) {
                 }
             }
             
-            // Reload repositories to show updated status (but keep the results visible)
+            // Reload repositories list to show updated status (but don't reload detail page to preserve results)
             setTimeout(() => {
                 loadRepositories();
-                if (document.getElementById('repository-detail')?.classList.contains('active')) {
-                    // Don't reload detail page immediately - let user see results
-                    // loadRepositoryDetail(repoId);
-                }
-            }, 5000); // Increased delay to 5 seconds so results are visible
+                // Don't reload detail page - keep results visible for user to see
+            }, 3000);
         } else {
             // No results - show a message
             console.warn('No results in response:', result);
@@ -1602,7 +1599,7 @@ async function loadRepositoryDetail(repoId, initialTab = null) {
         const analyzeBtn = document.getElementById('btn-analyze-detail');
         analyzeBtn.onclick = () => {
             window.analyzeRepository(repoId);
-            setTimeout(() => loadRepositoryDetail(repoId), 5000);
+            // Don't auto-reload - let the analyzeRepository function handle completion
         };
         
         // Setup delete button
