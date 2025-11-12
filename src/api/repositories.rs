@@ -200,6 +200,7 @@ pub async fn analyze_repository(
     };
 
     // Extract dependencies
+    state.progress_tracker.update_progress(&repository_id, 4, "Extracting dependencies", "Scanning package.json, requirements.txt, Cargo.toml, and other manifest files...", None);
     log::info!("Step 4/10: Extracting dependencies from repository...");
     let extractor = DependencyExtractor::new();
     let manifests = match extractor.extract_from_repository(&repo_path) {
@@ -235,6 +236,7 @@ pub async fn analyze_repository(
     log::info!("✓ Stored {} dependencies", stored_deps);
 
     // Detect services
+    state.progress_tracker.update_progress(&repository_id, 5, "Detecting external services", "Scanning for AWS, Firebase, Clerk, AI services, and other integrations...", None);
     log::info!("Step 5/10: Detecting external services...");
     // Load plugins from config/plugins directory if it exists
     let plugin_dir = Path::new("config/plugins");
@@ -303,6 +305,7 @@ pub async fn analyze_repository(
     log::info!("✓ Stored {} tools", tools.len());
 
     // Build and store knowledge graph
+    state.progress_tracker.update_progress(&repository_id, 7, "Building knowledge graph", "Creating relationships between repositories, dependencies, services, and code elements...", None);
     log::info!("Step 7/10: Building knowledge graph...");
     let graph_builder = GraphBuilder::new(
         state.repo_repo.db.clone(),
@@ -333,6 +336,7 @@ pub async fn analyze_repository(
     }
 
     // Analyze code structure
+    state.progress_tracker.update_progress(&repository_id, 8, "Analyzing code structure", "Extracting functions, classes, modules, and their relationships...", None);
     log::info!("Step 8/10: Analyzing code structure...");
     let code_analyzer = CodeAnalyzer::new();
     let code_structure = match code_analyzer.analyze_repository(&repo_path) {
@@ -419,7 +423,7 @@ pub async fn analyze_repository(
         Ok(analysis) => {
             log::info!("✓ Security analysis complete: {} entities, {} relationships, {} vulnerabilities", 
                 analysis.entities.len(), analysis.relationships.len(), analysis.vulnerabilities.len());
-            state.progress_tracker.update_progress(&repository_id, 8, "Analyzing security configuration", 
+            state.progress_tracker.update_progress(&repository_id, 9, "Analyzing security configuration", 
                 format!("Found {} security entities, {} relationships, {} vulnerabilities", 
                     analysis.entities.len(), analysis.relationships.len(), analysis.vulnerabilities.len()).as_str(),
                 Some(serde_json::json!({
