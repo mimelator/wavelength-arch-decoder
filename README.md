@@ -114,6 +114,20 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **Knowledge Graph Summary**: Graph statistics and node type breakdowns
 - **Print-Friendly**: Clean, professional formatting suitable for documentation
 
+### 🤖 **AI Assistant Integration**
+- **Natural Language Queries**: Ask questions about your codebase in plain English
+- **Interactive Chat UI**: Beautiful dark-themed chat interface for easy interaction
+- **Intelligent Responses**: AI-powered answers using OpenAI GPT-4 with full context
+- **Function Discovery**: "What functions are available?" - Discover available functions and their usage
+- **Service Analysis**: "What services are used?" - Get comprehensive service listings
+- **Dependency Insights**: "What dependencies does this use?" - Understand your dependency graph
+- **Refactoring Impact**: "What would break if I rename X?" - Analyze refactoring risks
+- **Rich Results Display**: Shows sources, graph statistics, and related entities
+- **Repository Selection**: Easy dropdown to switch between repositories
+- **Knowledge Graph Integration**: Leverages the full knowledge graph for context-aware responses
+- **Standalone Service**: Runs on port 8000, isolated in `ai-assistant/` folder
+- **No Hard-Coding**: Automatically discovers relationships from your codebase analysis
+
 ---
 
 ## 🚀 Quick Start
