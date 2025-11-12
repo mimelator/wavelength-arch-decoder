@@ -93,13 +93,14 @@
                         <button class="btn btn-danger" id="btn-delete-detail">Delete</button>
                     </div>
                 </div>
-                <div id="analysis-status-detail" class="analysis-status"></div>
+                <div id="analysis-status-detail" class="analysis-status" style="display: none;"></div>
                 <div class="repo-detail-tabs">
                     <button class="repo-tab active" data-tab="overview">Overview</button>
                     <button class="repo-tab" data-tab="dependencies" data-entity-type="dependencies">Dependencies</button>
                     <button class="repo-tab" data-tab="services" data-entity-type="services">Services</button>
                     <button class="repo-tab" data-tab="code" data-entity-type="code">Code Structure</button>
                     <button class="repo-tab" data-tab="security" data-entity-type="security">Security</button>
+                    <button class="repo-tab" data-tab="tools" data-entity-type="tools">Tools</button>
                     <button class="repo-tab" data-tab="graph">Graph</button>
                 </div>
                 <div class="repo-detail-content">
@@ -223,6 +224,36 @@
                         </div>
                         <div id="security-list" class="detail-list">
                             <p class="loading-text">Loading security information...</p>
+                        </div>
+                    </div>
+                    <div id="tab-tools" class="repo-tab-content">
+                        <div class="code-filters">
+                            <div class="filter-row">
+                                <input type="text" id="tools-search" placeholder="Search tools..." class="search-input" style="flex: 1;">
+                                <select id="tools-category-filter" class="select-input">
+                                    <option value="">All Categories</option>
+                                    <option value="build">Build Tools</option>
+                                    <option value="test">Test Frameworks</option>
+                                    <option value="lint">Linters</option>
+                                    <option value="format">Formatters</option>
+                                    <option value="deploy">Deployment</option>
+                                    <option value="monitor">Monitoring</option>
+                                    <option value="script">Scripts</option>
+                                    <option value="other">Other</option>
+                                </select>
+                                <select id="tools-type-filter" class="select-input">
+                                    <option value="">All Types</option>
+                                    <option value="package_script">Package Scripts</option>
+                                    <option value="config_file">Config Files</option>
+                                    <option value="dev_dependency">Dev Dependencies</option>
+                                    <option value="executable">Executables</option>
+                                    <option value="environment">Environment</option>
+                                </select>
+                            </div>
+                            <div class="filter-info" id="tools-filter-info"></div>
+                        </div>
+                        <div id="tools-list" class="detail-list">
+                            <p class="loading-text">Loading tools...</p>
                         </div>
                     </div>
                     <div id="tab-graph" class="repo-tab-content">

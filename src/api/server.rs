@@ -9,8 +9,9 @@ use crate::api::repositories::{
     delete_repository,
 };
 use crate::api::services::{get_services, search_services_by_provider};
+use crate::api::tools::{get_tools, get_tool_scripts, search_tools};
 use crate::api::graph::{get_graph, get_graph_statistics, get_node_neighbors};
-use crate::api::code::{get_code_elements, get_code_calls};
+use crate::api::code::{get_code_elements, get_code_calls, get_code_relationships};
 use crate::api::security::{get_security_entities, get_security_relationships, get_security_vulnerabilities};
 use crate::api::entity_details::get_entity_details;
 use crate::api::jobs::{create_job, get_job_status, list_jobs, create_scheduled_job, batch_analyze};
@@ -18,7 +19,7 @@ use crate::api::progress::get_analysis_progress;
 use crate::crawler::webhooks::{handle_github_webhook, handle_gitlab_webhook};
 use crate::auth::AuthService;
 use crate::config::Config;
-use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, SecurityRepository};
+use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository};
 use crate::api::progress::ProgressTracker;
 use std::sync::Arc;
 use actix_web::HttpResponse;
@@ -44,7 +45,9 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
     let dep_repo = DependencyRepository::new(db.clone());
     let service_repo = ServiceRepository::new(db.clone());
     let code_repo = CodeElementRepository::new(db.clone());
-    let security_repo = SecurityRepository::new(db);
+    let code_relationship_repo = CodeRelationshipRepository::new(db.clone());
+    let security_repo = SecurityRepository::new(db.clone());
+    let tool_repo = ToolRepository::new(db.clone());
     
     // Initialize auth service
     let auth_service = AuthService::new(
@@ -63,7 +66,9 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
         dep_repo: dep_repo.clone(),
         service_repo: service_repo.clone(),
         code_repo: code_repo.clone(),
+        code_relationship_repo: code_relationship_repo.clone(),
         security_repo: security_repo.clone(),
+        tool_repo: tool_repo.clone(),
         progress_tracker: progress_tracker.clone(),
     });
     
@@ -129,6 +134,10 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     // Service endpoints
                     .route("/repositories/{id}/services", web::get().to(get_services))
                     .route("/services/search", web::get().to(search_services_by_provider))
+                    // Tool endpoints
+                    .route("/repositories/{id}/tools", web::get().to(get_tools))
+                    .route("/repositories/{repo_id}/tools/{tool_id}/scripts", web::get().to(get_tool_scripts))
+                    .route("/tools/search", web::get().to(search_tools))
                     // Graph endpoints
                     .route("/repositories/{id}/graph", web::get().to(get_graph))
                     .route("/repositories/{id}/graph/statistics", web::get().to(get_graph_statistics))
@@ -136,6 +145,7 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     // Code structure endpoints
                     .route("/repositories/{id}/code/elements", web::get().to(get_code_elements))
                     .route("/repositories/{id}/code/calls", web::get().to(get_code_calls))
+                    .route("/repositories/{id}/code/relationships", web::get().to(get_code_relationships))
                     // Security endpoints
                     .route("/repositories/{id}/security/entities", web::get().to(get_security_entities))
                     .route("/repositories/{id}/security/relationships", web::get().to(get_security_relationships))

@@ -1,0 +1,232 @@
+{
+  "version": "1.0",
+  "tool_patterns": {
+    "package_scripts": [
+      {
+        "pattern": "webpack",
+        "category": "Webpack",
+        "tool_type": "BuildTool",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "vite",
+        "category": "Vite",
+        "tool_type": "BuildTool",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "rollup",
+        "category": "Rollup",
+        "tool_type": "BuildTool",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "esbuild",
+        "category": "Esbuild",
+        "tool_type": "BuildTool",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "tsc",
+        "category": "Tsc",
+        "tool_type": "BuildTool",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "jest",
+        "category": "Jest",
+        "tool_type": "TestFramework",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "mocha",
+        "category": "Mocha",
+        "tool_type": "TestFramework",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "pytest",
+        "category": "Pytest",
+        "tool_type": "TestFramework",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "eslint",
+        "category": "Eslint",
+        "tool_type": "Linter",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "prettier",
+        "category": "Prettier",
+        "tool_type": "Formatter",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "webpack-dev-server",
+        "category": "WebpackDevServer",
+        "tool_type": "DevServer",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "nodemon",
+        "category": "Nodemon",
+        "tool_type": "DevServer",
+        "confidence": 0.9
+      }
+    ],
+    "config_files": [
+      {
+        "pattern": ".eslintrc",
+        "category": "Eslint",
+        "tool_type": "Linter",
+        "confidence": 0.95
+      },
+      {
+        "pattern": "eslint.config",
+        "category": "Eslint",
+        "tool_type": "Linter",
+        "confidence": 0.95
+      },
+      {
+        "pattern": ".prettierrc",
+        "category": "Prettier",
+        "tool_type": "Formatter",
+        "confidence": 0.95
+      },
+      {
+        "pattern": "prettier.config",
+        "category": "Prettier",
+        "tool_type": "Formatter",
+        "confidence": 0.95
+      },
+      {
+        "pattern": "webpack.config",
+        "category": "Webpack",
+        "tool_type": "BuildTool",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "vite.config",
+        "category": "Vite",
+        "tool_type": "BuildTool",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "jest.config",
+        "category": "Jest",
+        "tool_type": "TestFramework",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "Makefile",
+        "category": "Make",
+        "tool_type": "TaskRunner",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "justfile",
+        "category": "Just",
+        "tool_type": "TaskRunner",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "Taskfile.yml",
+        "category": "Task",
+        "tool_type": "TaskRunner",
+        "confidence": 0.9
+      }
+    ],
+    "dev_dependencies": [
+      {
+        "pattern": "eslint",
+        "category": "Eslint",
+        "tool_type": "Linter",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "prettier",
+        "category": "Prettier",
+        "tool_type": "Formatter",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "jest",
+        "category": "Jest",
+        "tool_type": "TestFramework",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "mocha",
+        "category": "Mocha",
+        "tool_type": "TestFramework",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "webpack",
+        "category": "Webpack",
+        "tool_type": "BuildTool",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "vite",
+        "category": "Vite",
+        "tool_type": "BuildTool",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "nodemon",
+        "category": "Nodemon",
+        "tool_type": "DevServer",
+        "confidence": 0.9
+      }
+    ],
+    "executable_patterns": [
+      {
+        "pattern": "*.sh",
+        "category": "Bash",
+        "tool_type": "ShellScript",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "*.bash",
+        "category": "Bash",
+        "tool_type": "ShellScript",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "*.zsh",
+        "category": "Zsh",
+        "tool_type": "ShellScript",
+        "confidence": 0.8
+      }
+    ],
+    "environment_patterns": [
+      {
+        "pattern": ".venv",
+        "category": "Venv",
+        "tool_type": "DevEnvironment",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "venv",
+        "category": "Venv",
+        "tool_type": "DevEnvironment",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "devcontainer.json",
+        "category": "DevContainer",
+        "tool_type": "DevEnvironment",
+        "confidence": 0.95
+      },
+      {
+        "pattern": ".nvmrc",
+        "category": "Unknown",
+        "tool_type": "DevEnvironment",
+        "confidence": 0.8
+      }
+    ]
+  }
+}
+

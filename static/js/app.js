@@ -1118,10 +1118,27 @@ window.analyzeRepository = async function(repoId) {
     }
     
     if (statusDiv) {
-        statusDiv.innerHTML = '<div class="analysis-progress">Starting analysis...</div>';
+        // Make sure it's visible and prominent
         statusDiv.style.display = 'block';
         statusDiv.style.visibility = 'visible';
-        console.log('Status div updated, display:', statusDiv.style.display, 'visibility:', statusDiv.style.visibility);
+        statusDiv.style.opacity = '1';
+        statusDiv.innerHTML = `
+            <div class="analysis-progress">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <div class="spinner" style="width: 16px; height: 16px; border: 2px solid rgba(37, 99, 235, 0.3); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                    <strong>Starting analysis...</strong>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 5%"></div>
+                </div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                    ⏳ Initializing... This may take several minutes for large repositories.
+                </div>
+            </div>
+        `;
+        // Scroll status div into view if needed
+        statusDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        console.log('Status div updated and made visible');
     } else {
         console.error('Status div not found! Available IDs:', {
             'analysis-status-detail': !!document.getElementById('analysis-status-detail'),
@@ -1129,99 +1146,225 @@ window.analyzeRepository = async function(repoId) {
         });
     }
     
-    const steps = [
-        'Fetching repository information...',
-        'Initializing crawler...',
-        'Cloning/updating repository...',
-        'Extracting dependencies...',
-        'Detecting services...',
-        'Building knowledge graph...',
-        'Analyzing code structure...',
-        'Analyzing security configuration...',
-        'Finalizing...'
-    ];
+    // Poll for real progress updates from the server
+    let progressPollInterval = null;
+    let pollAttempts = 0;
+    const maxPollAttempts = 600; // Stop polling after 10 minutes (600 * 1 second)
     
-    let currentStep = 0;
-    let lastUpdateTime = Date.now();
-    const updateProgress = () => {
-        if (statusDiv && currentStep < steps.length) {
-            const progress = ((currentStep + 1) / steps.length * 100).toFixed(0);
-            statusDiv.innerHTML = `
-                <div class="analysis-progress">
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width: ${progress}%"></div>
+    const updateProgressFromServer = async () => {
+        try {
+            const progress = await api.getAnalysisProgress(repoId);
+            
+            if (statusDiv) {
+                const progressPercent = progress.progress_percent || 0;
+                const stepName = progress.step_name || 'Processing...';
+                const statusMessage = progress.status_message || 'Analysis in progress';
+                const currentStep = progress.current_step || 0;
+                const totalSteps = progress.total_steps || 9;
+                
+                // Format elapsed time
+                const elapsed = new Date(progress.last_updated) - new Date(progress.started_at);
+                const elapsedSeconds = Math.floor(elapsed / 1000);
+                const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+                const elapsedDisplay = elapsedMinutes > 0 
+                    ? `${elapsedMinutes}m ${elapsedSeconds % 60}s`
+                    : `${elapsedSeconds}s`;
+                
+                // Ensure status div is visible
+                statusDiv.style.display = 'block';
+                statusDiv.style.visibility = 'visible';
+                statusDiv.style.opacity = '1';
+                
+                statusDiv.innerHTML = `
+                    <div class="analysis-progress">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                            <div class="spinner" style="width: 16px; height: 16px; border: 2px solid rgba(37, 99, 235, 0.3); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                            <strong>Analysis in Progress</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${progressPercent.toFixed(1)}%"></div>
+                        </div>
+                        <div class="progress-text">
+                            Step ${currentStep}/${totalSteps}: ${escapeHtml(stepName)}
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                            ${escapeHtml(statusMessage)}
+                        </div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                            ⏱️ Elapsed: ${elapsedDisplay} | ${progressPercent.toFixed(1)}% complete
+                        </div>
+                        ${progress.details ? `
+                            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.5rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px;">
+                                ${Object.entries(progress.details).map(([key, value]) => 
+                                    `<div><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value))}</div>`
+                                ).join('')}
+                            </div>
+                        ` : ''}
                     </div>
-                    <div class="progress-text">Step ${currentStep + 1}/${steps.length}: ${steps[currentStep]}</div>
-                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
-                        ⏳ Analysis in progress... This may take several minutes for large repositories.
-                    </div>
-                </div>
-            `;
-            statusDiv.style.display = 'block';
-            statusDiv.style.visibility = 'visible';
+                `;
+                statusDiv.style.display = 'block';
+                statusDiv.style.visibility = 'visible';
+            }
+            
+            // Stop polling if analysis is complete or failed
+            if (progress.step_name === 'Complete' || progress.step_name === 'Failed' || progress.progress_percent >= 100) {
+                if (progressPollInterval) {
+                    clearInterval(progressPollInterval);
+                    progressPollInterval = null;
+                }
+                
+                // If complete, wait a moment then reload
+                if (progress.step_name === 'Complete') {
+                    if (statusDiv) {
+                        statusDiv.style.display = 'block';
+                        statusDiv.style.visibility = 'visible';
+                        statusDiv.style.opacity = '1';
+                        statusDiv.innerHTML = `
+                            <div class="analysis-success" style="background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; color: #22c55e; padding: 0.75rem; border-radius: 0.375rem;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                    <span style="font-size: 1.2rem;">✓</span>
+                                    <strong style="font-size: 1rem;">Analysis Complete!</strong>
+                                </div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 100%; background: #22c55e;"></div>
+                                </div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                                    Reloading repository data...
+                                </div>
+                            </div>
+                        `;
+                    }
+                    setTimeout(() => {
+                        loadRepositories();
+                        if (document.getElementById('repository-detail')?.classList.contains('active')) {
+                            loadRepositoryDetail(repoId);
+                        }
+                    }, 2000);
+                }
+                return false; // Stop polling
+            }
+            
+            pollAttempts = 0; // Reset attempts on successful poll
+            return true; // Continue polling
+        } catch (error) {
+            pollAttempts++;
+            
+            // If we get a 404, the analysis might not have started yet, keep trying
+            if (error.message && error.message.includes('404')) {
+                if (statusDiv) {
+                    statusDiv.style.display = 'block';
+                    statusDiv.style.visibility = 'visible';
+                    statusDiv.style.opacity = '1';
+                    statusDiv.innerHTML = `
+                        <div class="analysis-progress">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                <div class="spinner" style="width: 16px; height: 16px; border: 2px solid rgba(37, 99, 235, 0.3); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                                <strong>Starting analysis...</strong>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 10%"></div>
+                            </div>
+                            <div class="progress-text">Waiting for analysis to begin...</div>
+                            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                                ⏳ Initializing server-side analysis...
+                            </div>
+                        </div>
+                    `;
+                }
+                return pollAttempts < 10; // Try for 10 seconds before giving up
+            }
+            
+            // For other errors, log but keep trying for a bit
+            console.warn('Failed to get progress:', error);
+            if (pollAttempts >= maxPollAttempts) {
+                if (statusDiv) {
+                    statusDiv.innerHTML = `
+                        <div class="analysis-error">
+                            <strong>⚠ Progress tracking unavailable</strong>
+                            <div class="error-details">Unable to fetch progress updates. Analysis may still be running.</div>
+                        </div>
+                    `;
+                }
+                return false; // Stop polling
+            }
+            return true; // Continue polling
         }
     };
     
-    // Show initial progress
-    updateProgress();
-    
-    // Simulate progress updates - but much slower and more realistic
-    // Only advance if enough time has passed (15 seconds per step minimum)
-    const progressInterval = setInterval(() => {
-        const now = Date.now();
-        const timeSinceLastUpdate = now - lastUpdateTime;
-        
-        // Only advance if we've been on this step for at least 15 seconds
-        // This prevents the UI from getting ahead of the actual server progress
-        if (currentStep < steps.length - 1 && timeSinceLastUpdate >= 15000) {
-            currentStep++;
-            lastUpdateTime = now;
-            updateProgress();
-        } else if (currentStep < steps.length - 1) {
-            // Still update the display to show we're waiting
-            updateProgress();
+    // Start polling immediately, then every 1 second
+    updateProgressFromServer();
+    progressPollInterval = setInterval(async () => {
+        const shouldContinue = await updateProgressFromServer();
+        if (!shouldContinue && progressPollInterval) {
+            clearInterval(progressPollInterval);
+            progressPollInterval = null;
         }
-    }, 5000); // Check every 5 seconds, but only advance every 15 seconds
+    }, 1000); // Poll every second for real-time updates
     
     try {
         console.log(`Starting analysis for repository ${repoId}...`);
         const result = await api.analyzeRepository(repoId);
         
-        clearInterval(progressInterval);
+        // Clear the polling interval - progress updates will handle completion
+        if (progressPollInterval) {
+            clearInterval(progressPollInterval);
+            progressPollInterval = null;
+        }
         
-        if (statusDiv) {
-            statusDiv.innerHTML = `
-                <div class="analysis-success">
-                    <strong>✓ Analysis Complete!</strong>
-                    <div class="analysis-results">
-                        <div>📦 ${result.results?.total_dependencies || 0} dependencies</div>
-                        <div>🔌 ${result.results?.services_found || 0} services</div>
-                        <div>📝 ${result.results?.code_elements_found || 0} code elements</div>
-                        <div>🔒 ${result.results?.security_entities_found || 0} security entities</div>
+        // The progress polling will handle showing completion
+        // But if the API call completes immediately, show results
+        if (result.results) {
+            if (statusDiv) {
+                // Ensure we display numbers, not objects or arrays
+                const totalDeps = typeof result.results.total_dependencies === 'number' 
+                    ? result.results.total_dependencies 
+                    : (Array.isArray(result.results.total_dependencies) 
+                        ? result.results.total_dependencies.length 
+                        : 0);
+                const servicesFound = typeof result.results.services_found === 'number' 
+                    ? result.results.services_found 
+                    : 0;
+                const codeElementsFound = typeof result.results.code_elements_found === 'number' 
+                    ? result.results.code_elements_found 
+                    : 0;
+                const securityEntitiesFound = typeof result.results.security_entities_found === 'number' 
+                    ? result.results.security_entities_found 
+                    : 0;
+                
+                statusDiv.innerHTML = `
+                    <div class="analysis-success">
+                        <strong>✓ Analysis Complete!</strong>
+                        <div class="analysis-results">
+                            <div>📦 ${totalDeps} dependencies</div>
+                            <div>🔌 ${servicesFound} services</div>
+                            <div>📝 ${codeElementsFound} code elements</div>
+                            <div>🔒 ${securityEntitiesFound} security entities</div>
+                        </div>
                     </div>
-                </div>
-            `;
-            statusDiv.style.display = 'block';
-            statusDiv.style.visibility = 'visible';
-        }
-        
-        if (analyzeBtn) {
-            analyzeBtn.disabled = false;
-            analyzeBtn.textContent = 'Re-analyze';
-        }
-        
-        // Reload repositories to show updated status
-        setTimeout(() => {
-            loadRepositories();
-            // If we're on the detail page, reload it too
-            if (document.getElementById('repository-detail')?.classList.contains('active')) {
-                loadRepositoryDetail(repoId);
+                `;
             }
-        }, 2000);
+            
+            if (analyzeBtn) {
+                analyzeBtn.disabled = false;
+                analyzeBtn.textContent = 'Re-analyze';
+            }
+            
+            // Reload repositories to show updated status
+            setTimeout(() => {
+                loadRepositories();
+                if (document.getElementById('repository-detail')?.classList.contains('active')) {
+                    loadRepositoryDetail(repoId);
+                }
+            }, 2000);
+        }
         
-        console.log('Analysis result:', result);
+        console.log('Analysis started:', result);
     } catch (error) {
-        clearInterval(progressInterval);
+        // Clear the polling interval
+        if (progressPollInterval) {
+            clearInterval(progressPollInterval);
+            progressPollInterval = null;
+        }
         
         console.error('Analysis error:', error);
         
@@ -1413,6 +1556,10 @@ function switchTab(tabName, repoId) {
             console.log('[TAB] Loading security');
             loadSecurity(repoId);
             break;
+        case 'tools':
+            console.log('[TAB] Loading tools');
+            loadTools(repoId);
+            break;
         case 'graph':
             console.log('[TAB] Loading graph');
             loadRepositoryGraph(repoId);
@@ -1424,11 +1571,12 @@ function switchTab(tabName, repoId) {
 
 async function loadRepositoryOverview(repoId) {
     try {
-        const [deps, services, code, security] = await Promise.all([
+        const [deps, services, code, security, tools] = await Promise.all([
             api.getDependencies(repoId).catch(() => []),
             api.getServices(repoId).catch(() => []),
             api.getCodeElements(repoId).catch(() => []),
-            api.getSecurityEntities(repoId).catch(() => [])
+            api.getSecurityEntities(repoId).catch(() => []),
+            api.getTools(repoId).catch(() => [])
         ]);
         
         document.getElementById('stat-deps-count').textContent = deps.length || 0;
@@ -2440,23 +2588,27 @@ function renderSecurityEntityDetails(entity, details) {
 function renderRelationships(entityType, details) {
     let html = '';
     
-    // Dependencies
+    // Dependencies (from code relationships)
     if (details.related_dependencies && details.related_dependencies.length > 0) {
         html += '<div class="detail-section"><h3>Related Dependencies</h3><div class="related-items">';
         details.related_dependencies.forEach(dep => {
+            const confidence = dep.confidence ? ` (${(dep.confidence * 100).toFixed(0)}% confidence)` : '';
+            const evidence = dep.evidence ? `<br><small class="text-muted">${escapeHtml(dep.evidence)}</small>` : '';
             html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'dependency', '${dep.id}')">
-                <strong>${escapeHtml(dep.name)}</strong> <code>${escapeHtml(dep.version)}</code>
+                <strong>${escapeHtml(dep.name)}</strong> <code>${escapeHtml(dep.version || 'unknown')}</code>${confidence}${evidence}
             </div>`;
         });
         html += '</div></div>';
     }
     
-    // Services
+    // Services (from code relationships)
     if (details.related_services && details.related_services.length > 0) {
         html += '<div class="detail-section"><h3>Related Services</h3><div class="related-items">';
         details.related_services.forEach(svc => {
+            const confidence = svc.confidence ? ` (${(svc.confidence * 100).toFixed(0)}% confidence)` : '';
+            const evidence = svc.evidence ? `<br><small class="text-muted">${escapeHtml(svc.evidence)}</small>` : '';
             html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'service', '${svc.id}')">
-                <strong>${escapeHtml(svc.name)}</strong> (${escapeHtml(svc.provider)})
+                <strong>${escapeHtml(svc.name)}</strong> (${escapeHtml(svc.provider)})${confidence}${evidence}
             </div>`;
         });
         html += '</div></div>';
@@ -2561,8 +2713,209 @@ function renderRelationships(entityType, details) {
 // Make functions globally available
 window.showEntityDetail = showEntityDetail;
 window.closeEntityDetailModal = closeEntityDetailModal;
+window.showToolDetail = showToolDetail;
 
-// Load version on app initialization
+// Store tools for filtering
+let allTools = [];
+let currentToolsGroupBy = 'category';
+
+async function loadTools(repoId) {
+    currentRepoId = repoId;
+    const container = document.getElementById('tools-list');
+    container.innerHTML = '<p class="loading-text">Loading tools...</p>';
+    
+    try {
+        const tools = await api.getTools(repoId);
+        allTools = tools;
+        
+        if (tools.length === 0) {
+            container.innerHTML = '<p>No tools found. Run analysis first.</p>';
+            return;
+        }
+        
+        // Setup filters
+        setupToolFilters(tools);
+        
+        // Initial render
+        filterAndRenderTools();
+    } catch (error) {
+        container.innerHTML = `<p class="error-text">Failed to load tools: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+function setupToolFilters(tools) {
+    const searchInput = document.getElementById('tools-search');
+    const categoryFilter = document.getElementById('tools-category-filter');
+    const typeFilter = document.getElementById('tools-type-filter');
+    
+    // Setup event listeners
+    searchInput.addEventListener('input', () => filterAndRenderTools());
+    categoryFilter.addEventListener('change', () => filterAndRenderTools());
+    typeFilter.addEventListener('change', () => filterAndRenderTools());
+}
+
+function filterAndRenderTools() {
+    const searchTerm = document.getElementById('tools-search').value.toLowerCase();
+    const categoryFilter = document.getElementById('tools-category-filter').value;
+    const typeFilter = document.getElementById('tools-type-filter').value;
+    
+    let filtered = allTools.filter(tool => {
+        const matchesSearch = !searchTerm || 
+            tool.name.toLowerCase().includes(searchTerm) ||
+            (tool.tool_type && tool.tool_type.toLowerCase().includes(searchTerm)) ||
+            (tool.category && tool.category.toLowerCase().includes(searchTerm)) ||
+            (tool.file_path && tool.file_path.toLowerCase().includes(searchTerm));
+        const matchesCategory = !categoryFilter || tool.category === categoryFilter;
+        const matchesType = !typeFilter || tool.tool_type === typeFilter;
+        return matchesSearch && matchesCategory && matchesType;
+    });
+    
+    // Update filter info
+    const filterInfo = document.getElementById('tools-filter-info');
+    if (filterInfo) {
+        const activeFilters = [];
+        if (searchTerm) activeFilters.push(`search: "${searchTerm}"`);
+        if (categoryFilter) activeFilters.push(`category: ${categoryFilter}`);
+        if (typeFilter) activeFilters.push(`type: ${typeFilter}`);
+        filterInfo.textContent = activeFilters.length > 0 
+            ? `Showing ${filtered.length} of ${allTools.length} tools (${activeFilters.join(', ')})`
+            : `Showing ${filtered.length} tools`;
+    }
+    
+    // Group tools
+    const grouped = {};
+    filtered.forEach(tool => {
+        const groupKey = tool.category || 'other';
+        if (!grouped[groupKey]) grouped[groupKey] = [];
+        grouped[groupKey].push(tool);
+    });
+    
+    // Render
+    const container = document.getElementById('tools-list');
+    if (Object.keys(grouped).length === 0) {
+        container.innerHTML = '<p>No tools match the current filters.</p>';
+        return;
+    }
+    
+    const sortedGroups = Object.keys(grouped).sort();
+    container.innerHTML = sortedGroups.map(category => {
+        const categoryTools = grouped[category];
+        const categoryLabel = category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        return `
+            <div class="detail-group">
+                <h4 class="detail-group-header">${escapeHtml(categoryLabel)} <span class="detail-group-count">${categoryTools.length}</span></h4>
+                <div class="detail-group-content">
+                    ${categoryTools.map(tool => renderToolItem(tool)).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderToolItem(tool) {
+    const filePath = tool.file_path ? tool.file_path.replace(/^\.\/cache\/repos\/[^\/]+\//, '') : '';
+    return `
+        <div class="detail-item clickable" onclick="showToolDetail('${currentRepoId || ''}', '${tool.id}')">
+            <div class="detail-item-header">
+                <strong>${escapeHtml(tool.name)}</strong>
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <span class="entity-id-badge" title="Tool ID: ${tool.id}">ID: ${getShortId(tool.id)}</span>
+                    <span class="detail-badge">${escapeHtml(tool.tool_type || 'unknown')}</span>
+                    <span class="detail-badge">${escapeHtml(tool.category || 'other')}</span>
+                    ${tool.version ? `<span class="detail-badge badge-info">v${escapeHtml(tool.version)}</span>` : ''}
+                </div>
+            </div>
+            <div class="detail-meta">
+                ${filePath ? `<p><strong>File:</strong> <code>${escapeHtml(filePath)}</code>${tool.line_number ? `:${tool.line_number}` : ''}</p>` : ''}
+                <p><strong>Detection Method:</strong> ${escapeHtml(tool.detection_method || 'unknown')}</p>
+                ${tool.confidence ? `<p><strong>Confidence:</strong> ${(tool.confidence * 100).toFixed(0)}%</p>` : ''}
+            </div>
+        </div>
+    `;
+}
+
+async function showToolDetail(repoId, toolId) {
+    currentRepoId = repoId;
+    const modal = document.getElementById('entity-detail-modal');
+    const title = document.getElementById('entity-detail-title');
+    const body = document.getElementById('entity-detail-body');
+    
+    modal.style.display = 'flex';
+    title.textContent = 'Loading...';
+    body.innerHTML = '<p class="loading-text">Loading tool details...</p>';
+    
+    try {
+        const tool = allTools.find(t => t.id === toolId);
+        if (!tool) {
+            title.textContent = 'Error';
+            body.innerHTML = '<p class="error-text">Tool not found</p>';
+            return;
+        }
+        
+        const scripts = await api.getToolScripts(repoId, toolId).catch(() => []);
+        
+        const filePath = tool.file_path ? tool.file_path.replace(/^\.\/cache\/repos\/[^\/]+\//, '') : '';
+        let config = {};
+        try {
+            config = tool.configuration ? (typeof tool.configuration === 'string' ? JSON.parse(tool.configuration) : tool.configuration) : {};
+        } catch (e) {
+            config = {};
+        }
+        
+        title.textContent = `${escapeHtml(tool.name)} (${escapeHtml(tool.category || 'tool')})`;
+        
+        let html = '<div class="entity-detail-content">';
+        
+        // Basic Information
+        html += '<div class="detail-section"><h3>Details</h3><div class="detail-grid">';
+        html += `<div class="detail-item"><strong>ID:</strong> <code>${escapeHtml(tool.id)}</code></div>`;
+        html += `<div class="detail-item"><strong>Type:</strong> ${escapeHtml(tool.tool_type || 'unknown')}</div>`;
+        html += `<div class="detail-item"><strong>Category:</strong> ${escapeHtml(tool.category || 'other')}</div>`;
+        if (tool.version) {
+            html += `<div class="detail-item"><strong>Version:</strong> ${escapeHtml(tool.version)}</div>`;
+        }
+        if (filePath) {
+            html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(filePath)}</code>${tool.line_number ? `:${tool.line_number}` : ''}</div>`;
+        }
+        html += `<div class="detail-item"><strong>Detection Method:</strong> ${escapeHtml(tool.detection_method || 'unknown')}</div>`;
+        if (tool.confidence) {
+            html += `<div class="detail-item"><strong>Confidence:</strong> ${(tool.confidence * 100).toFixed(0)}%</div>`;
+        }
+        html += '</div></div>';
+        
+        // Scripts
+        if (scripts.length > 0) {
+            html += '<div class="detail-section"><h3>Scripts (' + scripts.length + ')</h3><div class="related-items">';
+            scripts.forEach(script => {
+                html += `<div class="related-item">`;
+                html += `<strong>${escapeHtml(script.name || 'unnamed')}</strong>`;
+                if (script.description) {
+                    html += `<p>${escapeHtml(script.description)}</p>`;
+                }
+                if (script.command) {
+                    html += `<code>${escapeHtml(script.command)}</code>`;
+                }
+                html += `</div>`;
+            });
+            html += '</div></div>';
+        }
+        
+        // Configuration
+        if (Object.keys(config).length > 0) {
+            html += '<div class="detail-section"><h3>Configuration</h3>';
+            html += `<pre>${escapeHtml(JSON.stringify(config, null, 2))}</pre>`;
+            html += '</div>';
+        }
+        
+        html += '</div>';
+        body.innerHTML = html;
+    } catch (error) {
+        console.error('Failed to load tool details:', error);
+        title.textContent = 'Error';
+        body.innerHTML = `<p class="error-text">Failed to load tool details: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
 async function loadVersion() {
     try {
         const response = await api.getVersion();

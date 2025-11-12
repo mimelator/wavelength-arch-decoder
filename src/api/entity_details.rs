@@ -133,6 +133,50 @@ pub async fn get_entity_details(
                         .map(|e| serde_json::to_value(e).unwrap())
                         .collect();
                     details.insert("related_elements".to_string(), serde_json::json!(related));
+                    
+                    // Get code relationships (services and dependencies used by this element)
+                    if let Ok(relationships) = state.code_relationship_repo.get_by_code_element(&entity_id) {
+                        let mut related_services = Vec::new();
+                        let mut related_dependencies = Vec::new();
+                        
+                        for rel in &relationships {
+                            match rel.target_type {
+                                crate::analysis::RelationshipTargetType::Service => {
+                                    if let Ok(services) = state.service_repo.get_by_repository(&repo_id) {
+                                        if let Some(service) = services.iter().find(|s| s.id == rel.target_id) {
+                                            related_services.push(serde_json::json!({
+                                                "id": service.id,
+                                                "name": service.name,
+                                                "provider": service.provider,
+                                                "service_type": service.service_type,
+                                                "relationship_type": rel.relationship_type,
+                                                "confidence": rel.confidence,
+                                                "evidence": rel.evidence
+                                            }));
+                                        }
+                                    }
+                                },
+                                crate::analysis::RelationshipTargetType::Dependency => {
+                                    if let Ok(deps) = state.dep_repo.get_by_repository(&repo_id) {
+                                        if let Some(dep) = deps.iter().find(|d| d.id == rel.target_id) {
+                                            related_dependencies.push(serde_json::json!({
+                                                "id": dep.id,
+                                                "name": dep.name,
+                                                "version": dep.version,
+                                                "package_manager": dep.package_manager,
+                                                "relationship_type": rel.relationship_type,
+                                                "confidence": rel.confidence,
+                                                "evidence": rel.evidence
+                                            }));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        details.insert("related_services".to_string(), serde_json::json!(related_services));
+                        details.insert("related_dependencies".to_string(), serde_json::json!(related_dependencies));
+                    }
                 }
             }
         },

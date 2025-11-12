@@ -115,6 +115,14 @@ class WavelengthAPI {
         return this.request(`/repositories/${repoId}/security/vulnerabilities`);
     }
 
+    async getTools(repoId) {
+        return this.request(`/repositories/${repoId}/tools`);
+    }
+
+    async getToolScripts(repoId, toolId) {
+        return this.request(`/repositories/${repoId}/tools/${toolId}/scripts`);
+    }
+
     // Jobs
     async createJob(repositoryId, jobType = 'analyze_repository') {
         return this.request('/jobs', {
@@ -150,6 +158,10 @@ class WavelengthAPI {
 
     async getVersion() {
         return this.request('/version');
+    }
+
+    async getAnalysisProgress(repoId) {
+        return this.request(`/repositories/${repoId}/progress`);
     }
 }
 

@@ -166,6 +166,8 @@ impl QueryRoot {
             state.repo_repo.clone(),
             state.dep_repo.clone(),
             state.service_repo.clone(),
+            state.tool_repo.clone(),
+            state.code_relationship_repo.clone(),
         );
         
         let graph = graph_builder.build_for_repository(&repository_id)?;
@@ -200,6 +202,8 @@ impl QueryRoot {
             state.repo_repo.clone(),
             state.dep_repo.clone(),
             state.service_repo.clone(),
+            state.tool_repo.clone(),
+            state.code_relationship_repo.clone(),
         );
         
         let graph = graph_builder.build_for_repository(&repository_id)?;

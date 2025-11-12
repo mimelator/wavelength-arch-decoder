@@ -72,10 +72,31 @@ impl CodeAnalyzer {
                 .to_lowercase();
 
             // Skip hidden files and common ignore patterns
+            let path_str = path.to_string_lossy().to_lowercase();
             if file_name.starts_with('.') || 
-               path.to_string_lossy().contains("node_modules") ||
-               path.to_string_lossy().contains("target") ||
-               path.to_string_lossy().contains(".git") {
+               path_str.contains("node_modules") ||
+               path_str.contains("target") ||
+               path_str.contains(".git") ||
+               path_str.contains("/dist/") ||
+               path_str.contains("/build/") ||
+               path_str.contains("/.next/") ||
+               path_str.contains("/out/") ||
+               path_str.contains("/.nuxt/") ||
+               path_str.contains("/.cache/") ||
+               path_str.contains("/coverage/") ||
+               file_name.ends_with(".min.js") ||
+               file_name.ends_with(".min.css") ||
+               file_name.ends_with(".bundle.js") ||
+               file_name.ends_with(".chunk.js") ||
+               file_name.ends_with(".class") ||
+               file_name.ends_with(".pyc") ||
+               file_name.ends_with(".pyo") ||
+               file_name.ends_with(".so") ||
+               file_name.ends_with(".dll") ||
+               file_name.ends_with(".dylib") ||
+               file_name.ends_with(".a") ||
+               file_name.ends_with(".o") ||
+               file_name.ends_with(".rlib") {
                 continue;
             }
 
@@ -92,6 +113,11 @@ impl CodeAnalyzer {
 
             // Analyze file based on language
             if let Ok(content) = std::fs::read_to_string(path) {
+                // Skip minified/compiled code
+                if self.is_minified_or_compiled(&content, &normalized_path) {
+                    continue;
+                }
+                
                 match language.as_deref() {
                     Some("javascript") | Some("typescript") => {
                         let (file_elements, file_calls) = self.analyze_js_ts(&content, &normalized_path)?;
@@ -788,6 +814,61 @@ impl CodeAnalyzer {
         } else {
             None
         }
+    }
+
+    /// Check if code appears to be minified or compiled
+    fn is_minified_or_compiled(&self, content: &str, file_path: &str) -> bool {
+        // Skip empty or very small files
+        if content.len() < 100 {
+            return false;
+        }
+
+        let lines: Vec<&str> = content.lines().collect();
+        if lines.is_empty() {
+            return false;
+        }
+
+        // Check for common compiled/minified indicators:
+        // 1. Very long average line length (minified code has long lines)
+        let avg_line_length = content.len() / lines.len().max(1);
+        if avg_line_length > 200 {
+            return true;
+        }
+
+        // 2. Very few line breaks relative to content size (minified code is mostly on one line)
+        if lines.len() < content.len() / 500 {
+            return true;
+        }
+
+        // 3. High ratio of non-whitespace characters (minified code has no spaces)
+        let non_whitespace: usize = content.chars().filter(|c| !c.is_whitespace()).count();
+        let whitespace_ratio = if content.len() > 0 {
+            non_whitespace as f64 / content.len() as f64
+        } else {
+            0.0
+        };
+        if whitespace_ratio > 0.95 && content.len() > 1000 {
+            return true;
+        }
+
+        // 4. Check for common minified patterns
+        if content.contains("!function") && content.contains("(function") && whitespace_ratio > 0.9 {
+            return true;
+        }
+
+        // 5. Check for source map comments (indicates compiled/minified code)
+        if content.contains("//# sourceMappingURL=") || content.contains("//@ sourceMappingURL=") {
+            return true;
+        }
+
+        // 6. Check for webpack/rollup bundle patterns
+        if file_path.contains("bundle") || file_path.contains("chunk") {
+            if content.contains("webpackChunkName") || content.contains("__webpack_require__") {
+                return true;
+            }
+        }
+
+        false
     }
 }
 

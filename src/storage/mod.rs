@@ -8,12 +8,16 @@ pub mod repositories;
 pub mod repository_repo;
 pub mod service_repo;
 pub mod code_repo;
+pub mod code_relationship_repo;
 pub mod security_repo;
+pub mod tool_repo;
 pub use repositories::{UserRepository, ApiKeyRepository};
 pub use repository_repo::{RepositoryRepository, DependencyRepository, Repository, StoredDependency};
 pub use service_repo::{ServiceRepository, StoredService};
 pub use code_repo::CodeElementRepository;
+pub use code_relationship_repo::CodeRelationshipRepository;
 pub use security_repo::SecurityRepository;
+pub use tool_repo::{ToolRepository, StoredTool, StoredToolScript};
 
 #[derive(Clone)]
 pub struct Database {
@@ -259,6 +263,74 @@ impl Database {
             [],
         )?;
 
+        // Tools table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tools (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                tool_type TEXT NOT NULL,
+                category TEXT NOT NULL,
+                version TEXT,
+                file_path TEXT NOT NULL,
+                line_number INTEGER,
+                detection_method TEXT NOT NULL,
+                configuration TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        // Tool scripts table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tool_scripts (
+                id TEXT PRIMARY KEY,
+                tool_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                command TEXT NOT NULL,
+                description TEXT,
+                file_path TEXT NOT NULL,
+                line_number INTEGER,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (tool_id) REFERENCES tools(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        // Tool relationships table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tool_relationships (
+                id TEXT PRIMARY KEY,
+                tool_id TEXT NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                relationship_type TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (tool_id) REFERENCES tools(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        // Code relationships table (links code elements to services and dependencies)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS code_relationships (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                code_element_id TEXT NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                relationship_type TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                evidence TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE CASCADE,
+                FOREIGN KEY (code_element_id) REFERENCES code_elements(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
         // Create indexes
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id)",
@@ -286,6 +358,38 @@ impl Database {
         )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_dependencies_name ON dependencies(name)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tools_repository ON tools(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tools_category ON tools(category)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tool_scripts_tool ON tool_scripts(tool_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tool_relationships_tool ON tool_relationships(tool_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tool_relationships_target ON tool_relationships(target_type, target_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_code_relationships_repository ON code_relationships(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_code_relationships_element ON code_relationships(code_element_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_code_relationships_target ON code_relationships(target_type, target_id)",
             [],
         )?;
         conn.execute(

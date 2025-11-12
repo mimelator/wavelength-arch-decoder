@@ -229,6 +229,17 @@ impl ServiceDetector {
                 FileType::Code => {
                     let language = path.extension()
                         .and_then(|e| e.to_str())
+                        .map(|ext| {
+                            // Normalize extension to language name for comment detection
+                            match ext.to_lowercase().as_str() {
+                                "js" | "jsx" => "javascript",
+                                "ts" | "tsx" => "typescript",
+                                "py" => "python",
+                                "rs" => "rust",
+                                "go" => "go",
+                                _ => ext, // Keep original if unknown
+                            }
+                        })
                         .map(|s| s.to_string());
                     if let Ok(detected) = self.detect_in_code(path, &language) {
                         services.extend(detected);
@@ -455,13 +466,42 @@ impl ServiceDetector {
         // Use patterns from config
         for line in content.lines() {
             let line_upper = line.to_uppercase();
+            let line_trimmed = line_upper.trim();
+            
+            // Skip comments and empty lines
+            if line_trimmed.starts_with('#') || line_trimmed.is_empty() {
+                continue;
+            }
+            
+            // Check if line contains key indicators
+            let has_key_indicator = line_upper.contains("API_KEY") || 
+                                   line_upper.contains("SECRET") || 
+                                   line_upper.contains("TOKEN") ||
+                                   line_upper.contains("ID") || 
+                                   line_upper.contains("KEY");
+            
+            if !has_key_indicator {
+                continue;
+            }
+            
+            // Try to match patterns - only match at word boundaries (start of variable name)
             for rule in &self.pattern_config.patterns.environment_variables {
-                if line_upper.contains(&rule.pattern.to_uppercase()) && 
-                   (line_upper.contains("API_KEY") || 
-                    line_upper.contains("SECRET") || 
-                    line_upper.contains("TOKEN") ||
-                    line_upper.contains("ID") || 
-                    line_upper.contains("KEY")) {
+                let pattern_upper = rule.pattern.to_uppercase();
+                
+                // Extract variable name (everything before =)
+                let var_name = if let Some(equals_pos) = line_upper.find('=') {
+                    &line_upper[..equals_pos].trim()
+                } else {
+                    line_trimmed
+                };
+                
+                // Only match if pattern appears at the START of the variable name
+                // This prevents false positives like "DISCORD" matching inside "CLERK_MACHINE_SECRET_KEY"
+                let matches = var_name.starts_with(&pattern_upper) && 
+                             (var_name.len() == pattern_upper.len() || 
+                              var_name.chars().nth(pattern_upper.len()) == Some('_'));
+                
+                if matches {
                     if let Some(provider) = self.parse_provider(&rule.provider) {
                         let service_type = self.parse_service_type(&rule.service_type);
                         let mut config = HashMap::new();
@@ -480,6 +520,9 @@ impl ServiceDetector {
                             line_number: self.find_line_number(content, line),
                             confidence: rule.confidence,
                         });
+                        
+                        // Only match one pattern per line (prioritize first match)
+                        break;
                     }
                 }
             }
@@ -523,11 +566,23 @@ impl ServiceDetector {
         let mut services = Vec::new();
         let content_lower = content.to_lowercase();
         
+        // Helper to check if a position is inside a comment
+        let is_in_comment = |pos: usize| -> bool {
+            self.is_position_in_comment(content, pos, language.as_deref())
+        };
+        
         // Detect specific AWS SDK clients from @aws-sdk/client-* imports
         let aws_sdk_client_pattern = regex::Regex::new(r"@aws-sdk/client-([a-z0-9-]+)").unwrap();
         for cap in aws_sdk_client_pattern.captures_iter(&content_lower) {
             if let Some(service_name) = cap.get(1) {
                 let service = service_name.as_str();
+                let match_start = cap.get(0).unwrap().start();
+                
+                // Skip if match is in a comment
+                if is_in_comment(match_start) {
+                    continue;
+                }
+                
                 let display_name = self.format_aws_service_name(service);
                 
                 services.push(DetectedService {
@@ -601,7 +656,110 @@ impl ServiceDetector {
         
         // Detect other service SDKs from config
         for rule in &self.pattern_config.patterns.sdk_patterns {
-            if content_lower.contains(&rule.pattern.to_lowercase()) {
+            let pattern_lower = rule.pattern.to_lowercase();
+            let mut matches = false;
+            
+            // For package patterns starting with @, match as package name
+            if pattern_lower.starts_with("@") {
+                // Match package imports: @package-name/ or require('@package-name/')
+                if content_lower.contains(&pattern_lower) {
+                    // Verify it's actually a package import, not just a substring
+                    let package_patterns = vec![
+                        format!("from '{}", pattern_lower),
+                        format!("from \"{}", pattern_lower),
+                        format!("require('{}", pattern_lower),
+                        format!("require(\"{}\"", pattern_lower),
+                        format!("import {}", pattern_lower),
+                        format!("@{}", pattern_lower.trim_start_matches('@')),
+                    ];
+                    
+                    for pkg_pattern in &package_patterns {
+                        if content_lower.contains(pkg_pattern) {
+                            matches = true;
+                            break;
+                        }
+                    }
+                    
+                    // Also check if it's a standalone package name match (for package.json, etc.)
+                    if !matches && (content_lower.contains(&format!("\"{}\"", pattern_lower)) ||
+                                   content_lower.contains(&format!("'{}'", pattern_lower)) ||
+                                   content_lower.contains(&format!("`{}`", pattern_lower))) {
+                        matches = true;
+                    }
+                }
+            } else {
+                // For non-package patterns, require word boundaries to avoid false positives
+                // e.g., "together" should not match "turbopack"
+                let pattern_word = format!(" {}", pattern_lower);
+                let pattern_word_end = format!("{} ", pattern_lower);
+                let pattern_quote_start = format!("\"{}\"", pattern_lower);
+                let pattern_quote_single = format!("'{}'", pattern_lower);
+                let pattern_import = format!("import {}", pattern_lower);
+                let pattern_require = format!("require('{}", pattern_lower);
+                let pattern_from = format!("from '{}", pattern_lower);
+                
+                // Check for word boundary matches
+                // First check common import/require patterns
+                let mut match_positions = Vec::new();
+                
+                if content_lower.contains(&pattern_import) {
+                    if let Some(pos) = content_lower.find(&pattern_import) {
+                        match_positions.push(pos);
+                    }
+                }
+                if content_lower.contains(&pattern_require) {
+                    if let Some(pos) = content_lower.find(&pattern_require) {
+                        match_positions.push(pos);
+                    }
+                }
+                if content_lower.contains(&pattern_from) {
+                    if let Some(pos) = content_lower.find(&pattern_from) {
+                        match_positions.push(pos);
+                    }
+                }
+                if content_lower.contains(&pattern_quote_start) {
+                    if let Some(pos) = content_lower.find(&pattern_quote_start) {
+                        match_positions.push(pos);
+                    }
+                }
+                if content_lower.contains(&pattern_quote_single) {
+                    if let Some(pos) = content_lower.find(&pattern_quote_single) {
+                        match_positions.push(pos);
+                    }
+                }
+                if content_lower.contains(&pattern_word) {
+                    if let Some(pos) = content_lower.find(&pattern_word) {
+                        match_positions.push(pos);
+                    }
+                }
+                if content_lower.contains(&pattern_word_end) {
+                    if let Some(pos) = content_lower.find(&pattern_word_end) {
+                        match_positions.push(pos);
+                    }
+                }
+                if content_lower.starts_with(&pattern_lower) {
+                    match_positions.push(0);
+                }
+                
+                // If no explicit match found, check word boundaries to avoid false positives
+                // e.g., "together" should not match "turbopack"
+                if match_positions.is_empty() && content_lower.contains(&pattern_lower) {
+                    // Find all word boundary matches
+                    let mut start = 0;
+                    while let Some(pos) = content_lower[start..].find(&pattern_lower) {
+                        let actual_pos = start + pos;
+                        if self.is_word_boundary_match(&content_lower, &pattern_lower) {
+                            match_positions.push(actual_pos);
+                        }
+                        start = actual_pos + 1;
+                    }
+                }
+                
+                // Check if any match is NOT in a comment
+                matches = match_positions.iter().any(|&pos| !is_in_comment(pos));
+            }
+            
+            if matches {
                 if let Some(provider) = self.parse_provider(&rule.provider) {
                     let service_type = self.parse_service_type(&rule.service_type);
                     let service_name = rule.service_name.as_ref()
@@ -709,6 +867,149 @@ impl ServiceDetector {
             .enumerate()
             .find(|(_, line)| line.contains(pattern))
             .map(|(idx, _)| idx + 1)
+    }
+
+    /// Check if a position in content is inside a comment
+    fn is_position_in_comment(&self, content: &str, pos: usize, language: Option<&str>) -> bool {
+        // First, handle multi-line block comments (/* */) across the entire content
+        let mut in_block_comment = false;
+        let mut block_start = 0;
+        let mut char_pos = 0;
+        
+        let content_chars: Vec<char> = content.chars().collect();
+        let mut i = 0;
+        while i < content_chars.len().saturating_sub(1) {
+            let two_chars = if i + 1 < content_chars.len() {
+                format!("{}{}", content_chars[i], content_chars[i + 1])
+            } else {
+                String::new()
+            };
+            
+            if two_chars == "/*" {
+                in_block_comment = true;
+                block_start = char_pos;
+            } else if two_chars == "*/" && in_block_comment {
+                // Check if position is within this block comment
+                if pos >= block_start && pos <= char_pos + 2 {
+                    return true;
+                }
+                in_block_comment = false;
+            }
+            
+            // If we're in a block comment and position is past the start, check
+            if in_block_comment && pos >= block_start {
+                return true;
+            }
+            
+            char_pos += 1;
+            i += 1;
+        }
+        
+        // Now check single-line comments
+        let lines: Vec<&str> = content.lines().collect();
+        let mut char_count = 0;
+        
+        for line in &lines {
+            let line_start = char_count;
+            let line_end = char_count + line.len();
+            
+            // Check if position is on this line
+            if pos >= line_start && pos <= line_end {
+                let line_pos = pos - line_start;
+                
+                // Check for single-line comments based on language
+                match language {
+                    Some("javascript") | Some("typescript") | Some("rust") | Some("go") => {
+                        // Check for // comments (but not if it's part of a URL like http://)
+                        if let Some(comment_start) = line.find("//") {
+                            // Make sure it's not part of http:// or https://
+                            if comment_start == 0 || 
+                               (comment_start > 0 && !line[comment_start.saturating_sub(5)..comment_start].ends_with("http:") &&
+                                !line[comment_start.saturating_sub(6)..comment_start].ends_with("https:")) {
+                                if line_pos >= comment_start {
+                                    return true;
+                                }
+                            }
+                        }
+                    },
+                    Some("python") => {
+                        // Check for # comments (but not if it's in a string)
+                        if let Some(comment_start) = line.find('#') {
+                            // Simple check: if # is not inside quotes
+                            let before_comment = &line[..comment_start];
+                            let single_quotes = before_comment.matches('\'').count();
+                            let double_quotes = before_comment.matches('"').count();
+                            // If even number of quotes, # is not in a string
+                            if single_quotes % 2 == 0 && double_quotes % 2 == 0 {
+                                if line_pos >= comment_start {
+                                    return true;
+                                }
+                            }
+                        }
+                    },
+                    _ => {
+                        // Default: check for common comment patterns
+                        if let Some(comment_start) = line.find("//") {
+                            if line_pos >= comment_start {
+                                return true;
+                            }
+                        }
+                        if let Some(comment_start) = line.find('#') {
+                            if line_pos >= comment_start {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                
+                return false; // Position is on this line but not in a comment
+            }
+            
+            char_count = line_end + 1; // +1 for newline character
+        }
+        
+        false // Position not found in any line
+    }
+
+    /// Check if pattern matches at word boundaries (not as substring of another word)
+    fn is_word_boundary_match(&self, content: &str, pattern: &str) -> bool {
+        // Find all occurrences of the pattern
+        let mut start = 0;
+        while let Some(pos) = content[start..].find(pattern) {
+            let actual_pos = start + pos;
+            let before = if actual_pos > 0 {
+                content.chars().nth(actual_pos - 1)
+            } else {
+                None
+            };
+            let after_pos = actual_pos + pattern.len();
+            let after = if after_pos < content.len() {
+                content.chars().nth(after_pos)
+            } else {
+                None
+            };
+            
+            // Check if it's at a word boundary (preceded/followed by non-alphanumeric or start/end)
+            let is_boundary = match (before, after) {
+                (None, _) => true, // Start of content
+                (_, None) => true,  // End of content
+                (Some(b), Some(a)) => {
+                    // Word boundary if before/after are non-alphanumeric (or underscore/hyphen for package names)
+                    (!b.is_alphanumeric() || b == '_' || b == '-' || b == '/') &&
+                    (!a.is_alphanumeric() || a == '_' || a == '-' || a == '/')
+                }
+                (Some(b), None) => !b.is_alphanumeric() || b == '_' || b == '-' || b == '/',
+                (None, Some(a)) => !a.is_alphanumeric() || a == '_' || a == '-' || a == '/',
+            };
+            
+            if is_boundary {
+                return true;
+            }
+            
+            start = actual_pos + 1;
+        }
+        
+        false
     }
 }
 

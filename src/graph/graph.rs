@@ -2,8 +2,9 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository};
-use crate::storage::{Repository, StoredDependency, StoredService};
+use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, ToolRepository, CodeRelationshipRepository};
+use crate::storage::{Repository, StoredDependency, StoredService, StoredTool};
+use crate::analysis::RelationshipTargetType;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum NodeType {
@@ -12,6 +13,9 @@ pub enum NodeType {
     Service,
     PackageManager,
     ServiceProvider,
+    Tool,
+    CodeElement,
+    SecurityEntity,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +34,12 @@ pub enum EdgeType {
     HasDependency,      // Repository -> Dependency
     UsesPackageManager, // Repository -> PackageManager
     ProvidedBy,         // Service -> ServiceProvider
+    UsesTool,           // Repository -> Tool
+    ToolUsesDependency, // Tool -> Dependency
+    ToolUsesService,    // Tool -> Service
+    ToolGenerates,      // Tool -> CodeElement
+    CodeUsesService,     // CodeElement -> Service
+    CodeUsesDependency, // CodeElement -> Dependency
     RelatedTo,          // Generic relationship
 }
 
@@ -53,6 +63,8 @@ pub struct GraphBuilder {
     repo_repo: RepositoryRepository,
     dep_repo: DependencyRepository,
     service_repo: ServiceRepository,
+    tool_repo: ToolRepository,
+    code_relationship_repo: CodeRelationshipRepository,
 }
 
 impl GraphBuilder {
@@ -61,12 +73,16 @@ impl GraphBuilder {
         repo_repo: RepositoryRepository,
         dep_repo: DependencyRepository,
         service_repo: ServiceRepository,
+        tool_repo: ToolRepository,
+        code_relationship_repo: CodeRelationshipRepository,
     ) -> Self {
         GraphBuilder {
             db,
             repo_repo,
             dep_repo,
             service_repo,
+            tool_repo,
+            code_relationship_repo,
         }
     }
 
@@ -98,6 +114,9 @@ impl GraphBuilder {
 
         // Get dependencies
         let dependencies = self.dep_repo.get_by_repository(repository_id)?;
+        
+        // Track dependency node IDs for code relationships
+        let mut dep_node_ids: HashMap<String, String> = HashMap::new();
         
         // Group dependencies by package manager
         let mut package_managers: HashSet<String> = HashSet::new();
@@ -157,6 +176,9 @@ impl GraphBuilder {
                 node_map.insert(dep.name.clone(), id.clone());
                 id
             };
+            
+            // Track dependency node ID by dep.id for code relationships
+            dep_node_ids.insert(dep.id.clone(), dep_node_id.clone());
 
             // Skip creating "has dependency" edges - they're too generic and clutter the graph
             // Dependencies are already connected to package managers, which is more informative
@@ -211,9 +233,14 @@ impl GraphBuilder {
             };
         }
 
+        // Track service and dependency node IDs for code relationships
+        let mut service_node_ids: HashMap<String, String> = HashMap::new();
+        let mut dep_node_ids: HashMap<String, String> = HashMap::new();
+        
         // Create service nodes
         for service in &services {
             let service_node_id = Uuid::new_v4().to_string();
+            service_node_ids.insert(service.id.clone(), service_node_id.clone());
             let mut service_props = HashMap::new();
             service_props.insert("service_type".to_string(), service.service_type.clone());
             service_props.insert("confidence".to_string(), service.confidence.to_string());
@@ -257,6 +284,166 @@ impl GraphBuilder {
                     edge_type: EdgeType::ProvidedBy,
                     properties: HashMap::new(),
                 });
+            }
+        }
+
+        // Get tools
+        let tools = self.tool_repo.get_tools_by_repository(repository_id)?;
+        
+        // Create tool nodes and relationships
+        for tool in &tools {
+            let tool_node_id = Uuid::new_v4().to_string();
+            let mut tool_props = HashMap::new();
+            tool_props.insert("tool_type".to_string(), tool.tool_type.clone());
+            tool_props.insert("category".to_string(), tool.category.clone());
+            tool_props.insert("detection_method".to_string(), tool.detection_method.clone());
+            tool_props.insert("confidence".to_string(), tool.confidence.to_string());
+            tool_props.insert("file_path".to_string(), tool.file_path.clone());
+            if let Some(line) = tool.line_number {
+                tool_props.insert("line_number".to_string(), line.to_string());
+            }
+            if let Some(ref version) = tool.version {
+                tool_props.insert("version".to_string(), version.clone());
+            }
+            
+            // Parse configuration JSON if present
+            if let Ok(config) = serde_json::from_str::<serde_json::Value>(&tool.configuration) {
+                for (key, value) in config.as_object().unwrap_or(&serde_json::Map::new()) {
+                    if let Some(val_str) = value.as_str() {
+                        tool_props.insert(format!("config_{}", key), val_str.to_string());
+                    }
+                }
+            }
+
+            nodes.push(GraphNode {
+                id: tool_node_id.clone(),
+                node_type: NodeType::Tool,
+                name: tool.name.clone(),
+                properties: tool_props,
+                repository_id: Some(repository_id.to_string()),
+            });
+
+            // Repository uses tool
+            edges.push(GraphEdge {
+                id: Uuid::new_v4().to_string(),
+                source_node_id: repo_node_id.clone(),
+                target_node_id: tool_node_id.clone(),
+                edge_type: EdgeType::UsesTool,
+                properties: HashMap::new(),
+            });
+
+            // Try to link tool to dependencies it uses
+            // Check if tool name matches a dependency name
+            for dep in &dependencies {
+                let dep_name_lower = dep.name.to_lowercase();
+                let tool_name_lower = tool.name.to_lowercase();
+                
+                // Check if tool uses this dependency (e.g., "webpack" tool uses "webpack" dependency)
+                if dep_name_lower.contains(&tool_name_lower) || tool_name_lower.contains(&dep_name_lower) {
+                    if let Some(dep_node_id) = node_map.get(&format!("{}:{}", dep.package_manager, dep.name)) {
+                        edges.push(GraphEdge {
+                            id: Uuid::new_v4().to_string(),
+                            source_node_id: tool_node_id.clone(),
+                            target_node_id: dep_node_id.clone(),
+                            edge_type: EdgeType::ToolUsesDependency,
+                            properties: HashMap::new(),
+                        });
+                    }
+                }
+            }
+
+            // Try to link tool to services it interacts with
+            // Check tool configuration for service references
+            if let Ok(config) = serde_json::from_str::<serde_json::Value>(&tool.configuration) {
+                if let Some(service_name) = config.get("service").and_then(|v| v.as_str()) {
+                    // Find matching service node
+                    for service in &services {
+                        if service.name.to_lowercase().contains(&service_name.to_lowercase()) {
+                            // Find the service node ID (we need to track this)
+                            // For now, we'll create a simple match
+                            // In a full implementation, we'd track service node IDs
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add code relationships (code elements to services/dependencies)
+        use crate::storage::CodeElementRepository;
+        let code_repo = CodeElementRepository::new(self.db.clone());
+        if let Ok(code_elements) = code_repo.get_by_repository(repository_id) {
+            // Track code element nodes we create
+            let mut code_element_nodes: HashMap<String, String> = HashMap::new();
+            
+            // For each code element with relationships, create edges
+            for code_element in &code_elements {
+                if let Ok(relationships) = self.code_relationship_repo.get_by_code_element(&code_element.id) {
+                    if relationships.is_empty() {
+                        continue; // Skip elements without relationships
+                    }
+                    
+                    // Create code element node if it has relationships
+                    let code_node_id = format!("code:{}", code_element.id);
+                    if !code_element_nodes.contains_key(&code_element.id) {
+                        nodes.push(GraphNode {
+                            id: code_node_id.clone(),
+                            node_type: NodeType::CodeElement,
+                            name: code_element.name.clone(),
+                            properties: {
+                                let mut props = HashMap::new();
+                                props.insert("file_path".to_string(), code_element.file_path.clone());
+                                props.insert("line_number".to_string(), code_element.line_number.to_string());
+                                props.insert("element_type".to_string(), format!("{:?}", code_element.element_type));
+                                props.insert("language".to_string(), code_element.language.clone());
+                                props
+                            },
+                            repository_id: Some(repository_id.to_string()),
+                        });
+                        code_element_nodes.insert(code_element.id.clone(), code_node_id.clone());
+                    } else {
+                        // Get existing node ID
+                        let code_node_id = code_element_nodes.get(&code_element.id).unwrap().clone();
+                    }
+                    
+                    let code_node_id = code_element_nodes.get(&code_element.id).unwrap().clone();
+                    
+                    for rel in &relationships {
+                        match rel.target_type {
+                            RelationshipTargetType::Service => {
+                                if let Some(service_node_id) = service_node_ids.get(&rel.target_id) {
+                                    edges.push(GraphEdge {
+                                        id: Uuid::new_v4().to_string(),
+                                        source_node_id: code_node_id.clone(),
+                                        target_node_id: service_node_id.clone(),
+                                        edge_type: EdgeType::CodeUsesService,
+                                        properties: {
+                                            let mut props = HashMap::new();
+                                            props.insert("confidence".to_string(), rel.confidence.to_string());
+                                            props.insert("evidence".to_string(), rel.evidence.clone());
+                                            props
+                                        },
+                                    });
+                                }
+                            },
+                            RelationshipTargetType::Dependency => {
+                                if let Some(dep_node_id) = dep_node_ids.get(&rel.target_id) {
+                                    edges.push(GraphEdge {
+                                        id: Uuid::new_v4().to_string(),
+                                        source_node_id: code_node_id.clone(),
+                                        target_node_id: dep_node_id.clone(),
+                                        edge_type: EdgeType::CodeUsesDependency,
+                                        properties: {
+                                            let mut props = HashMap::new();
+                                            props.insert("confidence".to_string(), rel.confidence.to_string());
+                                            props.insert("evidence".to_string(), rel.evidence.clone());
+                                            props
+                                        },
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -385,6 +572,9 @@ impl GraphBuilder {
             NodeType::Service => "service",
             NodeType::PackageManager => "package_manager",
             NodeType::ServiceProvider => "service_provider",
+            NodeType::Tool => "tool",
+            NodeType::CodeElement => "code_element",
+            NodeType::SecurityEntity => "security_entity",
         }.to_string()
     }
 
@@ -395,6 +585,9 @@ impl GraphBuilder {
             "service" => NodeType::Service,
             "package_manager" => NodeType::PackageManager,
             "service_provider" => NodeType::ServiceProvider,
+            "tool" => NodeType::Tool,
+            "code_element" => NodeType::CodeElement,
+            "security_entity" => NodeType::SecurityEntity,
             _ => NodeType::Repository,
         }
     }
@@ -406,6 +599,12 @@ impl GraphBuilder {
             EdgeType::HasDependency => "has_dependency",
             EdgeType::UsesPackageManager => "uses_package_manager",
             EdgeType::ProvidedBy => "provided_by",
+            EdgeType::UsesTool => "uses_tool",
+            EdgeType::ToolUsesDependency => "tool_uses_dependency",
+            EdgeType::ToolUsesService => "tool_uses_service",
+            EdgeType::ToolGenerates => "tool_generates",
+            EdgeType::CodeUsesService => "code_uses_service",
+            EdgeType::CodeUsesDependency => "code_uses_dependency",
             EdgeType::RelatedTo => "related_to",
         }.to_string()
     }
@@ -417,6 +616,12 @@ impl GraphBuilder {
             "has_dependency" => EdgeType::HasDependency,
             "uses_package_manager" => EdgeType::UsesPackageManager,
             "provided_by" => EdgeType::ProvidedBy,
+            "uses_tool" => EdgeType::UsesTool,
+            "tool_uses_dependency" => EdgeType::ToolUsesDependency,
+            "tool_uses_service" => EdgeType::ToolUsesService,
+            "tool_generates" => EdgeType::ToolGenerates,
+            "code_uses_service" => EdgeType::CodeUsesService,
+            "code_uses_dependency" => EdgeType::CodeUsesDependency,
             "related_to" => EdgeType::RelatedTo,
             _ => EdgeType::RelatedTo,
         }

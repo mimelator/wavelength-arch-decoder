@@ -15,6 +15,8 @@ pub async fn get_graph(
         state.repo_repo.clone(),
         state.dep_repo.clone(),
         state.service_repo.clone(),
+        state.tool_repo.clone(),
+        state.code_relationship_repo.clone(),
     );
 
     match graph_builder.get_graph(&repository_id) {
@@ -38,6 +40,8 @@ pub async fn get_graph_statistics(
         state.repo_repo.clone(),
         state.dep_repo.clone(),
         state.service_repo.clone(),
+        state.tool_repo.clone(),
+        state.code_relationship_repo.clone(),
     );
 
     match graph_builder.get_graph(&repository_id) {
@@ -61,6 +65,8 @@ pub async fn get_node_neighbors(
         state.repo_repo.clone(),
         state.dep_repo.clone(),
         state.service_repo.clone(),
+        state.tool_repo.clone(),
+        state.code_relationship_repo.clone(),
     );
 
     match graph_builder.get_graph(&repository_id) {

@@ -1,12 +1,13 @@
 use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use serde::{Deserialize, Serialize};
 use crate::auth::{AuthService, RegisterRequest, LoginRequest, CreateApiKeyRequest};
-use crate::storage::{RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, SecurityRepository};
+use crate::storage::{RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository};
 use std::sync::Arc;
 
 pub mod server;
 pub mod repositories;
 pub mod services;
+pub mod tools;
 pub mod graph;
 pub mod code;
 pub mod security;
@@ -20,7 +21,9 @@ pub struct ApiState {
     pub dep_repo: DependencyRepository,
     pub service_repo: ServiceRepository,
     pub code_repo: CodeElementRepository,
+    pub code_relationship_repo: CodeRelationshipRepository,
     pub security_repo: SecurityRepository,
+    pub tool_repo: ToolRepository,
     pub progress_tracker: Arc<progress::ProgressTracker>,
 }
 

@@ -176,6 +176,9 @@ impl RepositoryRepository {
         // Graph nodes
         conn.execute("DELETE FROM graph_nodes WHERE repository_id = ?1", params![id])?;
         
+        // Code relationships (references code_elements)
+        conn.execute("DELETE FROM code_relationships WHERE repository_id = ?1", params![id])?;
+        
         // Code calls (references code_elements)
         conn.execute("DELETE FROM code_calls WHERE repository_id = ?1", params![id])?;
         

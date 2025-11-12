@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use base64::{Engine as _, engine::general_purpose};
 use crate::api::{ApiState, ErrorResponse};
-use crate::storage::{RepositoryRepository, DependencyRepository};
+use crate::storage::{RepositoryRepository, DependencyRepository, ToolRepository};
 use crate::ingestion::{RepositoryCrawler, RepositoryCredentials, AuthType};
-use crate::analysis::DependencyExtractor;
+use crate::analysis::{DependencyExtractor, ToolDetector};
 use crate::security::ServiceDetector;
 use crate::security::analyzer::SecurityAnalyzer;
 use crate::graph::GraphBuilder;
@@ -275,13 +275,42 @@ pub async fn analyze_repository(
     }
     log::info!("✓ Stored {} services", services.len());
 
+    // Detect developer tools and scripts
+    state.progress_tracker.update_progress(&repository_id, 6, "Detecting developer tools", "Scanning for build tools, test frameworks, linters, and scripts...", None);
+    log::info!("Step 6/9: Detecting developer tools...");
+    let tool_detector = ToolDetector::new();
+    let tools = match tool_detector.detect_tools(&repo_path) {
+        Ok(t) => {
+            log::info!("✓ Detected {} tools", t.len());
+            t
+        },
+        Err(e) => {
+            log::error!("✗ Failed to detect tools: {}", e);
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to detect tools: {}", e),
+            });
+        }
+    };
+
+    // Store tools
+    log::info!("Storing tools in database...");
+    if let Err(e) = state.tool_repo.store_tools(&repo.id, &tools) {
+        log::error!("✗ Failed to store tools: {}", e);
+        return HttpResponse::InternalServerError().json(ErrorResponse {
+            error: format!("Failed to store tools: {}", e),
+        });
+    }
+    log::info!("✓ Stored {} tools", tools.len());
+
     // Build and store knowledge graph
-    log::info!("Step 6/8: Building knowledge graph...");
+    log::info!("Step 7/9: Building knowledge graph...");
     let graph_builder = GraphBuilder::new(
         state.repo_repo.db.clone(),
         state.repo_repo.clone(),
         state.dep_repo.clone(),
         state.service_repo.clone(),
+        state.tool_repo.clone(),
+        state.code_relationship_repo.clone(),
     );
     
     match graph_builder.build_for_repository(&repo.id) {
@@ -304,7 +333,7 @@ pub async fn analyze_repository(
     }
 
     // Analyze code structure
-    log::info!("Step 7/8: Analyzing code structure...");
+    log::info!("Step 8/9: Analyzing code structure...");
     let code_analyzer = CodeAnalyzer::new();
     let code_structure = match code_analyzer.analyze_repository(&repo_path) {
         Ok(structure) => {
@@ -340,9 +369,51 @@ pub async fn analyze_repository(
     }
     log::info!("✓ Stored {} code calls", code_structure.calls.len());
 
+    // Detect relationships between code elements and services/dependencies
+    log::info!("Detecting code-to-service/dependency relationships...");
+    use crate::analysis::CodeRelationshipDetector;
+    let relationship_detector = CodeRelationshipDetector::new(&repo_path);
+    
+    // Get stored services and dependencies for relationship detection
+    let stored_services = match state.service_repo.get_by_repository(&repo.id) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("Failed to get services for relationship detection: {}", e);
+            Vec::new()
+        }
+    };
+    
+    let stored_deps_vec = match state.dep_repo.get_by_repository(&repo.id) {
+        Ok(d) => d,
+        Err(e) => {
+            log::warn!("Failed to get dependencies for relationship detection: {}", e);
+            Vec::new()
+        }
+    };
+    
+    let code_relationships = match relationship_detector.detect_relationships(&code_structure, &stored_services, &stored_deps_vec) {
+        Ok(rels) => {
+            log::info!("✓ Detected {} code relationships", rels.len());
+            rels
+        },
+        Err(e) => {
+            log::error!("✗ Failed to detect code relationships: {}", e);
+            Vec::new() // Continue even if relationship detection fails
+        }
+    };
+    
+    // Store code relationships
+    if !code_relationships.is_empty() {
+        if let Err(e) = state.code_relationship_repo.store_relationships(&repo.id, &code_relationships) {
+            log::error!("✗ Failed to store code relationships: {}", e);
+        } else {
+            log::info!("✓ Stored {} code relationships", code_relationships.len());
+        }
+    }
+
     // Analyze security configuration
-    state.progress_tracker.update_progress(&repository_id, 8, "Analyzing security configuration", "Scanning for security entities, API keys, and vulnerabilities...", None);
-    log::info!("Step 8/8: Analyzing security configuration...");
+    state.progress_tracker.update_progress(&repository_id, 9, "Analyzing security configuration", "Scanning for security entities, API keys, and vulnerabilities...", None);
+    log::info!("Step 9/9: Analyzing security configuration...");
     let security_analyzer = SecurityAnalyzer::new();
     let security_analysis = match security_analyzer.analyze_repository(&repo_path, Some(&code_structure), Some(&services)) {
         Ok(analysis) => {
