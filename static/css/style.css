@@ -260,11 +260,12 @@ body {
 }
 
 .analyze-info-text {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    font-style: italic;
+    font-size: 0.8rem;
+    color: var(--warning-color, #f59e0b);
+    font-weight: 500;
     white-space: nowrap;
-    opacity: 0.8;
+    margin-top: 0.25rem;
+    display: none; /* Hidden by default, shown when analysis starts */
 }
 
 /* Analysis Status and Progress */

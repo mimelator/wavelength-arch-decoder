@@ -1118,6 +1118,17 @@ window.analyzeRepository = async function(repoId) {
     if (analyzeBtn) {
         analyzeBtn.disabled = true;
         analyzeBtn.textContent = 'Analyzing...';
+        
+        // Show the info text about server logs
+        const infoText = analyzeBtn.parentElement?.querySelector('.analyze-info-text');
+        if (infoText) {
+            infoText.style.display = 'block';
+            infoText.style.visibility = 'visible';
+            infoText.style.opacity = '1';
+            console.log('Info text shown:', infoText.textContent);
+        } else {
+            console.warn('Info text element not found for button:', analyzeBtn);
+        }
     }
     
     if (statusDiv) {
@@ -1135,7 +1146,10 @@ window.analyzeRepository = async function(repoId) {
                     <div class="progress-fill" style="width: 5%"></div>
                 </div>
                 <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
-                    ⏳ Initializing... This may take several minutes for large repositories.
+                    ⏳ Analysis started. This may take several minutes for large repositories.
+                </div>
+                <div style="font-size: 0.9rem; color: var(--warning-color, #f59e0b); margin-top: 0.75rem; padding: 0.75rem; background: rgba(245, 158, 11, 0.1); border-left: 3px solid var(--warning-color, #f59e0b); border-radius: 4px; font-weight: 500;">
+                    ⚠️ <strong>Important:</strong> Check your server terminal logs for detailed progress updates. The UI cannot reliably show progress during long analyses.
                 </div>
             </div>
         `;
@@ -1149,173 +1163,11 @@ window.analyzeRepository = async function(repoId) {
         });
     }
     
-    // Poll for real progress updates from the server
-    let progressPollInterval = null;
-    let pollAttempts = 0;
-    const maxPollAttempts = 600; // Stop polling after 10 minutes (600 * 1 second)
-    
-    const updateProgressFromServer = async () => {
-        try {
-            const progress = await api.getAnalysisProgress(repoId);
-            
-            if (statusDiv) {
-                const progressPercent = progress.progress_percent || 0;
-                const stepName = progress.step_name || 'Processing...';
-                const statusMessage = progress.status_message || 'Analysis in progress';
-                const currentStep = progress.current_step || 0;
-                const totalSteps = progress.total_steps || 9;
-                
-                // Format elapsed time
-                const elapsed = new Date(progress.last_updated) - new Date(progress.started_at);
-                const elapsedSeconds = Math.floor(elapsed / 1000);
-                const elapsedMinutes = Math.floor(elapsedSeconds / 60);
-                const elapsedDisplay = elapsedMinutes > 0 
-                    ? `${elapsedMinutes}m ${elapsedSeconds % 60}s`
-                    : `${elapsedSeconds}s`;
-                
-                // Ensure status div is visible
-                statusDiv.style.display = 'block';
-                statusDiv.style.visibility = 'visible';
-                statusDiv.style.opacity = '1';
-                
-                statusDiv.innerHTML = `
-                    <div class="analysis-progress">
-                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                            <div class="spinner" style="width: 16px; height: 16px; border: 2px solid rgba(37, 99, 235, 0.3); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                            <strong>Analysis in Progress</strong>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: ${progressPercent.toFixed(1)}%"></div>
-                        </div>
-                        <div class="progress-text">
-                            Step ${currentStep}/${totalSteps}: ${escapeHtml(stepName)}
-                        </div>
-                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
-                            ${escapeHtml(statusMessage)}
-                        </div>
-                        <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">
-                            ⏱️ Elapsed: ${elapsedDisplay} | ${progressPercent.toFixed(1)}% complete
-                        </div>
-                        ${progress.details ? `
-                            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.5rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px;">
-                                ${Object.entries(progress.details).map(([key, value]) => 
-                                    `<div><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value))}</div>`
-                                ).join('')}
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-                statusDiv.style.display = 'block';
-                statusDiv.style.visibility = 'visible';
-            }
-            
-            // Stop polling if analysis is complete or failed
-            if (progress.step_name === 'Complete' || progress.step_name === 'Failed' || progress.progress_percent >= 100) {
-                if (progressPollInterval) {
-                    clearInterval(progressPollInterval);
-                    progressPollInterval = null;
-                }
-                
-                // If complete, wait a moment then reload
-                if (progress.step_name === 'Complete') {
-                    if (statusDiv) {
-                        statusDiv.style.display = 'block';
-                        statusDiv.style.visibility = 'visible';
-                        statusDiv.style.opacity = '1';
-                        statusDiv.innerHTML = `
-                            <div class="analysis-success" style="background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; color: #22c55e; padding: 0.75rem; border-radius: 0.375rem;">
-                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                                    <span style="font-size: 1.2rem;">✓</span>
-                                    <strong style="font-size: 1rem;">Analysis Complete!</strong>
-                                </div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: 100%; background: #22c55e;"></div>
-                                </div>
-                                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
-                                    Reloading repository data...
-                                </div>
-                            </div>
-                        `;
-                    }
-                    setTimeout(() => {
-                        loadRepositories();
-                        if (document.getElementById('repository-detail')?.classList.contains('active')) {
-                            loadRepositoryDetail(repoId);
-                        }
-                    }, 2000);
-                }
-                return false; // Stop polling
-            }
-            
-            pollAttempts = 0; // Reset attempts on successful poll
-            return true; // Continue polling
-        } catch (error) {
-            pollAttempts++;
-            
-            // If we get a 404, the analysis might not have started yet, keep trying
-            if (error.message && error.message.includes('404')) {
-                if (statusDiv) {
-                    statusDiv.style.display = 'block';
-                    statusDiv.style.visibility = 'visible';
-                    statusDiv.style.opacity = '1';
-                    statusDiv.innerHTML = `
-                        <div class="analysis-progress">
-                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                                <div class="spinner" style="width: 16px; height: 16px; border: 2px solid rgba(37, 99, 235, 0.3); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                                <strong>Starting analysis...</strong>
-                            </div>
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: 10%"></div>
-                            </div>
-                            <div class="progress-text">Waiting for analysis to begin...</div>
-                            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
-                                ⏳ Initializing server-side analysis...
-                            </div>
-                        </div>
-                    `;
-                }
-                return pollAttempts < 10; // Try for 10 seconds before giving up
-            }
-            
-            // For other errors, log but keep trying for a bit
-            console.warn('Failed to get progress:', error);
-            if (pollAttempts >= maxPollAttempts) {
-                if (statusDiv) {
-                    statusDiv.innerHTML = `
-                        <div class="analysis-error">
-                            <strong>⚠ Progress tracking unavailable</strong>
-                            <div class="error-details">Unable to fetch progress updates. Analysis may still be running.</div>
-                        </div>
-                    `;
-                }
-                return false; // Stop polling
-            }
-            return true; // Continue polling
-        }
-    };
-    
-    // Start polling immediately, then every 1 second
-    updateProgressFromServer();
-    progressPollInterval = setInterval(async () => {
-        const shouldContinue = await updateProgressFromServer();
-        if (!shouldContinue && progressPollInterval) {
-            clearInterval(progressPollInterval);
-            progressPollInterval = null;
-        }
-    }, 1000); // Poll every second for real-time updates
-    
     try {
         console.log(`Starting analysis for repository ${repoId}...`);
         const result = await api.analyzeRepository(repoId);
         
-        // Clear the polling interval - progress updates will handle completion
-        if (progressPollInterval) {
-            clearInterval(progressPollInterval);
-            progressPollInterval = null;
-        }
-        
-        // The progress polling will handle showing completion
-        // But if the API call completes immediately, show results
+        // Show completion results
         if (result.results) {
             if (statusDiv) {
                 // Ensure we display numbers, not objects or arrays
@@ -1333,42 +1185,83 @@ window.analyzeRepository = async function(repoId) {
                 const securityEntitiesFound = typeof result.results.security_entities_found === 'number' 
                     ? result.results.security_entities_found 
                     : 0;
+                const testsFound = typeof result.results.tests_found === 'number' 
+                    ? result.results.tests_found 
+                    : 0;
+                
+                // Make sure status div is visible
+                statusDiv.style.display = 'block';
+                statusDiv.style.visibility = 'visible';
+                statusDiv.style.opacity = '1';
                 
                 statusDiv.innerHTML = `
-                    <div class="analysis-success">
-                        <strong>✓ Analysis Complete!</strong>
-                        <div class="analysis-results">
-                            <div>📦 ${totalDeps} dependencies</div>
-                            <div>🔌 ${servicesFound} services</div>
-                            <div>📝 ${codeElementsFound} code elements</div>
-                            <div>🔒 ${securityEntitiesFound} security entities</div>
+                    <div class="analysis-success" style="background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; color: #22c55e; padding: 1rem; border-radius: 0.5rem;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                            <span style="font-size: 1.5rem;">✓</span>
+                            <strong style="font-size: 1.1rem;">Analysis Complete!</strong>
+                        </div>
+                        <div class="analysis-results" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-top: 0.75rem;">
+                            <div style="padding: 0.5rem; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
+                                <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">📦</div>
+                                <div style="font-weight: 600;">${totalDeps}</div>
+                                <div style="font-size: 0.85rem; opacity: 0.9;">dependencies</div>
+                            </div>
+                            <div style="padding: 0.5rem; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
+                                <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">🔌</div>
+                                <div style="font-weight: 600;">${servicesFound}</div>
+                                <div style="font-size: 0.85rem; opacity: 0.9;">services</div>
+                            </div>
+                            <div style="padding: 0.5rem; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
+                                <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">📝</div>
+                                <div style="font-weight: 600;">${codeElementsFound}</div>
+                                <div style="font-size: 0.85rem; opacity: 0.9;">code elements</div>
+                            </div>
+                            <div style="padding: 0.5rem; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
+                                <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">🔒</div>
+                                <div style="font-weight: 600;">${securityEntitiesFound}</div>
+                                <div style="font-size: 0.85rem; opacity: 0.9;">security entities</div>
+                            </div>
+                            ${testsFound > 0 ? `
+                            <div style="padding: 0.5rem; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
+                                <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">🧪</div>
+                                <div style="font-weight: 600;">${testsFound}</div>
+                                <div style="font-size: 0.85rem; opacity: 0.9;">tests</div>
+                            </div>
+                            ` : ''}
                         </div>
                     </div>
                 `;
+                
+                // Scroll into view
+                statusDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
             
             if (analyzeBtn) {
                 analyzeBtn.disabled = false;
                 analyzeBtn.textContent = 'Re-analyze';
+                
+                // Hide the info text when analysis completes
+                const infoText = analyzeBtn.parentElement?.querySelector('.analyze-info-text');
+                if (infoText) {
+                    infoText.style.display = 'none';
+                }
             }
             
-            // Reload repositories to show updated status
+            // Reload repositories to show updated status (but keep the results visible)
             setTimeout(() => {
                 loadRepositories();
                 if (document.getElementById('repository-detail')?.classList.contains('active')) {
-                    loadRepositoryDetail(repoId);
+                    // Don't reload detail page immediately - let user see results
+                    // loadRepositoryDetail(repoId);
                 }
-            }, 2000);
+            }, 5000); // Increased delay to 5 seconds so results are visible
+        } else {
+            // No results yet - analysis might still be running
+            console.log('Analysis started but no results yet:', result);
         }
         
         console.log('Analysis started:', result);
     } catch (error) {
-        // Clear the polling interval
-        if (progressPollInterval) {
-            clearInterval(progressPollInterval);
-            progressPollInterval = null;
-        }
-        
         console.error('Analysis error:', error);
         
         if (statusDiv) {
@@ -1385,6 +1278,12 @@ window.analyzeRepository = async function(repoId) {
         if (analyzeBtn) {
             analyzeBtn.disabled = false;
             analyzeBtn.textContent = 'Analyze';
+            
+            // Hide the info text when analysis fails
+            const infoText = analyzeBtn.parentElement?.querySelector('.analyze-info-text');
+            if (infoText) {
+                infoText.style.display = 'none';
+            }
         }
         
         alert('Failed to start analysis: ' + error.message);
