@@ -377,7 +377,7 @@ impl GraphBuilder {
             
             // For each code element with relationships, create edges
             for code_element in &code_elements {
-                if let Ok(relationships) = self.code_relationship_repo.get_by_code_element(&code_element.id) {
+                if let Ok(relationships) = self.code_relationship_repo.get_by_code_element(repository_id, &code_element.id) {
                     if relationships.is_empty() {
                         continue; // Skip elements without relationships
                     }

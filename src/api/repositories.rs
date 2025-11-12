@@ -605,7 +605,8 @@ pub async fn search_dependencies(
 ) -> impl Responder {
     // API key validation removed for local tool simplicity
     if let Some(package_name) = query.get("name") {
-        match state.dep_repo.get_by_package_name(package_name) {
+        // Global search - no repository_id filter (intentional cross-repo search)
+        match state.dep_repo.get_by_package_name(package_name, None) {
             Ok(deps) => HttpResponse::Ok().json(deps),
             Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
                 error: e.to_string(),

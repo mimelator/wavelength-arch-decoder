@@ -135,7 +135,7 @@ pub async fn get_entity_details(
                     details.insert("related_elements".to_string(), serde_json::json!(related));
                     
                     // Get code relationships (services and dependencies used by this element)
-                    if let Ok(relationships) = state.code_relationship_repo.get_by_code_element(&entity_id) {
+                    if let Ok(relationships) = state.code_relationship_repo.get_by_code_element(&repo_id, &entity_id) {
                         let mut related_services = Vec::new();
                         let mut related_dependencies = Vec::new();
                         

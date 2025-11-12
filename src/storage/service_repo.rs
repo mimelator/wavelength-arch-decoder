@@ -97,58 +97,100 @@ impl ServiceRepository {
         Ok(services)
     }
 
-    pub fn get_by_provider(&self, provider: &str) -> Result<Vec<StoredService>> {
+    pub fn get_by_provider(&self, provider: &str, repository_id: Option<&str>) -> Result<Vec<StoredService>> {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
-        let mut stmt = conn.prepare(
-            "SELECT id, repository_id, provider, service_type, name, configuration, file_path, line_number, confidence, created_at
-             FROM services WHERE provider = ?1 ORDER BY repository_id"
-        )?;
-        
-        let services = stmt.query_map(params![provider], |row| {
-            Ok(StoredService {
-                id: row.get(0)?,
-                repository_id: row.get(1)?,
-                provider: row.get(2)?,
-                service_type: row.get(3)?,
-                name: row.get(4)?,
-                configuration: row.get(5)?,
-                file_path: row.get(6)?,
-                line_number: row.get::<_, Option<i32>>(7)?.map(|n| n as usize),
-                confidence: row.get(8)?,
-                created_at: row.get(9)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
+        let services: Vec<StoredService> = if let Some(repo_id) = repository_id {
+            let mut stmt = conn.prepare(
+                "SELECT id, repository_id, provider, service_type, name, configuration, file_path, line_number, confidence, created_at
+                 FROM services WHERE provider = ?1 AND repository_id = ?2 ORDER BY repository_id"
+            )?;
+            let result: Result<Vec<_>, _> = stmt.query_map(params![provider, repo_id], |row| {
+                Ok(StoredService {
+                    id: row.get(0)?,
+                    repository_id: row.get(1)?,
+                    provider: row.get(2)?,
+                    service_type: row.get(3)?,
+                    name: row.get(4)?,
+                    configuration: row.get(5)?,
+                    file_path: row.get(6)?,
+                    line_number: row.get::<_, Option<i32>>(7)?.map(|n| n as usize),
+                    confidence: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })?.collect();
+            result?
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT id, repository_id, provider, service_type, name, configuration, file_path, line_number, confidence, created_at
+                 FROM services WHERE provider = ?1 ORDER BY repository_id"
+            )?;
+            let result: Result<Vec<_>, _> = stmt.query_map(params![provider], |row| {
+                Ok(StoredService {
+                    id: row.get(0)?,
+                    repository_id: row.get(1)?,
+                    provider: row.get(2)?,
+                    service_type: row.get(3)?,
+                    name: row.get(4)?,
+                    configuration: row.get(5)?,
+                    file_path: row.get(6)?,
+                    line_number: row.get::<_, Option<i32>>(7)?.map(|n| n as usize),
+                    confidence: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })?.collect();
+            result?
+        };
 
         Ok(services)
     }
 
-    pub fn get_by_service_type(&self, service_type: &str) -> Result<Vec<StoredService>> {
+    pub fn get_by_service_type(&self, service_type: &str, repository_id: Option<&str>) -> Result<Vec<StoredService>> {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
-        let mut stmt = conn.prepare(
-            "SELECT id, repository_id, provider, service_type, name, configuration, file_path, line_number, confidence, created_at
-             FROM services WHERE service_type = ?1 ORDER BY provider"
-        )?;
-        
-        let services = stmt.query_map(params![service_type], |row| {
-            Ok(StoredService {
-                id: row.get(0)?,
-                repository_id: row.get(1)?,
-                provider: row.get(2)?,
-                service_type: row.get(3)?,
-                name: row.get(4)?,
-                configuration: row.get(5)?,
-                file_path: row.get(6)?,
-                line_number: row.get::<_, Option<i32>>(7)?.map(|n| n as usize),
-                confidence: row.get(8)?,
-                created_at: row.get(9)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
+        let services: Vec<StoredService> = if let Some(repo_id) = repository_id {
+            let mut stmt = conn.prepare(
+                "SELECT id, repository_id, provider, service_type, name, configuration, file_path, line_number, confidence, created_at
+                 FROM services WHERE service_type = ?1 AND repository_id = ?2 ORDER BY provider"
+            )?;
+            let result: Result<Vec<_>, _> = stmt.query_map(params![service_type, repo_id], |row| {
+                Ok(StoredService {
+                    id: row.get(0)?,
+                    repository_id: row.get(1)?,
+                    provider: row.get(2)?,
+                    service_type: row.get(3)?,
+                    name: row.get(4)?,
+                    configuration: row.get(5)?,
+                    file_path: row.get(6)?,
+                    line_number: row.get::<_, Option<i32>>(7)?.map(|n| n as usize),
+                    confidence: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })?.collect();
+            result?
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT id, repository_id, provider, service_type, name, configuration, file_path, line_number, confidence, created_at
+                 FROM services WHERE service_type = ?1 ORDER BY provider"
+            )?;
+            let result: Result<Vec<_>, _> = stmt.query_map(params![service_type], |row| {
+                Ok(StoredService {
+                    id: row.get(0)?,
+                    repository_id: row.get(1)?,
+                    provider: row.get(2)?,
+                    service_type: row.get(3)?,
+                    name: row.get(4)?,
+                    configuration: row.get(5)?,
+                    file_path: row.get(6)?,
+                    line_number: row.get::<_, Option<i32>>(7)?.map(|n| n as usize),
+                    confidence: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })?.collect();
+            result?
+        };
 
         Ok(services)
     }

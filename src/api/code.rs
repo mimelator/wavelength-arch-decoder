@@ -58,7 +58,7 @@ pub async fn get_code_relationships(
     
     // Check if filtering by code element
     if let Some(code_element_id) = query.get("code_element_id") {
-        match state.code_relationship_repo.get_by_code_element(code_element_id) {
+        match state.code_relationship_repo.get_by_code_element(&repository_id, code_element_id) {
             Ok(relationships) => HttpResponse::Ok().json(relationships),
             Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
                 error: e.to_string(),
@@ -66,7 +66,7 @@ pub async fn get_code_relationships(
         }
     } else if let Some(target_type) = query.get("target_type") {
         if let Some(target_id) = query.get("target_id") {
-            match state.code_relationship_repo.get_by_target(target_type, target_id) {
+            match state.code_relationship_repo.get_by_target(&repository_id, target_type, target_id) {
                 Ok(relationships) => HttpResponse::Ok().json(relationships),
                 Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
                     error: e.to_string(),

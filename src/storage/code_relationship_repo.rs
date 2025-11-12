@@ -53,16 +53,16 @@ impl CodeRelationshipRepository {
         Ok(())
     }
 
-    pub fn get_by_code_element(&self, code_element_id: &str) -> Result<Vec<CodeRelationship>> {
+    pub fn get_by_code_element(&self, repository_id: &str, code_element_id: &str) -> Result<Vec<CodeRelationship>> {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
-
+        
         let mut stmt = conn.prepare(
             "SELECT id, code_element_id, target_type, target_id, relationship_type, confidence, evidence
-             FROM code_relationships WHERE code_element_id = ?1"
+             FROM code_relationships WHERE repository_id = ?1 AND code_element_id = ?2"
         )?;
-
-        let relationships = stmt.query_map(params![code_element_id], |row| {
+        
+        let relationships = stmt.query_map(params![repository_id, code_element_id], |row| {
             let target_type_str: String = row.get(2)?;
             let target_type = match target_type_str.as_str() {
                 "service" => RelationshipTargetType::Service,
@@ -85,16 +85,16 @@ impl CodeRelationshipRepository {
         Ok(relationships)
     }
 
-    pub fn get_by_target(&self, target_type: &str, target_id: &str) -> Result<Vec<CodeRelationship>> {
+    pub fn get_by_target(&self, repository_id: &str, target_type: &str, target_id: &str) -> Result<Vec<CodeRelationship>> {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
-
+        
         let mut stmt = conn.prepare(
             "SELECT id, code_element_id, target_type, target_id, relationship_type, confidence, evidence
-             FROM code_relationships WHERE target_type = ?1 AND target_id = ?2"
+             FROM code_relationships WHERE repository_id = ?1 AND target_type = ?2 AND target_id = ?3"
         )?;
-
-        let relationships = stmt.query_map(params![target_type, target_id], |row| {
+        
+        let relationships = stmt.query_map(params![repository_id, target_type, target_id], |row| {
             let target_type_str: String = row.get(2)?;
             let target_type_enum = match target_type_str.as_str() {
                 "service" => RelationshipTargetType::Service,

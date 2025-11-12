@@ -23,14 +23,16 @@ pub async fn search_services_by_provider(
 ) -> impl Responder {
     // API key validation removed for local tool simplicity
     if let Some(provider) = query.get("provider") {
-        match state.service_repo.get_by_provider(provider) {
+        // Global search - no repository_id filter (intentional cross-repo search)
+        match state.service_repo.get_by_provider(provider, None) {
             Ok(services) => HttpResponse::Ok().json(services),
             Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
                 error: e.to_string(),
             }),
         }
     } else if let Some(service_type) = query.get("type") {
-        match state.service_repo.get_by_service_type(service_type) {
+        // Global search - no repository_id filter (intentional cross-repo search)
+        match state.service_repo.get_by_service_type(service_type, None) {
             Ok(services) => HttpResponse::Ok().json(services),
             Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
                 error: e.to_string(),

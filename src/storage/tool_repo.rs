@@ -142,19 +142,21 @@ impl ToolRepository {
         Ok(tools)
     }
 
-    pub fn get_tool_scripts(&self, tool_id: &str) -> Result<Vec<StoredToolScript>> {
+    pub fn get_tool_scripts(&self, repository_id: &str, tool_id: &str) -> Result<Vec<StoredToolScript>> {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
+        // Join with tools table to ensure tool belongs to repository
         let mut stmt = conn.prepare(
-            "SELECT id, tool_id, name, command, description,
-                    file_path, line_number, created_at
-             FROM tool_scripts
-             WHERE tool_id = ?1
-             ORDER BY name"
+            "SELECT ts.id, ts.tool_id, ts.name, ts.command, ts.description,
+                    ts.file_path, ts.line_number, ts.created_at
+             FROM tool_scripts ts
+             INNER JOIN tools t ON ts.tool_id = t.id
+             WHERE t.repository_id = ?1 AND ts.tool_id = ?2
+             ORDER BY ts.name"
         )?;
         
-        let scripts = stmt.query_map(params![tool_id], |row| {
+        let scripts = stmt.query_map(params![repository_id, tool_id], |row| {
             Ok(StoredToolScript {
                 id: row.get(0)?,
                 tool_id: row.get(1)?,

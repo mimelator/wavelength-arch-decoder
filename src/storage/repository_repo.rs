@@ -297,31 +297,53 @@ impl DependencyRepository {
         Ok(deps)
     }
 
-    pub fn get_by_package_name(&self, name: &str) -> Result<Vec<StoredDependency>> {
+    pub fn get_by_package_name(&self, name: &str, repository_id: Option<&str>) -> Result<Vec<StoredDependency>> {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
-        let mut stmt = conn.prepare(
-            "SELECT id, repository_id, name, version, package_manager, is_dev, is_optional, file_path, created_at
-             FROM dependencies WHERE name = ?1 ORDER BY repository_id"
-        )?;
-        
-        let deps = stmt.query_map(params![name], |row| {
-            Ok(StoredDependency {
-                id: row.get(0)?,
-                repository_id: row.get(1)?,
-                name: row.get(2)?,
-                version: row.get(3)?,
-                package_manager: row.get(4)?,
-                is_dev: row.get::<_, i32>(5)? != 0,
-                is_optional: row.get::<_, i32>(6)? != 0,
-                file_path: row.get(7)?,
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
+        let deps: Vec<StoredDependency> = if let Some(repo_id) = repository_id {
+            let mut stmt = conn.prepare(
+                "SELECT id, repository_id, name, version, package_manager, is_dev, is_optional, file_path, created_at
+                 FROM dependencies WHERE name = ?1 AND repository_id = ?2 ORDER BY repository_id"
+            )?;
+            let result: Result<Vec<_>, _> = stmt.query_map(params![name, repo_id], |row| {
+                Ok(StoredDependency {
+                    id: row.get(0)?,
+                    repository_id: row.get(1)?,
+                    name: row.get(2)?,
+                    version: row.get(3)?,
+                    package_manager: row.get(4)?,
+                    is_dev: row.get::<_, i32>(5)? != 0,
+                    is_optional: row.get::<_, i32>(6)? != 0,
+                    file_path: row.get(7)?,
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                })
+            })?.collect();
+            result?
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT id, repository_id, name, version, package_manager, is_dev, is_optional, file_path, created_at
+                 FROM dependencies WHERE name = ?1 ORDER BY repository_id"
+            )?;
+            let result: Result<Vec<_>, _> = stmt.query_map(params![name], |row| {
+                Ok(StoredDependency {
+                    id: row.get(0)?,
+                    repository_id: row.get(1)?,
+                    name: row.get(2)?,
+                    version: row.get(3)?,
+                    package_manager: row.get(4)?,
+                    is_dev: row.get::<_, i32>(5)? != 0,
+                    is_optional: row.get::<_, i32>(6)? != 0,
+                    file_path: row.get(7)?,
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                })
+            })?.collect();
+            result?
+        };
 
         Ok(deps)
     }

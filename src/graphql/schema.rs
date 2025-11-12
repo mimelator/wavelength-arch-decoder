@@ -239,7 +239,8 @@ impl QueryRoot {
         name: String,
     ) -> GraphQLResult<Vec<DependencyType>> {
         let state = ctx.data::<ApiState>()?;
-        let deps = state.dep_repo.get_by_package_name(&name)?;
+        // GraphQL search - global search across all repositories
+        let deps = state.dep_repo.get_by_package_name(&name, None)?;
         Ok(deps.into_iter().map(DependencyType::from).collect())
     }
 
@@ -250,7 +251,8 @@ impl QueryRoot {
         provider: String,
     ) -> GraphQLResult<Vec<ServiceType>> {
         let state = ctx.data::<ApiState>()?;
-        let services = state.service_repo.get_by_provider(&provider)?;
+        // GraphQL search - global search across all repositories
+        let services = state.service_repo.get_by_provider(&provider, None)?;
         Ok(services.into_iter().map(ServiceType::from).collect())
     }
 }

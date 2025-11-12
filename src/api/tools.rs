@@ -26,7 +26,7 @@ pub async fn get_tool_scripts(
     // API key validation removed for local tool simplicity
     let (repository_id, tool_id) = path.into_inner();
     
-    match state.tool_repo.get_tool_scripts(&tool_id) {
+    match state.tool_repo.get_tool_scripts(&repository_id, &tool_id) {
         Ok(scripts) => HttpResponse::Ok().json(scripts),
         Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
             error: e.to_string(),
