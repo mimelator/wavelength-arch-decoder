@@ -89,6 +89,52 @@ pub async fn analyze_repository(
     // Start progress tracking (10 steps including documentation indexing)
     state.progress_tracker.start_analysis(&repository_id, 10);
     
+    // Clone state for the blocking task
+    let state_clone = state.clone();
+    let repository_id_clone = repository_id.clone();
+    
+    // Move the blocking analysis work to a blocking thread pool
+    // This allows other API requests to continue being served
+    let analysis_result = web::block(move || {
+        perform_analysis(state_clone, &repository_id_clone)
+    }).await;
+    
+    match analysis_result {
+        Ok(Ok(result)) => HttpResponse::Ok().json(serde_json::json!({
+            "message": result.message,
+            "repository": result.repository,
+            "results": result.results
+        })),
+        Ok(Err(e)) => {
+            log::error!("Analysis failed: {}", e);
+            state.progress_tracker.fail_analysis(&repository_id, &e.to_string());
+            HttpResponse::InternalServerError().json(ErrorResponse {
+                error: e.to_string(),
+            })
+        }
+        Err(e) => {
+            log::error!("Blocking task error: {}", e);
+            state.progress_tracker.fail_analysis(&repository_id, &e.to_string());
+            HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to execute analysis: {}", e),
+            })
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct AnalysisResult {
+    message: String,
+    repository: serde_json::Value,
+    results: serde_json::Value,
+}
+
+/// Perform the actual analysis work (runs in blocking thread pool)
+fn perform_analysis(
+    state: web::Data<ApiState>,
+    repository_id: &str,
+) -> Result<AnalysisResult, anyhow::Error> {
+    
     // API key validation removed for local tool simplicity
     // Get repository
     state.progress_tracker.update_progress(&repository_id, 1, "Fetching repository information", "Loading repository details...", None);
@@ -101,16 +147,12 @@ pub async fn analyze_repository(
         Ok(None) => {
             log::error!("Repository not found: {}", repository_id);
             state.progress_tracker.fail_analysis(&repository_id, "Repository not found");
-            return HttpResponse::NotFound().json(ErrorResponse {
-                error: "Repository not found".to_string(),
-            });
+            return Err(anyhow::anyhow!("Repository not found"));
         }
         Err(e) => {
             log::error!("Database error fetching repository: {}", e);
             state.progress_tracker.fail_analysis(&repository_id, &format!("Database error: {}", e));
-            return HttpResponse::InternalServerError().json(ErrorResponse {
-                error: e.to_string(),
-            });
+            return Err(anyhow::anyhow!("Database error: {}", e));
         }
     };
 
@@ -130,9 +172,7 @@ pub async fn analyze_repository(
         Err(e) => {
             log::error!("Failed to initialize crawler: {}", e);
             state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to initialize crawler: {}", e));
-            return HttpResponse::InternalServerError().json(ErrorResponse {
-                error: format!("Failed to initialize crawler: {}", e),
-            });
+            return Err(anyhow::anyhow!("Failed to initialize crawler: {}", e));
         }
     };
 
@@ -193,9 +233,7 @@ pub async fn analyze_repository(
         },
         Err(e) => {
             log::error!("✗ Failed to clone repository: {}", e);
-            return HttpResponse::InternalServerError().json(ErrorResponse {
-                error: format!("Failed to clone repository: {}", e),
-            });
+            return Err(anyhow::anyhow!("Failed to clone repository: {}", e));
         }
     };
 
@@ -211,9 +249,7 @@ pub async fn analyze_repository(
         },
         Err(e) => {
             log::error!("✗ Failed to extract dependencies: {}", e);
-            return HttpResponse::InternalServerError().json(ErrorResponse {
-                error: format!("Failed to extract dependencies: {}", e),
-            });
+            return Err(anyhow::anyhow!("Failed to extract dependencies: {}", e));
         }
     };
 
@@ -231,9 +267,7 @@ pub async fn analyze_repository(
             &manifest.file_path,
         ) {
             log::error!("✗ Failed to store dependencies from {}: {}", manifest.file_path, e);
-            return HttpResponse::InternalServerError().json(ErrorResponse {
-                error: format!("Failed to store dependencies: {}", e),
-            });
+            return Err(anyhow::anyhow!("Failed to store dependencies from {}: {}", manifest.file_path, e));
         }
         stored_deps += manifest.dependencies.len();
     }
@@ -270,9 +304,7 @@ pub async fn analyze_repository(
         },
         Err(e) => {
             log::error!("✗ Failed to detect services: {}", e);
-            return HttpResponse::InternalServerError().json(ErrorResponse {
-                error: format!("Failed to detect services: {}", e),
-            });
+            return Err(anyhow::anyhow!("Failed to detect services: {}", e));
         }
     };
 
@@ -280,9 +312,7 @@ pub async fn analyze_repository(
     log::info!("Storing {} service(s) in database...", services.len());
     if let Err(e) = state.service_repo.store_services(&repo.id, &services) {
         log::error!("✗ Failed to store services: {}", e);
-        return HttpResponse::InternalServerError().json(ErrorResponse {
-            error: format!("Failed to store services: {}", e),
-        });
+        return Err(anyhow::anyhow!("Failed to store services: {}", e));
     }
     log::info!("✓ Successfully stored {} service(s)", services.len());
 
@@ -302,9 +332,7 @@ pub async fn analyze_repository(
         },
         Err(e) => {
             log::error!("✗ Failed to detect tools: {}", e);
-            return HttpResponse::InternalServerError().json(ErrorResponse {
-                error: format!("Failed to detect tools: {}", e),
-            });
+            return Err(anyhow::anyhow!("Failed to detect tools: {}", e));
         }
     };
 
@@ -312,9 +340,7 @@ pub async fn analyze_repository(
     log::info!("Storing {} tool(s) in database...", tools.len());
     if let Err(e) = state.tool_repo.store_tools(&repo.id, &tools) {
         log::error!("✗ Failed to store tools: {}", e);
-        return HttpResponse::InternalServerError().json(ErrorResponse {
-            error: format!("Failed to store tools: {}", e),
-        });
+        return Err(anyhow::anyhow!("Failed to store tools: {}", e));
     }
     log::info!("✓ Successfully stored {} tool(s)", tools.len());
 
@@ -349,17 +375,13 @@ pub async fn analyze_repository(
             log::info!("Storing knowledge graph in database...");
             if let Err(e) = graph_builder.store_graph(&repo.id, &graph) {
                 log::error!("✗ Failed to store graph: {}", e);
-                return HttpResponse::InternalServerError().json(ErrorResponse {
-                    error: format!("Failed to store graph: {}", e),
-                });
+                return Err(anyhow::anyhow!("Failed to store graph: {}", e));
             }
             log::info!("✓ Successfully stored knowledge graph");
         }
         Err(e) => {
             log::error!("✗ Failed to build graph: {}", e);
-            return HttpResponse::InternalServerError().json(ErrorResponse {
-                error: format!("Failed to build graph: {}", e),
-            });
+            return Err(anyhow::anyhow!("Failed to build graph: {}", e));
         }
     }
 
@@ -393,9 +415,7 @@ pub async fn analyze_repository(
         },
         Err(e) => {
             log::error!("✗ Failed to analyze code structure: {}", e);
-            return HttpResponse::InternalServerError().json(ErrorResponse {
-                error: format!("Failed to analyze code structure: {}", e),
-            });
+            return Err(anyhow::anyhow!("Failed to analyze code structure: {}", e));
         }
     };
 
@@ -404,9 +424,7 @@ pub async fn analyze_repository(
     if let Err(e) = state.code_repo.store_elements(&repo.id, &code_structure.elements) {
         log::error!("✗ Failed to store code elements: {}", e);
         state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to store code elements: {}", e));
-        return HttpResponse::InternalServerError().json(ErrorResponse {
-            error: format!("Failed to store code elements: {}", e),
-        });
+        return Err(anyhow::anyhow!("Failed to store code elements: {}", e));
     }
     log::info!("✓ Stored {} code elements", code_structure.elements.len());
     
@@ -414,9 +432,7 @@ pub async fn analyze_repository(
     if let Err(e) = state.code_repo.store_calls(&repo.id, &code_structure.calls) {
         log::error!("✗ Failed to store code calls: {}", e);
         state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to store code calls: {}", e));
-        return HttpResponse::InternalServerError().json(ErrorResponse {
-            error: format!("Failed to store code calls: {}", e),
-        });
+        return Err(anyhow::anyhow!("Failed to store code calls: {}", e));
     }
     log::info!("✓ Stored {} code calls", code_structure.calls.len());
 
@@ -507,9 +523,7 @@ pub async fn analyze_repository(
         Err(e) => {
             log::error!("✗ Failed to analyze security: {}", e);
             state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to analyze security: {}", e));
-            return HttpResponse::InternalServerError().json(ErrorResponse {
-                error: format!("Failed to analyze security: {}", e),
-            });
+            return Err(anyhow::anyhow!("Failed to analyze security: {}", e));
         }
     };
 
@@ -532,9 +546,7 @@ pub async fn analyze_repository(
     log::info!("Storing {} security entities...", security_analysis.entities.len());
     if let Err(e) = state.security_repo.store_entities(&repo.id, &security_analysis.entities) {
         log::error!("✗ Failed to store security entities: {}", e);
-        return HttpResponse::InternalServerError().json(ErrorResponse {
-            error: format!("Failed to store security entities: {}", e),
-        });
+        return Err(anyhow::anyhow!("Failed to store security entities: {}", e));
     }
     log::info!("✓ Stored {} security entities", security_analysis.entities.len());
 
@@ -542,9 +554,7 @@ pub async fn analyze_repository(
     log::info!("Storing {} security relationships...", security_analysis.relationships.len());
     if let Err(e) = state.security_repo.store_relationships(&repo.id, &security_analysis.relationships) {
         log::error!("✗ Failed to store security relationships: {}", e);
-        return HttpResponse::InternalServerError().json(ErrorResponse {
-            error: format!("Failed to store security relationships: {}", e),
-        });
+        return Err(anyhow::anyhow!("Failed to store security relationships: {}", e));
     }
     log::info!("✓ Stored {} security relationships", security_analysis.relationships.len());
 
@@ -552,9 +562,7 @@ pub async fn analyze_repository(
     log::info!("Storing {} security vulnerabilities...", security_analysis.vulnerabilities.len());
     if let Err(e) = state.security_repo.store_vulnerabilities(&repo.id, &security_analysis.vulnerabilities) {
         log::error!("✗ Failed to store security vulnerabilities: {}", e);
-        return HttpResponse::InternalServerError().json(ErrorResponse {
-            error: format!("Failed to store security vulnerabilities: {}", e),
-        });
+        return Err(anyhow::anyhow!("Failed to store security vulnerabilities: {}", e));
     }
     log::info!("✓ Stored {} security vulnerabilities", security_analysis.vulnerabilities.len());
 
@@ -590,21 +598,19 @@ pub async fn analyze_repository(
     log::info!("Updating repository timestamp...");
     if let Err(e) = state.repo_repo.update_last_analyzed(&repo.id) {
         log::error!("✗ Failed to update repository timestamp: {}", e);
-        return HttpResponse::InternalServerError().json(ErrorResponse {
-            error: format!("Failed to update repository: {}", e),
-        });
+        return Err(anyhow::anyhow!("Failed to update repository: {}", e));
     }
 
     log::info!("✓ Analysis complete for repository: {}", repo.name);
-    HttpResponse::Ok().json(serde_json::json!({
-        "message": "Repository analyzed successfully",
-        "repository": {
+    Ok(AnalysisResult {
+        message: "Repository analyzed successfully".to_string(),
+        repository: serde_json::json!({
             "id": repo.id,
             "name": repo.name,
             "url": repo.url,
             "branch": repo.branch
-        },
-        "results": {
+        }),
+        results: serde_json::json!({
             "manifests_found": manifests.len(),
             "total_dependencies": stored_deps,
             "services_found": services.len(),
@@ -615,8 +621,8 @@ pub async fn analyze_repository(
             "security_relationships_found": security_analysis.relationships.len(),
             "security_vulnerabilities_found": security_analysis.vulnerabilities.len(),
             "documentation_indexed": true
-        }
-    }))
+        }),
+    })
 }
 
 pub async fn delete_repository(
