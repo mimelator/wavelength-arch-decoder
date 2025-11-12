@@ -510,9 +510,12 @@ impl ApiKeyDetector {
            value_trimmed.contains("config.") ||
            value_trimmed.contains("env.") ||
            value_trimmed.contains("process.") ||
-           // Property access patterns (e.g., firebaseConfig.apiKey, config.apiKey)
-           (value_trimmed.contains(".") && value_trimmed.matches(".").count() == 1 && 
-            value_trimmed.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '$' || c == '{' || c == '}')) {
+           // Property access patterns in template literals (e.g., ${firebaseConfig.apiKey})
+           (value_trimmed.contains(".") && value_trimmed.contains("${")) ||
+           // Simple property access that looks like a variable (e.g., config.apiKey - but only if short)
+           (value_trimmed.contains(".") && value_trimmed.matches(".").count() <= 2 && 
+            value_trimmed.len() < 40 && 
+            !value_trimmed.chars().any(|c| !c.is_alphanumeric() && c != '.' && c != '_' && c != '$' && c != '{' && c != '}')) {
             return false; // This is a variable reference, not a hardcoded key
         }
         
