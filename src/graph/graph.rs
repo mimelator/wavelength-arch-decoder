@@ -455,7 +455,13 @@ impl GraphBuilder {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
 
+        let total_nodes = graph.nodes.len();
+        let total_edges = graph.edges.len();
+        
+        log::info!("Preparing to store knowledge graph: {} nodes, {} edges...", total_nodes, total_edges);
+
         // Delete existing graph nodes and edges for this repository
+        log::info!("Clearing existing graph data for repository...");
         conn.execute(
             "DELETE FROM graph_edges WHERE source_node_id IN (
                 SELECT id FROM graph_nodes WHERE repository_id = ?1
@@ -469,8 +475,13 @@ impl GraphBuilder {
             "DELETE FROM graph_nodes WHERE repository_id = ?1",
             [repository_id],
         )?;
+        log::info!("✓ Cleared existing graph data");
 
-        // Insert nodes
+        // Insert nodes with progress logging
+        log::info!("Storing {} nodes in database...", total_nodes);
+        let batch_size = 1000; // Log every 1000 nodes
+        let mut stored_nodes = 0;
+        
         for node in &graph.nodes {
             let node_type_str = self.node_type_to_string(&node.node_type);
             let properties_json = serde_json::to_string(&node.properties)?;
@@ -486,9 +497,20 @@ impl GraphBuilder {
                     properties_json
                 ],
             )?;
+            
+            stored_nodes += 1;
+            if stored_nodes % batch_size == 0 || stored_nodes == total_nodes {
+                let percent = (stored_nodes as f64 / total_nodes as f64 * 100.0) as u32;
+                log::info!("  Stored {}/{} nodes ({}%)...", stored_nodes, total_nodes, percent);
+            }
         }
+        log::info!("✓ Successfully stored all {} nodes", total_nodes);
 
-        // Insert edges
+        // Insert edges with progress logging
+        log::info!("Storing {} edges in database...", total_edges);
+        let batch_size = 500; // Log every 500 edges
+        let mut stored_edges = 0;
+        
         for edge in &graph.edges {
             let edge_type_str = self.edge_type_to_string(&edge.edge_type);
             let properties_json = serde_json::to_string(&edge.properties)?;
@@ -504,7 +526,15 @@ impl GraphBuilder {
                     properties_json
                 ],
             )?;
+            
+            stored_edges += 1;
+            if stored_edges % batch_size == 0 || stored_edges == total_edges {
+                let percent = (stored_edges as f64 / total_edges as f64 * 100.0) as u32;
+                log::info!("  Stored {}/{} edges ({}%)...", stored_edges, total_edges, percent);
+            }
         }
+        log::info!("✓ Successfully stored all {} edges", total_edges);
+        log::info!("✓ Knowledge graph storage complete: {} nodes, {} edges", total_nodes, total_edges);
 
         Ok(())
     }
