@@ -2,12 +2,6 @@
 class WavelengthAPI {
     constructor(baseURL = '/api/v1') {
         this.baseURL = baseURL;
-        this.apiKey = localStorage.getItem('wavelength_api_key') || '';
-    }
-
-    setApiKey(key) {
-        this.apiKey = key;
-        localStorage.setItem('wavelength_api_key', key);
     }
 
     async request(endpoint, options = {}) {
@@ -17,7 +11,6 @@ class WavelengthAPI {
             ...options.headers,
         };
 
-        // API keys removed - no authentication needed for local tool
         try {
             const response = await fetch(url, {
                 ...options,
@@ -34,25 +27,6 @@ class WavelengthAPI {
             console.error('API request failed:', error);
             throw error;
         }
-    }
-
-    // Auth - simplified, no API keys needed
-    async register(email, password) {
-        const result = await this.request('/auth/register', {
-            method: 'POST',
-            body: JSON.stringify({ email, password }),
-        });
-        // API keys removed - just return success
-        return result;
-    }
-
-    async login(email, password) {
-        const result = await this.request('/auth/login', {
-            method: 'POST',
-            body: JSON.stringify({ email, password }),
-        });
-        // API keys removed - just return success
-        return result;
     }
 
     // Repositories

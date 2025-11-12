@@ -1,5 +1,4 @@
 mod api;
-mod auth;
 mod config;
 mod storage;
 mod ingestion;

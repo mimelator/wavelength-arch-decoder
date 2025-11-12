@@ -1,7 +1,7 @@
 use actix_web::{web, App, HttpServer};
 use actix_files::Files;
 use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse};
-use crate::api::{ApiState, health, register, login, create_api_key, version};
+use crate::api::{ApiState, health, version};
 use crate::graphql::GraphQLSchema;
 use crate::api::repositories::{
     create_repository, list_repositories, get_repository,
@@ -18,9 +18,8 @@ use crate::api::jobs::{create_job, get_job_status, list_jobs, create_scheduled_j
 use crate::api::progress::get_analysis_progress;
 use crate::api::reports::generate_report;
 use crate::crawler::webhooks::{handle_github_webhook, handle_gitlab_webhook};
-use crate::auth::AuthService;
 use crate::config::Config;
-use crate::storage::{Database, UserRepository, ApiKeyRepository, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository};
+use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository};
 use crate::api::progress::ProgressTracker;
 use std::sync::Arc;
 use actix_web::HttpResponse;
@@ -40,8 +39,6 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
         .expect("Failed to initialize database");
     
     // Initialize repositories
-    let user_repo = UserRepository::new(db.clone());
-    let api_key_repo = ApiKeyRepository::new(db.clone());
     let repo_repo = RepositoryRepository::new(db.clone());
     let dep_repo = DependencyRepository::new(db.clone());
     let service_repo = ServiceRepository::new(db.clone());
@@ -50,19 +47,11 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
     let security_repo = SecurityRepository::new(db.clone());
     let tool_repo = ToolRepository::new(db.clone());
     
-    // Initialize auth service
-    let auth_service = AuthService::new(
-        user_repo,
-        api_key_repo,
-        config.security.api_key_encryption_key.clone(),
-    );
-    
     // Initialize progress tracker
     let progress_tracker = Arc::new(ProgressTracker::new());
     
     // Create API state
     let api_state = web::Data::new(ApiState {
-        auth_service,
         repo_repo: repo_repo.clone(),
         dep_repo: dep_repo.clone(),
         service_repo: service_repo.clone(),
@@ -118,10 +107,6 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                 web::scope("/api/v1")
                     // Health and version endpoints
                     .route("/version", web::get().to(version))
-                    // Auth endpoints
-                    .route("/auth/register", web::post().to(register))
-                    .route("/auth/login", web::post().to(login))
-                    .route("/auth/keys", web::post().to(create_api_key))
                     // Repository endpoints
                     .route("/repositories", web::post().to(create_repository))
                     .route("/repositories", web::get().to(list_repositories))

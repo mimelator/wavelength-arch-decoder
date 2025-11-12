@@ -25,9 +25,7 @@ pub struct DatabaseConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConfig {
-    pub api_key_encryption_key: String,
-    pub jwt_secret: String,
-    pub rate_limit_per_key: u32,
+    // Auth removed - no longer needed for local tool
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,13 +62,7 @@ impl Config {
                     .unwrap_or_else(|_| "./data/graph.db".to_string()),
             },
             security: SecurityConfig {
-                api_key_encryption_key: env::var("API_KEY_ENCRYPTION_KEY")
-                    .expect("API_KEY_ENCRYPTION_KEY must be set"),
-                jwt_secret: env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
-                rate_limit_per_key: env::var("RATE_LIMIT_PER_KEY")
-                    .unwrap_or_else(|_| "1000".to_string())
-                    .parse()
-                    .unwrap_or(1000),
+                // Auth removed - no longer needed for local tool
             },
             storage: StorageConfig {
                 repository_cache_path: env::var("REPOSITORY_CACHE_PATH")

@@ -11,7 +11,7 @@ pub mod code_repo;
 pub mod code_relationship_repo;
 pub mod security_repo;
 pub mod tool_repo;
-pub use repositories::{UserRepository, ApiKeyRepository};
+// UserRepository and ApiKeyRepository kept for database schema but not exported (auth removed)
 pub use repository_repo::{RepositoryRepository, DependencyRepository, Repository, StoredDependency};
 pub use service_repo::{ServiceRepository, StoredService};
 pub use code_repo::CodeElementRepository;
@@ -42,35 +42,20 @@ impl Database {
     fn init_schema(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         
-        // Users table
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )?;
-
-        // API keys table
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS api_keys (
-                id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                key_hash TEXT UNIQUE NOT NULL,
-                name TEXT NOT NULL,
-                scopes TEXT NOT NULL,
-                rate_limit INTEGER NOT NULL,
-                requests_count INTEGER DEFAULT 0,
-                last_reset_at TEXT NOT NULL,
-                expires_at TEXT,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )",
-            [],
-        )?;
+        // Migration: Drop auth tables if they exist (auth functionality removed)
+        // Disable foreign keys temporarily to allow dropping tables
+        conn.execute("PRAGMA foreign_keys = OFF", [])?;
+        
+        // Drop indexes first (if they exist)
+        let _ = conn.execute("DROP INDEX IF EXISTS idx_api_keys_user_id", []);
+        let _ = conn.execute("DROP INDEX IF EXISTS idx_api_keys_key_hash", []);
+        
+        // Drop tables (if they exist)
+        let _ = conn.execute("DROP TABLE IF EXISTS api_keys", []);
+        let _ = conn.execute("DROP TABLE IF EXISTS users", []);
+        
+        // Re-enable foreign keys
+        conn.execute("PRAGMA foreign_keys = ON", [])?;
 
         // Repositories table
         conn.execute(
@@ -332,14 +317,6 @@ impl Database {
         )?;
 
         // Create indexes
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id)",
-            [],
-        )?;
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash)",
-            [],
-        )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_graph_nodes_repository ON graph_nodes(repository_id)",
             [],
