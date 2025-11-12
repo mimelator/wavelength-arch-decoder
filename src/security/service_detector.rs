@@ -216,7 +216,8 @@ impl ServiceDetector {
                       file_name.ends_with(".go") ||
                       file_name.ends_with(".swift") ||
                       file_name.ends_with(".m") ||
-                      file_name.ends_with(".mm") {
+                      file_name.ends_with(".mm") ||
+                      file_name.ends_with(".java") {
                 FileType::Code
             } else {
                 continue;
@@ -242,6 +243,7 @@ impl ServiceDetector {
                                 "go" => "go",
                                 "swift" => "swift",
                                 "m" | "mm" => "objective-c",
+                                "java" => "java",
                                 _ => ext, // Keep original if unknown
                             }
                         })

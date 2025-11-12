@@ -149,6 +149,11 @@ impl CodeAnalyzer {
                         elements.extend(file_elements);
                         calls.extend(file_calls);
                     }
+                    Some("java") => {
+                        let (file_elements, file_calls) = self.analyze_java(&content, &normalized_path)?;
+                        elements.extend(file_elements);
+                        calls.extend(file_calls);
+                    }
                     _ => {}
                 }
             }
@@ -169,6 +174,7 @@ impl CodeAnalyzer {
                     "go" => Some("go".to_string()),
                     "swift" => Some("swift".to_string()),
                     "m" | "mm" => Some("objective-c".to_string()),
+                    "java" => Some("java".to_string()),
                     "h" => {
                         // Header files could be C, C++, or Objective-C
                         // Check if it's likely Objective-C by looking at the directory structure
@@ -1231,6 +1237,308 @@ impl CodeAnalyzer {
         if let Some(start) = line.find('(') {
             if let Some(end) = line[start+1..].find(')') {
                 return Some(line[start+1..start+1+end].trim().to_string());
+            }
+        }
+        None
+    }
+
+    /// Analyze Java files
+    fn analyze_java(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
+        let mut elements = Vec::new();
+        let mut calls = Vec::new();
+        let mut element_map: HashMap<String, String> = HashMap::new();
+
+        let lines: Vec<&str> = content.lines().collect();
+        
+        for (line_num, line) in lines.iter().enumerate() {
+            let line = line.trim();
+            let line_idx = line_num + 1;
+
+            // Detect class declarations: public class ClassName or class ClassName
+            if line.contains("class ") && (line.starts_with("public ") || line.starts_with("private ") || 
+                line.starts_with("protected ") || line.starts_with("abstract ") || 
+                line.starts_with("final ") || line.starts_with("class ")) {
+                if let Some(name) = self.extract_class_name_java(line) {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    element_map.insert(name.clone(), id.clone());
+                    
+                    elements.push(CodeElement {
+                        id: id.clone(),
+                        name,
+                        element_type: CodeElementType::Class,
+                        file_path: normalized_path.to_string(),
+                        line_number: line_idx,
+                        language: "java".to_string(),
+                        signature: Some(line.to_string()),
+                        doc_comment: self.extract_doc_comment(&lines, line_num),
+                        visibility: self.extract_visibility_java(line),
+                        parameters: Vec::new(),
+                        return_type: None,
+                    });
+                }
+            }
+
+            // Detect interface declarations: public interface InterfaceName
+            if line.contains("interface ") && (line.starts_with("public ") || line.starts_with("private ") || 
+                line.starts_with("protected ") || line.starts_with("interface ")) {
+                if let Some(name) = self.extract_interface_name_java(line) {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    element_map.insert(name.clone(), id.clone());
+                    
+                    elements.push(CodeElement {
+                        id: id.clone(),
+                        name,
+                        element_type: CodeElementType::Interface,
+                        file_path: normalized_path.to_string(),
+                        line_number: line_idx,
+                        language: "java".to_string(),
+                        signature: Some(line.to_string()),
+                        doc_comment: self.extract_doc_comment(&lines, line_num),
+                        visibility: self.extract_visibility_java(line),
+                        parameters: Vec::new(),
+                        return_type: None,
+                    });
+                }
+            }
+
+            // Detect enum declarations: public enum EnumName
+            if line.contains("enum ") && (line.starts_with("public ") || line.starts_with("private ") || 
+                line.starts_with("protected ") || line.starts_with("enum ")) {
+                if let Some(name) = self.extract_enum_name_java(line) {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    element_map.insert(name.clone(), id.clone());
+                    
+                    elements.push(CodeElement {
+                        id: id.clone(),
+                        name,
+                        element_type: CodeElementType::Enum,
+                        file_path: normalized_path.to_string(),
+                        line_number: line_idx,
+                        language: "java".to_string(),
+                        signature: Some(line.to_string()),
+                        doc_comment: self.extract_doc_comment(&lines, line_num),
+                        visibility: self.extract_visibility_java(line),
+                        parameters: Vec::new(),
+                        return_type: None,
+                    });
+                }
+            }
+
+            // Detect method declarations: public ReturnType methodName(...) or private void methodName(...)
+            if (line.contains("public ") || line.contains("private ") || line.contains("protected ") || 
+                line.contains("static ") || line.contains("final ")) && 
+                line.contains('(') && line.contains(')') && 
+                !line.contains("class ") && !line.contains("interface ") && !line.contains("enum ") {
+                if let Some(name) = self.extract_method_name_java(line) {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    element_map.insert(name.clone(), id.clone());
+                    
+                    elements.push(CodeElement {
+                        id: id.clone(),
+                        name,
+                        element_type: CodeElementType::Method,
+                        file_path: normalized_path.to_string(),
+                        line_number: line_idx,
+                        language: "java".to_string(),
+                        signature: Some(line.to_string()),
+                        doc_comment: self.extract_doc_comment(&lines, line_num),
+                        visibility: self.extract_visibility_java(line),
+                        parameters: self.extract_parameters_java(line),
+                        return_type: self.extract_return_type_java(line),
+                    });
+                }
+            }
+
+            // Detect imports: import package.ClassName; or import static package.ClassName.*;
+            if line.starts_with("import ") {
+                if let Some(module) = self.extract_import_java(line) {
+                    let module_id = Uuid::new_v4().to_string();
+                    if !element_map.contains_key(&module_id) {
+                        elements.push(CodeElement {
+                            id: module_id.clone(),
+                            name: module.clone(),
+                            element_type: CodeElementType::Module,
+                            file_path: normalized_path.to_string(),
+                            line_number: line_idx,
+                            language: "java".to_string(),
+                            signature: None,
+                            doc_comment: None,
+                            visibility: None,
+                            parameters: Vec::new(),
+                            return_type: None,
+                        });
+                        element_map.insert(module_id.clone(), module_id.clone());
+                    }
+                }
+            }
+        }
+
+        Ok((elements, calls))
+    }
+
+    // Java helper functions
+    fn extract_class_name_java(&self, line: &str) -> Option<String> {
+        if let Some(start) = line.find("class ") {
+            let after_class = &line[start + 6..];
+            // Skip generic type parameters: class MyClass<T>
+            let name_part = if let Some(generic_start) = after_class.find('<') {
+                &after_class[..generic_start]
+            } else if let Some(space_end) = after_class.find(|c: char| c.is_whitespace()) {
+                &after_class[..space_end]
+            } else if let Some(extends_start) = after_class.find("extends") {
+                &after_class[..extends_start]
+            } else if let Some(implements_start) = after_class.find("implements") {
+                &after_class[..implements_start]
+            } else if let Some(brace_start) = after_class.find('{') {
+                &after_class[..brace_start]
+            } else {
+                after_class
+            };
+            let name = name_part.trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_interface_name_java(&self, line: &str) -> Option<String> {
+        if let Some(start) = line.find("interface ") {
+            let after_interface = &line[start + 9..];
+            let name_part = if let Some(generic_start) = after_interface.find('<') {
+                &after_interface[..generic_start]
+            } else if let Some(space_end) = after_interface.find(|c: char| c.is_whitespace()) {
+                &after_interface[..space_end]
+            } else if let Some(extends_start) = after_interface.find("extends") {
+                &after_interface[..extends_start]
+            } else if let Some(brace_start) = after_interface.find('{') {
+                &after_interface[..brace_start]
+            } else {
+                after_interface
+            };
+            let name = name_part.trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_enum_name_java(&self, line: &str) -> Option<String> {
+        if let Some(start) = line.find("enum ") {
+            let after_enum = &line[start + 5..];
+            let name_part = if let Some(space_end) = after_enum.find(|c: char| c.is_whitespace()) {
+                &after_enum[..space_end]
+            } else if let Some(implements_start) = after_enum.find("implements") {
+                &after_enum[..implements_start]
+            } else if let Some(brace_start) = after_enum.find('{') {
+                &after_enum[..brace_start]
+            } else {
+                after_enum
+            };
+            let name = name_part.trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_method_name_java(&self, line: &str) -> Option<String> {
+        // Format: [modifiers] ReturnType methodName(params)
+        // Find the opening parenthesis and work backwards
+        if let Some(paren_start) = line.find('(') {
+            let before_paren = &line[..paren_start];
+            // Split by whitespace and get the last token before (
+            let parts: Vec<&str> = before_paren.split_whitespace().collect();
+            if let Some(last_part) = parts.last() {
+                // Skip if it's a modifier or type keyword
+                if !last_part.is_empty() && 
+                   last_part != "public" && last_part != "private" && last_part != "protected" &&
+                   last_part != "static" && last_part != "final" && last_part != "abstract" &&
+                   last_part != "synchronized" && last_part != "native" && last_part != "strictfp" &&
+                   last_part != "void" && last_part != "int" && last_part != "String" &&
+                   last_part != "boolean" && last_part != "long" && last_part != "double" &&
+                   last_part != "float" && last_part != "char" && last_part != "byte" &&
+                   last_part != "short" && !last_part.contains('.') {
+                    return Some(last_part.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    fn extract_import_java(&self, line: &str) -> Option<String> {
+        if let Some(start) = line.find("import ") {
+            let after_import = &line[start + 7..];
+            // Remove "static " if present
+            let after_static = if after_import.starts_with("static ") {
+                &after_import[7..]
+            } else {
+                after_import
+            };
+            // Remove semicolon
+            let module = after_static.trim_end_matches(';').trim();
+            if !module.is_empty() {
+                return Some(module.to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_visibility_java(&self, line: &str) -> Option<String> {
+        if line.contains("public ") {
+            Some("public".to_string())
+        } else if line.contains("private ") {
+            Some("private".to_string())
+        } else if line.contains("protected ") {
+            Some("protected".to_string())
+        } else {
+            Some("package-private".to_string()) // Default in Java
+        }
+    }
+
+    fn extract_parameters_java(&self, line: &str) -> Vec<String> {
+        if let Some(start) = line.find('(') {
+            if let Some(end) = line[start+1..].find(')') {
+                let params = &line[start+1..start+1+end];
+                return params.split(',')
+                    .map(|p| {
+                        let param = p.trim();
+                        // Extract parameter name (last word before any = or after last space)
+                        if let Some(equals) = param.find('=') {
+                            param[..equals].trim().to_string()
+                        } else {
+                            // Get the last word (parameter name)
+                            let parts: Vec<&str> = param.split_whitespace().collect();
+                            if let Some(name) = parts.last() {
+                                name.to_string()
+                            } else {
+                                param.to_string()
+                            }
+                        }
+                    })
+                    .filter(|p| !p.is_empty())
+                    .collect();
+            }
+        }
+        Vec::new()
+    }
+
+    fn extract_return_type_java(&self, line: &str) -> Option<String> {
+        // Format: [modifiers] ReturnType methodName(params)
+        // Find the opening parenthesis and work backwards
+        if let Some(paren_start) = line.find('(') {
+            let before_paren = &line[..paren_start];
+            let parts: Vec<&str> = before_paren.split_whitespace().collect();
+            // Return type is usually the second-to-last or last part (before method name)
+            // Skip modifiers: public, private, static, final, etc.
+            let modifiers = vec!["public", "private", "protected", "static", "final", "abstract", 
+                                 "synchronized", "native", "strictfp"];
+            for part in parts.iter().rev() {
+                if !modifiers.contains(part) && !part.is_empty() {
+                    return Some(part.to_string());
+                }
             }
         }
         None
