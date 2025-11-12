@@ -92,7 +92,7 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 ### 🎨 **Modern Web UI**
 - **Dashboard**: Overview of all repositories and statistics
 - **Repository Detail View**: Comprehensive tabs for each analysis aspect
-- **Real-Time Progress**: Live progress tracking with server polling
+- **Real-Time Progress**: Live progress tracking with server polling (⚠️ **Note**: For reliable progress updates during long analyses, check server logs—see Quick Start section)
 - **Entity Detail Modals**: Deep dive into any entity with relationships
 - **Search & Filter**: Advanced filtering across all entity types
 - **Responsive Design**: Works on desktop and mobile devices
@@ -164,6 +164,26 @@ The server will start on `http://localhost:8080` by default.
    - URL (GitHub, GitLab, or local file path)
    - Branch (defaults to `main`)
 3. **Analyze**: Click "Analyze" and watch real-time progress
+
+> **⚠️ Important: Monitoring Analysis Progress**
+> 
+> Analysis can take several minutes for large repositories. While the UI attempts to show progress, **the most reliable way to monitor progress is to watch the server logs** in your terminal. The server provides detailed, real-time diagnostic messages including:
+> - Step-by-step progress (e.g., "Step 4/10: Extracting dependencies...")
+> - Detailed counts (e.g., "✓ Detected 7 service(s): AWS S3 (aws), Clerk (clerk)...")
+> - Storage progress with percentages (e.g., "Stored 5000/55000 elements (9%)...")
+> - Language breakdowns and entity type summaries
+> 
+> **Example log output:**
+> ```
+> Step 4/10: Extracting dependencies from repository...
+> ✓ Found 3 manifest files with 127 total dependencies
+> Storing 127 dependencies from 3 manifest file(s) in database...
+>   Processing manifest 1/3: package.json (45 dependencies)
+>   Processing manifest 2/3: requirements.txt (82 dependencies)
+> ✓ Successfully stored 127 dependencies from 3 manifest file(s)
+> ```
+> 
+> Keep your terminal visible during analysis to see exactly what's happening at each stage.
 
 ### 🤖 Using the AI Assistant
 
