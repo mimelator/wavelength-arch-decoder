@@ -379,8 +379,16 @@ impl ApiKeyDetector {
                         let value = cap.get(2).map(|m| m.as_str().to_string());
                         
                         // Skip if this looks like a false positive (e.g., "token" in comments or strings)
-                        if self.is_false_positive(line, &key_name) {
+                        if self.is_false_positive(line, &key_name, value.as_deref()) {
                             continue;
+                        }
+                        
+                        // For generic "apiKey" patterns, require the value to look like an actual API key
+                        let key_lower = key_name.to_lowercase();
+                        if (key_lower == "apikey" || key_lower == "api_key") && value.is_some() {
+                            if !self.looks_like_api_key(value.as_ref().unwrap()) {
+                                continue; // Skip if value doesn't look like a real API key
+                            }
                         }
                         
                         // Determine provider based on key name
@@ -485,8 +493,66 @@ impl ApiKeyDetector {
         related
     }
 
+    /// Check if a value looks like an actual API key (not a config value, URL, etc.)
+    fn looks_like_api_key(&self, value: &str) -> bool {
+        let value_trimmed = value.trim().trim_matches(|c| c == '"' || c == '\'' || c == '`');
+        
+        // Skip if it's a template literal or variable reference (not a hardcoded value)
+        if value_trimmed.contains("${") || 
+           value_trimmed.contains("$(") ||
+           value_trimmed.contains("{{") ||
+           value_trimmed.starts_with("$") ||
+           value_trimmed.contains("process.env") ||
+           value_trimmed.contains("process['env']") ||
+           value_trimmed.contains("process[\"env\"]") ||
+           value_trimmed.contains("getenv") ||
+           value_trimmed.contains("environ") ||
+           value_trimmed.contains("config.") ||
+           value_trimmed.contains("env.") ||
+           value_trimmed.contains("process.") ||
+           // Property access patterns (e.g., firebaseConfig.apiKey, config.apiKey)
+           (value_trimmed.contains(".") && value_trimmed.matches(".").count() == 1 && 
+            value_trimmed.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '$' || c == '{' || c == '}')) {
+            return false; // This is a variable reference, not a hardcoded key
+        }
+        
+        // API keys are typically:
+        // - At least 20 characters (we already require 16+ in pattern, but be stricter here)
+        if value_trimmed.len() < 20 {
+            return false;
+        }
+        
+        // - Don't contain URLs or paths
+        if value_trimmed.contains("http://") || 
+           value_trimmed.contains("https://") ||
+           value_trimmed.contains("://") ||
+           (value_trimmed.contains("/") && value_trimmed.matches("/").count() > 1) ||
+           value_trimmed.contains("\\") {
+            return false;
+        }
+        
+        // - Don't contain spaces (unless it's a multi-part key with specific format)
+        if value_trimmed.contains(" ") && !value_trimmed.starts_with("sk_") && !value_trimmed.starts_with("pk_") {
+            return false;
+        }
+        
+        // - Don't look like file paths (multiple dots, slashes)
+        if value_trimmed.matches(".").count() > 2 && !value_trimmed.starts_with("sk_") {
+            return false;
+        }
+        
+        // - Contain mostly alphanumeric characters (some special chars OK like _, -, =)
+        let alphanumeric_count = value_trimmed.chars().filter(|c| c.is_alphanumeric()).count();
+        let total_chars = value_trimmed.chars().count();
+        if total_chars > 0 && (alphanumeric_count as f64 / total_chars as f64) < 0.7 {
+            return false; // Too many special characters, probably not an API key
+        }
+        
+        true
+    }
+
     /// Check if a match is likely a false positive
-    fn is_false_positive(&self, line: &str, key_name: &str) -> bool {
+    fn is_false_positive(&self, line: &str, key_name: &str, value: Option<&str>) -> bool {
         let line_lower = line.to_lowercase();
         let key_lower = key_name.to_lowercase();
         
@@ -535,6 +601,8 @@ impl ApiKeyDetector {
            line_lower.contains("replace_") {
             return true;
         }
+        
+        // Additional checks for generic "apiKey" patterns - now handled by looks_like_api_key above
         
         false
     }
