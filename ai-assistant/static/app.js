@@ -252,16 +252,53 @@ function addAssistantMessage(data) {
             const sourceItem = document.createElement('div');
             sourceItem.className = 'source-item';
             
+            const nameRow = document.createElement('div');
+            nameRow.style.display = 'flex';
+            nameRow.style.alignItems = 'center';
+            nameRow.style.gap = '0.5rem';
+            nameRow.style.marginBottom = '0.25rem';
+            
             const name = document.createElement('strong');
-            name.textContent = source.name || source.id || 'Unknown';
-            sourceItem.appendChild(name);
+            if (source.deep_link) {
+                // Make name a clickable link
+                const link = document.createElement('a');
+                link.href = source.deep_link;
+                link.textContent = source.name || source.id || 'Unknown';
+                link.style.color = 'var(--primary-color)';
+                link.style.textDecoration = 'none';
+                link.style.cursor = 'pointer';
+                link.title = 'View in Architecture Decoder';
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.open(source.deep_link, '_blank');
+                });
+                name.appendChild(link);
+            } else {
+                name.textContent = source.name || source.id || 'Unknown';
+            }
+            nameRow.appendChild(name);
+            
+            if (source.deep_link) {
+                const linkIcon = document.createElement('span');
+                linkIcon.textContent = '🔗';
+                linkIcon.style.fontSize = '0.8em';
+                linkIcon.style.cursor = 'pointer';
+                linkIcon.title = 'Open in Architecture Decoder';
+                linkIcon.addEventListener('click', () => {
+                    window.open(source.deep_link, '_blank');
+                });
+                nameRow.appendChild(linkIcon);
+            }
+            
+            sourceItem.appendChild(nameRow);
             
             if (source.type) {
                 const type = document.createElement('span');
                 type.textContent = `Type: ${source.type}`;
                 type.style.color = 'var(--text-secondary)';
                 type.style.fontSize = '0.8em';
-                type.style.marginLeft = '0.5rem';
+                type.style.marginLeft = '0';
+                type.style.marginTop = '0.25rem';
                 sourceItem.appendChild(type);
             }
             

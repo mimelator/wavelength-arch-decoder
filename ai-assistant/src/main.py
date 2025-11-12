@@ -115,9 +115,36 @@ async def ai_query(request: QueryRequest):
                     "node_types": node_types
                 }
         
+        # Add deep links to sources
+        decoder_url = os.getenv("ARCHITECTURE_DECODER_URL", "http://localhost:8080")
+        sources_with_links = []
+        for source in context.get("sources", []):
+            source_copy = source.copy()
+            # Generate deep link based on source type
+            source_type = source.get("type")
+            source_id = source.get("id")
+            
+            if source_id and source_type:
+                # Map source types to entity types for the Architecture Decoder UI
+                entity_type_map = {
+                    "code_element": "code_element",
+                    "service": "service",
+                    "dependency": "dependency",
+                    "tool": "tool",  # Tools might not have detail view, but include for consistency
+                    "security_entity": "security_entity"
+                }
+                
+                entity_type = entity_type_map.get(source_type)
+                if entity_type:
+                    # Create deep link URL: #repository-detail?repo={repoId}&entity={entityId}&entityType={entityType}
+                    deep_link = f"{decoder_url}/#repository-detail?repo={request.repository_id}&entity={source_id}&entityType={entity_type}"
+                    source_copy["deep_link"] = deep_link
+            
+            sources_with_links.append(source_copy)
+        
         return {
             "answer": response,
-            "sources": context.get("sources", []),
+            "sources": sources_with_links,
             "graph_context": {
                 "statistics": graph_stats,
                 "nodes": graph_data.get("nodes", []) if graph_data else [],
