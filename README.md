@@ -6,7 +6,7 @@
 
 A self-contained, powerful tool that automatically discovers and visualizes the complete architecture of your repositories—from dependencies and services to security configurations and code relationships.
 
-[![Version](https://img.shields.io/badge/version-0.7.2-blue)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.7.3-blue)](VERSION)
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -23,6 +23,8 @@ A self-contained, powerful tool that automatically discovers and visualizes the 
 - **What security configurations** exist (IAM roles, Lambda functions, S3 buckets, API keys)
 - **How your code is structured** (functions, classes, modules, and their relationships)
 - **What tools and scripts** are configured (build tools, test frameworks, linters)
+- **What tests exist** and which frameworks are used (Jest, Mocha, Pytest, JUnit, XCTest, etc.)
+- **What documentation** is available (README files, API docs, guides)
 - **How everything connects** through an interactive knowledge graph
 
 Perfect for **onboarding new developers**, **understanding legacy codebases**, **security audits**, and **AI assistant integration**.
@@ -63,6 +65,46 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **Custom Scripts**: Detects npm scripts, shell scripts, and executables
 - **Tool Relationships**: Maps tools to dependencies and services they use
 
+### 🧪 **Test Detection**
+- **Multi-Framework Support**: Detects tests across multiple frameworks
+  - **JavaScript/TypeScript**: Jest, Mocha, Vitest
+  - **Python**: Pytest, unittest
+  - **Rust**: Cargo test
+  - **Go**: Go test
+  - **Java**: JUnit, TestNG
+  - **Swift/Objective-C**: XCTest, Quick
+- **Test File Detection**: Automatically identifies test files by naming patterns and directory structure
+- **Test Function Extraction**: Extracts test functions with signatures, parameters, and assertions
+- **Test Metadata**: Captures test framework, type (unit/integration/E2E), suite names, setup/teardown methods
+- **Graph Integration**: Test nodes appear in knowledge graph with relationships to frameworks and code being tested
+- **Filtering & Search**: Filter tests by framework, language, or search by name
+
+### 📚 **Documentation Indexing**
+- **File Type Detection**: Automatically indexes markdown, text, reStructuredText, AsciiDoc, and wiki files
+- **Metadata Extraction**: Extracts titles, descriptions, word counts, and line counts
+- **Content Analysis**: Detects code examples, API references, and diagrams in documentation
+- **Preview Generation**: Shows content previews for quick scanning
+- **Deduplication**: Automatically removes duplicate documentation entries
+- **Repository Filtering**: Ensures documentation is properly scoped to each repository
+- **Search & Filter**: Search documentation by title, description, or content; filter by type
+
+### 🔗 **File Linking & Editor Integration**
+- **Open in Editor**: Click any file path to open it directly in your preferred editor
+  - **VS Code**: Default editor protocol (`vscode://file/...`)
+  - **Configurable**: Set custom editor via `EDITOR_PROTOCOL` environment variable
+  - **Supported Editors**: VS Code, Cursor, Sublime Text, Atom, and more
+- **Show in Finder**: Copy file paths to clipboard for easy navigation
+  - **macOS**: Copy path for Finder (Cmd+Shift+G)
+  - **Windows**: Copy path for File Explorer address bar
+- **Available Everywhere**: File links appear on:
+  - Code elements (functions, classes, modules)
+  - Dependencies (manifest file locations)
+  - Services (detection locations)
+  - Security entities (configuration files)
+  - Tools (configuration files)
+  - Tests (test file locations)
+  - Documentation (documentation file paths)
+
 ### 🔒 **Security Analysis**
 - **Infrastructure as Code**: Analyzes Terraform, CloudFormation, Serverless Framework, AWS SAM
 - **IAM Roles & Policies**: Extracts AWS IAM configurations and permissions
@@ -83,11 +125,13 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 
 ### 🕸️ **Interactive Knowledge Graph**
 - **Visual Exploration**: Interactive graph visualization using vis.js
-- **Node Types**: Repositories, Dependencies, Services, Code Elements, Security Entities, Tools
-- **Relationship Types**: Uses, Depends On, Calls, Configures, Secures, and more
+- **Node Types**: Repositories, Dependencies, Services, Code Elements, Security Entities, Tools, Tests, Test Frameworks
+- **Relationship Types**: Uses, Depends On, Calls, Configures, Secures, Tests, and more
 - **Smart Navigation**: Click nodes to see details, navigate to related entities
+- **Toggle Controls**: Show/hide specific node types (tests and code elements off by default for cleaner views)
 - **Dark/Light Theme**: Beautiful visualization in both themes
 - **Entity Color Coding**: Visual distinction between entity types
+- **Legend**: Interactive legend with checkboxes to filter node types
 
 ### 🎨 **Modern Web UI**
 - **Dashboard**: Overview of all repositories and statistics
@@ -97,8 +141,10 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **Search & Filter**: Advanced filtering across all entity types
 - **Responsive Design**: Works on desktop and mobile devices
 - **Browser History Navigation**: Full back/forward button support with URL state management
-- **Source Code Links**: Click to open files in your editor or Finder/Explorer
+- **Source Code Links**: Click any file path to open in your editor or copy to Finder/Explorer
 - **Configurable Editor**: Set your preferred editor (VS Code, Cursor, Sublime, etc.) via `EDITOR_PROTOCOL` environment variable
+- **Tests Tab**: Browse and filter detected tests by framework and language
+- **Documentation Tab**: Browse indexed documentation files with previews
 
 ### 🔧 **Developer-Friendly**
 - **Self-Contained**: No external services required—runs entirely locally
@@ -107,6 +153,7 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **Private Repository Support**: SSH keys, tokens, and username/password auth
 - **REST & GraphQL APIs**: Choose your preferred API style
 - **Progress Tracking**: Real-time analysis progress with detailed step information
+- **Update Notifications**: Optional automatic version checking with GitHub releases (can be disabled)
 
 ### 📄 **Report Generation**
 - **HTML Reports**: Generate comprehensive, shareable HTML reports for any repository
@@ -124,6 +171,8 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **Function Discovery**: "What functions are available?" - Discover available functions and their usage
 - **Service Analysis**: "What services are used?" - Get comprehensive service listings
 - **Dependency Insights**: "What dependencies does this use?" - Understand your dependency graph
+- **Test Discovery**: "What tests are available?" - Find test files and test functions
+- **Documentation Search**: "What documentation exists?" - Browse README files and API docs
 - **Refactoring Impact**: "What would break if I rename X?" - Analyze refactoring risks
 - **Rich Results Display**: Shows sources, graph statistics, and related entities
 - **Repository Selection**: Easy dropdown to switch between repositories
@@ -203,6 +252,8 @@ The AI Assistant provides an interactive chat interface for querying your codeba
    - "What functions are available?"
    - "What services are used?"
    - "What dependencies does this use?"
+   - "What tests are available?"
+   - "What documentation exists?"
    - "What functions use Firebase?"
    - "What would break if I rename getAdminStorage?"
 
@@ -352,11 +403,13 @@ Track which services and dependencies are used across multiple repositories for 
 3. **Service Detection**: Scan code and config files for service patterns
 4. **Tool Discovery**: Identify build tools, test frameworks, scripts
 5. **Code Structure Analysis**: Extract functions, classes, modules
-6. **Security Analysis**: Analyze IaC files, detect API keys, vulnerabilities
-7. **Relationship Detection**: Map code-to-service and code-to-dependency relationships
-8. **Knowledge Graph Construction**: Build unified graph of all entities
-9. **Storage**: Persist all data in SQLite database
-10. **Report Generation**: Generate comprehensive HTML reports on demand
+6. **Test Detection**: Identify test files and test functions across multiple frameworks
+7. **Documentation Indexing**: Scan and index documentation files (README, API docs, guides)
+8. **Security Analysis**: Analyze IaC files, detect API keys, vulnerabilities
+9. **Relationship Detection**: Map code-to-service and code-to-dependency relationships
+10. **Knowledge Graph Construction**: Build unified graph of all entities
+11. **Storage**: Persist all data in SQLite database
+12. **Report Generation**: Generate comprehensive HTML reports on demand
 
 ---
 
@@ -511,6 +564,8 @@ Service: Firebase SDK
 - Code Elements (functions, classes)
 - Security Entities (IAM roles, Lambda, S3)
 - Tools (build tools, test frameworks)
+- Tests (test functions and test cases)
+- Test Frameworks (Jest, Mocha, Pytest, etc.)
 
 **Edge Types**:
 - `UsesService`: Repository → Service
@@ -522,6 +577,9 @@ Service: Firebase SDK
 - `Configures`: File → Security Entity
 - `Secures`: Security Entity → Security Entity
 - `UsesTool`: Repository → Tool
+- `HasTest`: Repository → Test
+- `TestUsesFramework`: Test → Test Framework
+- `TestTestsCode`: Test → Code Element
 
 **Visualization Features**:
 - Interactive node selection
@@ -536,6 +594,12 @@ Service: Firebase SDK
 ## 🔌 API Reference
 
 ### REST API
+
+#### System
+```http
+GET    /api/v1/version                         # Get version info and check for updates
+GET    /health                                  # Health check endpoint
+```
 
 #### Repository Management
 ```http
@@ -578,6 +642,19 @@ GET    /api/v1/repositories/{id}/security/vulnerabilities # Get vulnerabilities
 GET    /api/v1/repositories/{id}/tools           # Get tools
 GET    /api/v1/repositories/{id}/tools/{id}/scripts  # Get tool scripts
 GET    /api/v1/tools/search?q={query}            # Search tools
+```
+
+#### Tests
+```http
+GET    /api/v1/repositories/{id}/tests            # Get all tests
+GET    /api/v1/repositories/{id}/tests/framework/{framework}  # Get tests by framework
+```
+
+#### Documentation
+```http
+GET    /api/v1/repositories/{id}/documentation   # Get documentation files
+GET    /api/v1/repositories/{id}/documentation/search?q={query}  # Search documentation
+GET    /api/v1/repositories/{id}/documentation/type/{type}  # Get documentation by type
 ```
 
 #### Graph
@@ -665,6 +742,12 @@ GITLAB_TOKEN=your_gitlab_token
 
 # Storage
 REPOSITORY_CACHE_PATH=./cache/repos
+
+# Editor Configuration (for file linking)
+EDITOR_PROTOCOL=vscode  # Options: vscode, cursor, sublime, atom, or custom protocol
+
+# Version Update Checking (optional)
+CHECK_VERSION_UPDATES=true  # Set to false to disable automatic update checking
 ```
 
 ### Service Pattern Configuration
@@ -761,7 +844,27 @@ curl http://localhost:8080/api/v1/repositories/{repo-id}/dependencies
 curl "http://localhost:8080/api/v1/dependencies/search?q=react"
 ```
 
-### Example 5: Generate Report
+### Example 5: Get Tests
+
+```bash
+# Get all tests
+curl http://localhost:8080/api/v1/repositories/{repo-id}/tests
+
+# Get tests by framework
+curl http://localhost:8080/api/v1/repositories/{repo-id}/tests/framework/jest
+```
+
+### Example 6: Get Documentation
+
+```bash
+# Get all documentation
+curl http://localhost:8080/api/v1/repositories/{repo-id}/documentation
+
+# Search documentation
+curl "http://localhost:8080/api/v1/repositories/{repo-id}/documentation/search?q=api"
+```
+
+### Example 7: Generate Report
 
 ```bash
 # Generate HTML report

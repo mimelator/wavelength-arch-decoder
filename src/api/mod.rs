@@ -16,6 +16,7 @@ pub mod progress;
 pub mod reports;
 pub mod documentation;
 pub mod tests;
+pub mod version_check;
 
 pub struct ApiState {
     pub repo_repo: RepositoryRepository,
@@ -45,30 +46,25 @@ pub async fn health() -> impl Responder {
 
 // Version endpoint
 pub async fn version() -> impl Responder {
-    // Try multiple paths for VERSION file (current dir, parent, or use env var)
-    let version = match std::fs::read_to_string("VERSION") {
-        Ok(v) => v.trim().to_string(),
-        Err(_) => {
-            // Try parent directory
-            match std::fs::read_to_string("../VERSION") {
-                Ok(v) => v.trim().to_string(),
-                Err(_) => {
-                    // Try from env or default
-                    std::env::var("WAVELENGTH_VERSION")
-                        .unwrap_or_else(|_| "0.7.2".to_string())
-                }
-            }
-        }
-    };
+    use crate::api::version_check;
+    
+    // Get current version
+    let current_version = version_check::get_current_version();
     
     // Get editor protocol from environment (default: vscode)
     let editor_protocol = std::env::var("EDITOR_PROTOCOL")
         .unwrap_or_else(|_| "vscode".to_string());
     
-    log::debug!("Version endpoint returning: {}, editor_protocol: {}", version, editor_protocol);
+    // Check for updates (non-blocking, uses cache)
+    let version_info = version_check::check_for_updates(false).await;
+    
+    log::debug!("Version endpoint returning: {}, editor_protocol: {}", current_version, editor_protocol);
     HttpResponse::Ok().json(serde_json::json!({
-        "version": version,
-        "editor_protocol": editor_protocol
+        "version": current_version,
+        "editor_protocol": editor_protocol,
+        "latest_version": version_info.latest,
+        "update_available": version_info.update_available,
+        "last_checked": version_info.last_checked
     }))
 }
 

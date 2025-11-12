@@ -578,6 +578,11 @@ impl ServiceDetector {
             self.is_position_in_comment(content, pos, language.as_deref())
         };
         
+        // Helper to check if a position is inside a string literal
+        let is_in_string = |pos: usize| -> bool {
+            self.is_position_in_string(content, pos, language.as_deref())
+        };
+        
         // Detect specific AWS SDK clients from @aws-sdk/client-* imports
         let aws_sdk_client_pattern = regex::Regex::new(r"@aws-sdk/client-([a-z0-9-]+)").unwrap();
         for cap in aws_sdk_client_pattern.captures_iter(&content_lower) {
@@ -585,8 +590,8 @@ impl ServiceDetector {
                 let service = service_name.as_str();
                 let match_start = cap.get(0).unwrap().start();
                 
-                // Skip if match is in a comment
-                if is_in_comment(match_start) {
+                // Skip if match is in a comment or string literal
+                if is_in_comment(match_start) || is_in_string(match_start) {
                     continue;
                 }
                 
@@ -680,18 +685,37 @@ impl ServiceDetector {
                         format!("@{}", pattern_lower.trim_start_matches('@')),
                     ];
                     
+                    let mut package_match_positions = Vec::new();
                     for pkg_pattern in &package_patterns {
-                        if content_lower.contains(pkg_pattern) {
-                            matches = true;
-                            break;
+                        if let Some(pos) = content_lower.find(pkg_pattern) {
+                            package_match_positions.push(pos);
                         }
                     }
                     
-                    // Also check if it's a standalone package name match (for package.json, etc.)
-                    if !matches && (content_lower.contains(&format!("\"{}\"", pattern_lower)) ||
-                                   content_lower.contains(&format!("'{}'", pattern_lower)) ||
-                                   content_lower.contains(&format!("`{}`", pattern_lower))) {
+                    // Check if any package pattern match is NOT in a comment or string
+                    if package_match_positions.iter().any(|&pos| !is_in_comment(pos) && !is_in_string(pos)) {
                         matches = true;
+                    }
+                    
+                    // Also check if it's a standalone package name match (for package.json, etc.)
+                    // But only if it's not in a string (package.json entries are not strings)
+                    if !matches {
+                        let standalone_patterns = vec![
+                            format!("\"{}\"", pattern_lower),
+                            format!("'{}'", pattern_lower),
+                            format!("`{}`", pattern_lower),
+                        ];
+                        
+                        for standalone_pattern in &standalone_patterns {
+                            if let Some(pos) = content_lower.find(standalone_pattern) {
+                                // For package.json style files, these are typically not in strings
+                                // But we still check to be safe
+                                if !is_in_comment(pos) && !is_in_string(pos) {
+                                    matches = true;
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
             } else {
@@ -763,8 +787,8 @@ impl ServiceDetector {
                     }
                 }
                 
-                // Check if any match is NOT in a comment
-                matches = match_positions.iter().any(|&pos| !is_in_comment(pos));
+                // Check if any match is NOT in a comment or string literal
+                matches = match_positions.iter().any(|&pos| !is_in_comment(pos) && !is_in_string(pos));
             }
             
             if matches {
@@ -977,6 +1001,105 @@ impl ServiceDetector {
         }
         
         false // Position not found in any line
+    }
+
+    /// Check if a position in content is inside a string literal
+    fn is_position_in_string(&self, content: &str, pos: usize, language: Option<&str>) -> bool {
+        let content_chars: Vec<char> = content.chars().collect();
+        let mut i = 0;
+        let mut char_pos = 0;
+        let mut in_single_quote = false;
+        let mut in_double_quote = false;
+        let mut in_triple_single = false;
+        let mut in_triple_double = false;
+        let mut string_start = 0;
+        
+        // For Python, also check for triple-quoted strings (docstrings)
+        let check_triple_quotes = language == Some("python");
+        
+        while i < content_chars.len() {
+            let ch = content_chars[i];
+            let next_ch = if i + 1 < content_chars.len() { Some(content_chars[i + 1]) } else { None };
+            let next_next_ch = if i + 2 < content_chars.len() { Some(content_chars[i + 2]) } else { None };
+            
+            // Check for triple quotes (Python docstrings)
+            if check_triple_quotes {
+                if i + 2 < content_chars.len() {
+                    let three_chars = format!("{}{}{}", ch, next_ch.unwrap_or(' '), next_next_ch.unwrap_or(' '));
+                    
+                    if three_chars == "\"\"\"" && !in_single_quote && !in_triple_single {
+                        if in_triple_double {
+                            // Closing triple double quote
+                            if pos >= string_start && pos <= char_pos + 3 {
+                                return true;
+                            }
+                            in_triple_double = false;
+                        } else {
+                            // Opening triple double quote
+                            in_triple_double = true;
+                            string_start = char_pos;
+                        }
+                        i += 2; // Skip next two chars
+                        char_pos += 3;
+                        continue;
+                    } else if three_chars == "'''" && !in_double_quote && !in_triple_double {
+                        if in_triple_single {
+                            // Closing triple single quote
+                            if pos >= string_start && pos <= char_pos + 3 {
+                                return true;
+                            }
+                            in_triple_single = false;
+                        } else {
+                            // Opening triple single quote
+                            in_triple_single = true;
+                            string_start = char_pos;
+                        }
+                        i += 2; // Skip next two chars
+                        char_pos += 3;
+                        continue;
+                    }
+                }
+            }
+            
+            // Check for regular single quotes (but not if we're in a triple-quoted string)
+            if !in_triple_single && !in_triple_double {
+                if ch == '\'' && !in_double_quote {
+                    if in_single_quote {
+                        // Closing single quote
+                        if pos >= string_start && pos <= char_pos {
+                            return true;
+                        }
+                        in_single_quote = false;
+                    } else {
+                        // Opening single quote
+                        in_single_quote = true;
+                        string_start = char_pos;
+                    }
+                } else if ch == '"' && !in_single_quote {
+                    if in_double_quote {
+                        // Closing double quote
+                        if pos >= string_start && pos <= char_pos {
+                            return true;
+                        }
+                        in_double_quote = false;
+                    } else {
+                        // Opening double quote
+                        in_double_quote = true;
+                        string_start = char_pos;
+                    }
+                }
+            }
+            
+            // Check if position is currently inside a string
+            if (in_single_quote || in_double_quote || in_triple_single || in_triple_double) && pos >= string_start {
+                return true;
+            }
+            
+            char_pos += 1;
+            i += 1;
+        }
+        
+        false
     }
 
     /// Check if pattern matches at word boundaries (not as substring of another word)

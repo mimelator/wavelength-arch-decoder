@@ -249,6 +249,22 @@ body {
 .repo-actions {
     display: flex;
     gap: 0.5rem;
+    align-items: center;
+}
+
+.analyze-button-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+}
+
+.analyze-info-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    white-space: nowrap;
+    opacity: 0.8;
 }
 
 /* Analysis Status and Progress */
@@ -926,6 +942,7 @@ body {
 .repo-detail-actions {
     display: flex;
     gap: 0.5rem;
+    align-items: flex-start;
 }
 
 .repo-detail-tabs {

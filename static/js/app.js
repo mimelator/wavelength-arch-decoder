@@ -279,7 +279,10 @@ function displayRepositories(repos, containerId) {
                 <div class="analysis-status" style="display: none; margin-top: 0.5rem;"></div>
             </div>
             <div class="repo-actions">
-                <button class="btn btn-primary btn-analyze" onclick="analyzeRepository('${repo.id}')">Analyze</button>
+                <div class="analyze-button-group">
+                    <button class="btn btn-primary btn-analyze" onclick="analyzeRepository('${repo.id}')">Analyze</button>
+                    <small class="analyze-info-text">⚠️ Check server logs</small>
+                </div>
                 <button class="btn btn-secondary" onclick="viewRepository('${repo.id}')">View</button>
                 <button class="btn btn-danger" onclick="deleteRepository('${repo.id}', '${escapeHtml(repo.name)}')" title="Delete repository">Delete</button>
             </div>
@@ -3292,11 +3295,106 @@ async function loadVersion() {
             editorProtocol = response.editor_protocol;
             console.log('Editor protocol:', editorProtocol);
         }
+        
+        // Check for updates
+        if (response.update_available && response.latest_version) {
+            showUpdateNotification(response.version, response.latest_version);
+        }
     } catch (error) {
         console.error('Failed to load version:', error);
         // Keep the fallback version from HTML if API fails
     }
 }
+
+function showUpdateNotification(currentVersion, latestVersion) {
+    // Check if user has dismissed this update notification
+    const dismissedKey = `update-dismissed-${latestVersion}`;
+    if (localStorage.getItem(dismissedKey)) {
+        return; // User dismissed this version's notification
+    }
+    
+    // Create notification banner
+    const notification = document.createElement('div');
+    notification.id = 'update-notification';
+    notification.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: var(--warning-color, #f59e0b);
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        z-index: 10000;
+        max-width: 400px;
+        font-size: 0.875rem;
+        animation: slideIn 0.3s ease-out;
+    `;
+    
+    notification.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: start; gap: 1rem;">
+            <div>
+                <strong style="display: block; margin-bottom: 0.5rem;">🆕 Update Available</strong>
+                <p style="margin: 0; opacity: 0.95;">
+                    You're running v${currentVersion}. Latest is v${latestVersion}.
+                    <a href="https://github.com/mimelator/wavelength-arch-decoder/releases/latest" 
+                       target="_blank" 
+                       rel="noopener noreferrer"
+                       style="color: white; text-decoration: underline; margin-left: 0.25rem;">
+                        View release notes
+                    </a>
+                </p>
+            </div>
+            <button onclick="dismissUpdateNotification('${latestVersion}')" 
+                    style="background: transparent; border: none; color: white; cursor: pointer; font-size: 1.25rem; padding: 0; line-height: 1; opacity: 0.8;"
+                    title="Dismiss">
+                ×
+            </button>
+        </div>
+    `;
+    
+    // Add animation CSS if not already present
+    if (!document.getElementById('update-notification-styles')) {
+        const style = document.createElement('style');
+        style.id = 'update-notification-styles';
+        style.textContent = `
+            @keyframes slideIn {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    document.body.appendChild(notification);
+    
+    // Auto-dismiss after 30 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.animation = 'slideIn 0.3s ease-out reverse';
+            setTimeout(() => notification.remove(), 300);
+        }
+    }, 30000);
+}
+
+function dismissUpdateNotification(version) {
+    const dismissedKey = `update-dismissed-${version}`;
+    localStorage.setItem(dismissedKey, 'true');
+    const notification = document.getElementById('update-notification');
+    if (notification) {
+        notification.style.animation = 'slideIn 0.3s ease-out reverse';
+        setTimeout(() => notification.remove(), 300);
+    }
+}
+
+// Make dismissUpdateNotification available globally
+window.dismissUpdateNotification = dismissUpdateNotification;
 
 // Store documentation for filtering
 let allDocumentation = [];
