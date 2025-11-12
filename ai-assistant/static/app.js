@@ -7,6 +7,9 @@ let chatHistory = [];
 document.addEventListener('DOMContentLoaded', () => {
     loadRepositories();
     setupEventListeners();
+    checkDecoderHealth();
+    // Check health every 30 seconds
+    setInterval(checkDecoderHealth, 30000);
 });
 
 async function loadRepositories() {
@@ -64,6 +67,61 @@ async function loadRepositories() {
         errorOption.textContent = `Error: ${error.message}`;
         errorOption.disabled = true;
         select.appendChild(errorOption);
+    }
+}
+
+async function checkDecoderHealth() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/health`);
+        const health = await response.json();
+        
+        const statusIndicator = document.getElementById('decoder-status');
+        const statusDot = statusIndicator.querySelector('.status-dot');
+        const statusText = statusIndicator.querySelector('.status-text');
+        const chatMessages = document.getElementById('chat-messages');
+        const existingWarning = chatMessages.querySelector('.decoder-warning');
+        
+        if (health.decoder_available) {
+            statusIndicator.className = 'status-indicator status-available';
+            statusDot.textContent = '🟢';
+            statusText.textContent = 'Architecture Decoder Online';
+            statusIndicator.title = 'Architecture Decoder service is available';
+            
+            // Remove warning if service is now available
+            if (existingWarning) {
+                existingWarning.remove();
+            }
+        } else {
+            statusIndicator.className = 'status-indicator status-unavailable';
+            statusDot.textContent = '🔴';
+            statusText.textContent = 'Architecture Decoder Offline';
+            statusIndicator.title = `Architecture Decoder unavailable: ${health.decoder_error || health.decoder_status}`;
+            
+            // Show warning message in chat if service is unavailable
+            if (!existingWarning) {
+                const warning = document.createElement('div');
+                warning.className = 'decoder-warning system-message';
+                warning.innerHTML = `
+                    <strong>⚠️ Warning:</strong> Architecture Decoder service is unavailable. 
+                    <br>Please ensure the Architecture Decoder is running on ${health.decoder_url || 'http://localhost:8080'}
+                    <br><small>Error: ${health.decoder_error || health.decoder_status}</small>
+                `;
+                chatMessages.insertBefore(warning, chatMessages.firstChild);
+            } else {
+                // Update existing warning with latest error
+                existingWarning.querySelector('small').textContent = `Error: ${health.decoder_error || health.decoder_status}`;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to check decoder health:', error);
+        const statusIndicator = document.getElementById('decoder-status');
+        const statusDot = statusIndicator.querySelector('.status-dot');
+        const statusText = statusIndicator.querySelector('.status-text');
+        
+        statusIndicator.className = 'status-indicator status-error';
+        statusDot.textContent = '🟡';
+        statusText.textContent = 'Status Unknown';
+        statusIndicator.title = `Failed to check status: ${error.message}`;
     }
 }
 

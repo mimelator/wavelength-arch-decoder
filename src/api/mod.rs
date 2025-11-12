@@ -53,14 +53,20 @@ pub async fn version() -> impl Responder {
                 Err(_) => {
                     // Try from env or default
                     std::env::var("WAVELENGTH_VERSION")
-                        .unwrap_or_else(|_| "0.6.3".to_string())
+                        .unwrap_or_else(|_| "0.7.1".to_string())
                 }
             }
         }
     };
-    log::debug!("Version endpoint returning: {}", version);
+    
+    // Get editor protocol from environment (default: vscode)
+    let editor_protocol = std::env::var("EDITOR_PROTOCOL")
+        .unwrap_or_else(|_| "vscode".to_string());
+    
+    log::debug!("Version endpoint returning: {}, editor_protocol: {}", version, editor_protocol);
     HttpResponse::Ok().json(serde_json::json!({
-        "version": version
+        "version": version,
+        "editor_protocol": editor_protocol
     }))
 }
 

@@ -15,6 +15,7 @@ pub struct ServerConfig {
     pub host: String,
     pub port: u16,
     pub environment: String,
+    pub editor_protocol: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +55,7 @@ impl Config {
                     .parse()
                     .unwrap_or(8080),
                 environment: env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
+                editor_protocol: env::var("EDITOR_PROTOCOL").unwrap_or_else(|_| "vscode".to_string()),
             },
             database: DatabaseConfig {
                 database_path: env::var("DATABASE_PATH")

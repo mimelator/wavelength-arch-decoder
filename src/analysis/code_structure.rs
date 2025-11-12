@@ -80,10 +80,13 @@ impl CodeAnalyzer {
                path_str.contains("/dist/") ||
                path_str.contains("/build/") ||
                path_str.contains("/.next/") ||
+               path_str.contains("\\.next\\") ||  // Windows path separator
                path_str.contains("/out/") ||
                path_str.contains("/.nuxt/") ||
                path_str.contains("/.cache/") ||
                path_str.contains("/coverage/") ||
+               path_str.contains("/.next/static/") ||  // Next.js build artifacts
+               path_str.contains("/.next/server/") ||  // Next.js server chunks
                file_name.ends_with(".min.js") ||
                file_name.ends_with(".min.css") ||
                file_name.ends_with(".bundle.js") ||

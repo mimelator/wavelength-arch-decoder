@@ -6,7 +6,7 @@
 
 A self-contained, powerful tool that automatically discovers and visualizes the complete architecture of your repositories—from dependencies and services to security configurations and code relationships.
 
-[![Version](https://img.shields.io/badge/version-0.6.3-blue)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.7.1-blue)](VERSION)
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -96,6 +96,9 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **Entity Detail Modals**: Deep dive into any entity with relationships
 - **Search & Filter**: Advanced filtering across all entity types
 - **Responsive Design**: Works on desktop and mobile devices
+- **Browser History Navigation**: Full back/forward button support with URL state management
+- **Source Code Links**: Click to open files in your editor or Finder/Explorer
+- **Configurable Editor**: Set your preferred editor (VS Code, Cursor, Sublime, etc.) via `EDITOR_PROTOCOL` environment variable
 
 ### 🔧 **Developer-Friendly**
 - **Self-Contained**: No external services required—runs entirely locally

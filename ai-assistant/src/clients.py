@@ -85,6 +85,38 @@ class ArchitectureDecoderClient:
         response.raise_for_status()
         return response.json()
 
+    async def health_check(self) -> Dict[str, Any]:
+        """Check if Architecture Decoder service is available"""
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/health",
+                timeout=5.0
+            )
+            response.raise_for_status()
+            return {
+                "available": True,
+                "status": "ok",
+                "response": response.json()
+            }
+        except httpx.TimeoutException:
+            return {
+                "available": False,
+                "status": "timeout",
+                "error": "Connection timeout"
+            }
+        except httpx.ConnectError:
+            return {
+                "available": False,
+                "status": "connection_error",
+                "error": "Cannot connect to Architecture Decoder service"
+            }
+        except Exception as e:
+            return {
+                "available": False,
+                "status": "error",
+                "error": str(e)
+            }
+
     async def close(self):
         """Close HTTP client"""
         await self.client.aclose()

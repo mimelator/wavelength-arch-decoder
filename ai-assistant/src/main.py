@@ -246,10 +246,16 @@ def format_context_summary(context: Dict[str, Any]) -> str:
 @app.get("/health")
 async def health():
     """Health check endpoint"""
+    # Check Architecture Decoder service status
+    decoder_status = await decoder_client.health_check()
+    
     return {
         "status": "ok",
         "service": "ai-assistant",
         "decoder_url": os.getenv("ARCHITECTURE_DECODER_URL", "http://localhost:8080"),
+        "decoder_available": decoder_status.get("available", False),
+        "decoder_status": decoder_status.get("status", "unknown"),
+        "decoder_error": decoder_status.get("error") if not decoder_status.get("available") else None,
         "openai_configured": openai_client is not None
     }
 

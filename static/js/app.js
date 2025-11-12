@@ -14,6 +14,7 @@ function initializeApp() {
     setupNavigation();
     setupModals();
     setupTheme();
+    setupUrlHistory(); // Setup URL history navigation
     loadDashboard();
     setupSearch();
     setupGraph();
@@ -24,6 +25,51 @@ function initializeApp() {
     handleDeepLinks();
 }
 
+// Setup URL history navigation
+function setupUrlHistory() {
+    // Handle browser back/forward buttons
+    window.addEventListener('popstate', async (event) => {
+        const hash = window.location.hash;
+        
+        if (hash && hash.includes('repository-detail')) {
+            // Parse repository detail URL
+            const urlParams = new URLSearchParams(hash.split('?')[1] || '');
+            const repoId = urlParams.get('repo');
+            const tab = urlParams.get('tab');
+            
+            if (repoId) {
+                // Show repository detail page first
+                showPage('repository-detail', false);
+                // Load repository details with optional tab
+                await loadRepositoryDetail(repoId, tab);
+            }
+        } else if (hash) {
+            // Regular page navigation
+            const pageId = hash.replace('#', '').split('?')[0];
+            if (pageId && document.getElementById(pageId)) {
+                showPage(pageId, false);
+            } else {
+                showPage('dashboard', false);
+            }
+        } else {
+            // No hash - show dashboard
+            showPage('dashboard', false);
+        }
+    });
+    
+    // Initial page load - restore from URL
+    const hash = window.location.hash;
+    if (hash && hash.includes('repository-detail')) {
+        // Will be handled by handleDeepLinks
+        return;
+    } else if (hash) {
+        const pageId = hash.replace('#', '').split('?')[0];
+        if (pageId && document.getElementById(pageId)) {
+            showPage(pageId, false);
+        }
+    }
+}
+
 function handleDeepLinks() {
     // Check for deep link parameters in URL hash
     const hash = window.location.hash;
@@ -32,20 +78,21 @@ function handleDeepLinks() {
         const repoId = urlParams.get('repo');
         const entityId = urlParams.get('entity');
         const entityType = urlParams.get('entityType');
+        const tab = urlParams.get('tab');
         
         if (repoId && entityId && entityType) {
             // Navigate to repository detail page first, then open entity modal
             setTimeout(async () => {
-                await viewRepository(repoId);
+                await viewRepository(repoId, tab);
                 // Wait a bit for the page to load, then open entity detail
                 setTimeout(() => {
                     showEntityDetail(repoId, entityType, entityId);
                 }, 800);
             }, 300);
         } else if (repoId) {
-            // Just navigate to repository detail
+            // Navigate to repository detail with optional tab
             setTimeout(async () => {
-                await viewRepository(repoId);
+                await viewRepository(repoId, tab);
             }, 300);
         }
     }
@@ -112,13 +159,20 @@ function setupNavigation() {
     });
 }
 
-function showPage(pageId) {
+function showPage(pageId, updateHistory = true) {
     document.querySelectorAll('.page').forEach(page => {
         page.classList.remove('active');
     });
     const targetPage = document.getElementById(pageId);
     if (targetPage) {
         targetPage.classList.add('active');
+        
+        // Update URL history
+        if (updateHistory) {
+            const url = new URL(window.location);
+            url.hash = pageId === 'dashboard' ? '' : `#${pageId}`;
+            history.pushState({ page: pageId }, '', url);
+        }
         
         // Load page-specific data
         if (pageId === 'dashboard') {
@@ -1302,8 +1356,13 @@ window.analyzeRepository = async function(repoId) {
 window.viewRepository = async function(repoId, initialTab = null) {
     console.log('[VIEW] viewRepository called:', { repoId, initialTab });
     
-    // Show repository detail page
-    showPage('repository-detail');
+    // Update URL with repository ID and optional tab
+    const url = new URL(window.location);
+    url.hash = `#repository-detail?repo=${repoId}${initialTab ? `&tab=${initialTab}` : ''}`;
+    history.pushState({ page: 'repository-detail', repoId, tab: initialTab }, '', url);
+    
+    // Show repository detail page (don't update history - already done above)
+    showPage('repository-detail', false);
     
     // Update navigation
     document.querySelectorAll('.nav-link').forEach(link => {
@@ -1399,6 +1458,166 @@ async function generateReport(repoId, repoName) {
 }
 
 let currentRepoId = null;
+let currentRepoData = null; // Store full repository data for file path resolution
+
+// Helper function to get the local file path for a repository
+function getRepositoryLocalPath(repo) {
+    if (!repo || !repo.url) return null;
+    
+    const url = repo.url;
+    
+    // Handle file:// URLs
+    if (url.startsWith('file://')) {
+        let path = url.replace(/^file:\/\//, '');
+        // Handle triple slash (file:///) for absolute paths
+        if (path.startsWith('//') && path.length > 2) {
+            path = path.substring(1);
+        }
+        return path;
+    }
+    
+    // Handle absolute paths
+    if (url.startsWith('/')) {
+        return url;
+    }
+    
+    // Handle relative paths
+    if (url.startsWith('./') || url.startsWith('../')) {
+        return url;
+    }
+    
+    // For remote URLs, construct cache path
+    // Extract repo name from URL (e.g., github.com/user/repo -> user-repo)
+    try {
+        const urlObj = new URL(url.replace(/^git@/, 'https://').replace(/\.git$/, ''));
+        const pathParts = urlObj.pathname.split('/').filter(p => p);
+        if (pathParts.length >= 2) {
+            const repoName = `${pathParts[pathParts.length - 2]}-${pathParts[pathParts.length - 1]}`;
+            // Default cache path (matches backend default)
+            return `./cache/repos/${repoName}`;
+        }
+    } catch (e) {
+        // Not a valid URL, might be a local path
+        return url;
+    }
+    
+    return null;
+}
+
+// Helper function to create a file link
+function createFileLink(filePath, lineNumber = null, repoData = null) {
+    if (!filePath) return '';
+    
+    const repoPath = repoData ? getRepositoryLocalPath(repoData) : null;
+    if (!repoPath) return '';
+    
+    // Construct full path
+    // file_path is relative to repo root, so combine with repo path
+    let fullPath;
+    if (filePath.startsWith('/')) {
+        // Absolute path - use as is (might be from absolute repo path)
+        fullPath = filePath;
+    } else if (filePath.startsWith('./') || filePath.startsWith('../')) {
+        // Relative path - resolve relative to repo path
+        fullPath = filePath;
+    } else {
+        // Relative to repo root - combine with repo path
+        const repoPathNormalized = repoPath.replace(/\\/g, '/').replace(/\/$/, '');
+        const filePathNormalized = filePath.replace(/\\/g, '/').replace(/^\//, '');
+        fullPath = `${repoPathNormalized}/${filePathNormalized}`;
+    }
+    
+    // Normalize path separators and ensure absolute path for VS Code
+    let normalizedPath = fullPath.replace(/\\/g, '/');
+    
+    // Ensure absolute path for VS Code (needs leading slash on Unix, drive letter on Windows)
+    if (!normalizedPath.match(/^[A-Za-z]:/) && !normalizedPath.startsWith('/')) {
+        // Try to make it absolute - if repoPath is absolute, use it
+        if (repoPath && (repoPath.startsWith('/') || repoPath.match(/^[A-Za-z]:/))) {
+            normalizedPath = fullPath;
+        } else {
+            // Can't determine absolute path, skip VS Code link
+            normalizedPath = null;
+        }
+    }
+    
+    if (!normalizedPath) {
+        // Fallback: just show file path without links
+        return '';
+    }
+    
+    // Create editor link using configurable protocol (default: vscode)
+    // Supported protocols: vscode, vscode-insiders, cursor, code, sublime, atom, etc.
+    const editorPath = normalizedPath.startsWith('/') || normalizedPath.match(/^[A-Za-z]:/)
+        ? normalizedPath
+        : `/${normalizedPath}`;
+    
+    // Map common editor protocols to their URL schemes
+    const editorProtocolMap = {
+        'vscode': 'vscode://file',
+        'vscode-insiders': 'vscode-insiders://file',
+        'cursor': 'cursor://file',
+        'code': 'code://file',
+        'sublime': 'subl://file',
+        'atom': 'atom://file',
+        'webstorm': 'webstorm://open?file=',
+        'idea': 'idea://open?file=',
+    };
+    
+    const editorScheme = editorProtocolMap[editorProtocol] || `${editorProtocol}://file`;
+    const editorLink = `${editorScheme}${editorPath}${lineNumber ? `:${lineNumber}` : ''}`;
+    const editorName = editorProtocol === 'vscode' ? 'VS Code' : 
+                      editorProtocol === 'cursor' ? 'Cursor' :
+                      editorProtocol === 'vscode-insiders' ? 'VS Code Insiders' :
+                      editorProtocol.charAt(0).toUpperCase() + editorProtocol.slice(1);
+    
+    // Create file:// link for macOS Finder (needs triple slash for absolute paths)
+    // macOS Finder: file:///absolute/path (three slashes)
+    // Windows: file:///C:/path (three slashes)
+    const fileLink = normalizedPath.match(/^[A-Za-z]:/)
+        ? `file:///${normalizedPath.replace(/\\/g, '/')}` // Windows: file:///C:/path
+        : `file://${normalizedPath}`; // Unix/macOS: file:///path (already has leading slash, becomes file:///path)
+    
+    return `
+        <a href="${editorLink}" 
+           onclick="event.stopPropagation(); return true;"
+           title="Open in ${editorName}${lineNumber ? ` (line ${lineNumber})` : ''}"
+           style="margin-left: 0.5rem; color: var(--primary-color); text-decoration: none; font-size: 0.875rem; white-space: nowrap;">
+            🔗 Open in Editor
+        </a>
+        <a href="#" 
+           onclick="event.stopPropagation(); 
+                    const path = '${normalizedPath}';
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(path).then(() => {
+                            alert('Path copied to clipboard!\\n\\n' + path + '\\n\\nOn macOS: Press Cmd+Shift+G in Finder and paste the path.\\nOn Windows: Paste the path in File Explorer address bar.');
+                        }).catch(() => {
+                            // Fallback: select text
+                            const textarea = document.createElement('textarea');
+                            textarea.value = path;
+                            textarea.style.position = 'fixed';
+                            textarea.style.opacity = '0';
+                            document.body.appendChild(textarea);
+                            textarea.select();
+                            try {
+                                document.execCommand('copy');
+                                alert('Path copied to clipboard!\\n\\n' + path + '\\n\\nOn macOS: Press Cmd+Shift+G in Finder and paste the path.\\nOn Windows: Paste the path in File Explorer address bar.');
+                            } catch(e) {
+                                prompt('Copy this path:', path);
+                            }
+                            document.body.removeChild(textarea);
+                        });
+                    } else {
+                        // Fallback: prompt to copy
+                        prompt('Copy this path (Cmd+C / Ctrl+C):', path);
+                    }
+                    return false;"
+           title="Copy path to clipboard (macOS: Cmd+Shift+G in Finder, Windows: paste in address bar)"
+           style="margin-left: 0.5rem; color: var(--text-secondary); text-decoration: none; font-size: 0.875rem; white-space: nowrap; cursor: pointer;">
+            📁 Show in Finder
+        </a>
+    `;
+}
 
 async function loadRepositoryDetail(repoId, initialTab = null) {
     console.log('[LOAD] loadRepositoryDetail called:', { repoId, initialTab });
@@ -1410,6 +1629,7 @@ async function loadRepositoryDetail(repoId, initialTab = null) {
     try {
         // Load repository info
         const repo = await api.getRepository(repoId);
+        currentRepoData = repo; // Store repo data for file path resolution
         
         // Update header
         document.getElementById('repo-detail-name').textContent = repo.name;
@@ -1466,8 +1686,15 @@ function setupRepositoryTabs(repoId) {
     });
 }
 
-function switchTab(tabName, repoId) {
+function switchTab(tabName, repoId, updateHistory = true) {
     console.log('[TAB] switchTab called:', { tabName, repoId });
+    
+    // Update URL with tab parameter
+    if (updateHistory && repoId) {
+        const url = new URL(window.location);
+        url.hash = `#repository-detail?repo=${repoId}&tab=${tabName}`;
+        history.pushState({ page: 'repository-detail', repoId, tab: tabName }, '', url);
+    }
     
     // Update tab states
     document.querySelectorAll('.repo-tab').forEach(t => t.classList.remove('active'));
@@ -1660,7 +1887,7 @@ function filterAndRenderDependencies() {
                     ${dep.package_manager ? `<span>${escapeHtml(dep.package_manager)}</span>` : ''}
                     ${dep.is_dev ? '<span class="badge badge-secondary">dev</span>' : ''}
                 </div>
-                ${dep.file_path ? `<p class="detail-meta">Found in: ${escapeHtml(dep.file_path)}</p>` : ''}
+                ${dep.file_path ? `<p class="detail-meta">Found in: <code>${escapeHtml(dep.file_path)}</code>${createFileLink(dep.file_path, null, currentRepoData)}</p>` : ''}
             </div>
         `).join('');
         html += '</div>';
@@ -1692,7 +1919,7 @@ function filterAndRenderDependencies() {
                                     <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
                                 </div>
                             </div>
-                            ${dep.file_path && currentDependenciesGroupBy !== 'file' ? `<p class="detail-meta">Found in: ${escapeHtml(dep.file_path)}</p>` : ''}
+                            ${dep.file_path && currentDependenciesGroupBy !== 'file' ? `<p class="detail-meta">Found in: <code>${escapeHtml(dep.file_path)}</code>${createFileLink(dep.file_path, null, currentRepoData)}</p>` : ''}
                         </div>
                     `).join('')}
                 </div>
@@ -1824,7 +2051,7 @@ function filterAndRenderServices() {
                 <div class="detail-meta">
                     ${svc.provider ? `<span>${escapeHtml(svc.provider)}</span>` : ''}
                 </div>
-                ${svc.file_path ? `<p class="detail-meta">Found in: ${escapeHtml(svc.file_path)}</p>` : ''}
+                ${svc.file_path ? `<p class="detail-meta">Found in: <code>${escapeHtml(svc.file_path)}</code>${createFileLink(svc.file_path, svc.line_number, currentRepoData)}</p>` : ''}
             </div>
         `).join('');
         html += '</div>';
@@ -1857,7 +2084,7 @@ function filterAndRenderServices() {
                                 </div>
                             </div>
                             ${svc.provider && currentServicesGroupBy !== 'provider' ? `<p class="detail-meta">Provider: ${escapeHtml(svc.provider)}</p>` : ''}
-                            ${svc.file_path && currentServicesGroupBy !== 'file' ? `<p class="detail-meta">Found in: ${escapeHtml(svc.file_path)}</p>` : ''}
+                            ${svc.file_path && currentServicesGroupBy !== 'file' ? `<p class="detail-meta">Found in: <code>${escapeHtml(svc.file_path)}</code>${createFileLink(svc.file_path, svc.line_number, currentRepoData)}</p>` : ''}
                         </div>
                     `).join('')}
                 </div>
@@ -2008,6 +2235,38 @@ function renderCodeElements(elements) {
     container.innerHTML = html;
 }
 
+// Helper function to detect if a file is a build artifact
+function isBuildArtifact(filePath) {
+    if (!filePath) return false;
+    const pathLower = filePath.toLowerCase();
+    return pathLower.includes('.next/') ||
+           pathLower.includes('/dist/') ||
+           pathLower.includes('/build/') ||
+           pathLower.includes('/out/') ||
+           pathLower.includes('/.nuxt/') ||
+           pathLower.includes('node_modules/') ||
+           pathLower.includes('/target/') ||
+           pathLower.endsWith('.min.js') ||
+           pathLower.endsWith('.bundle.js') ||
+           pathLower.endsWith('.chunk.js');
+}
+
+// Helper function to get source mapping hint for build artifacts
+function getSourceMappingHint(filePath) {
+    if (!isBuildArtifact(filePath)) return '';
+    
+    const pathLower = filePath.toLowerCase();
+    let hint = '';
+    
+    if (pathLower.includes('.next/')) {
+        hint = '<p class="build-artifact-warning" style="color: var(--warning-color, #f59e0b); font-size: 0.875rem; margin-top: 0.5rem; padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.25rem; border-left: 3px solid var(--warning-color, #f59e0b);">⚠️ <strong>Build Artifact:</strong> This is a Next.js compiled file. To find the source code, check your <code>src/</code> or <code>pages/</code> directory. Use browser DevTools source maps to map back to original files.</p>';
+    } else if (pathLower.includes('/dist/') || pathLower.includes('/build/')) {
+        hint = '<p class="build-artifact-warning" style="color: var(--warning-color, #f59e0b); font-size: 0.875rem; margin-top: 0.5rem; padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.25rem; border-left: 3px solid var(--warning-color, #f59e0b);">⚠️ <strong>Build Artifact:</strong> This is a compiled file. Check your source files in <code>src/</code> directory.</p>';
+    }
+    
+    return hint;
+}
+
 function renderCodeElementsList(elements, showAll = false) {
     // Sort elements by name
     const sorted = [...elements].sort((a, b) => a.name.localeCompare(b.name));
@@ -2018,19 +2277,25 @@ function renderCodeElementsList(elements, showAll = false) {
     const displayElements = shouldPaginate ? sorted.slice(0, maxInitial) : sorted;
     
     let html = '<div class="detail-items">';
-    html += displayElements.map(el => `
+    html += displayElements.map(el => {
+        const isArtifact = isBuildArtifact(el.file_path);
+        const sourceHint = getSourceMappingHint(el.file_path);
+        return `
         <div class="detail-item clickable" data-code-name="${escapeHtml(el.name.toLowerCase())}" onclick="showEntityDetail('${currentRepoId || ''}', 'code_element', '${el.id}')">
             <div class="detail-item-header">
                 <strong>${escapeHtml(el.name)}</strong>
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
                     <span class="entity-id-badge" title="Entity ID: ${el.id}">ID: ${getShortId(el.id)}</span>
                     <span class="detail-badge">${escapeHtml(el.language || 'unknown')}</span>
+                    ${isArtifact ? '<span class="detail-badge" style="background: var(--warning-color, #f59e0b); color: white;">Build Artifact</span>' : ''}
                 </div>
             </div>
-            ${el.file_path ? `<p class="detail-meta">File: ${escapeHtml(el.file_path)}${el.line_number ? ` (line ${el.line_number})` : ''}</p>` : ''}
+            ${el.file_path ? `<p class="detail-meta">File: <code>${escapeHtml(el.file_path)}</code>${el.line_number ? ` (line ${el.line_number})` : ''}${createFileLink(el.file_path, el.line_number, currentRepoData)}</p>` : ''}
+            ${sourceHint}
             ${el.element_type ? `<p class="detail-meta" style="font-size: 0.75rem; color: var(--text-secondary);">Type: ${escapeHtml(el.element_type)}</p>` : ''}
         </div>
-    `).join('');
+    `;
+    }).join('');
     html += '</div>';
     
     if (shouldPaginate) {
@@ -2343,7 +2608,7 @@ function renderSecurityEntitiesList(entities, showAll = false) {
                 </div>
             </div>
             ${entity.arn ? `<p class="detail-meta"><strong>ARN:</strong> <code>${escapeHtml(entity.arn)}</code></p>` : ''}
-            ${entity.file_path ? `<p class="detail-meta"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}</p>` : ''}
+            ${entity.file_path ? `<p class="detail-meta"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}${createFileLink(entity.file_path, entity.line_number, currentRepoData)}</p>` : ''}
             ${hasVulns ? `
             <div class="vulnerability-list">
                 ${entityVulns.map(v => `
@@ -2541,7 +2806,7 @@ function renderDependencyDetails(entity, details) {
     html += `<div class="detail-item"><strong>Package Manager:</strong> ${escapeHtml(entity.package_manager)}</div>`;
     html += `<div class="detail-item"><strong>Dev Dependency:</strong> ${entity.is_dev ? 'Yes' : 'No'}</div>`;
     html += `<div class="detail-item"><strong>Optional:</strong> ${entity.is_optional ? 'Yes' : 'No'}</div>`;
-    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code></div>`;
+    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${createFileLink(entity.file_path, null, currentRepoData)}</div>`;
     return html;
 }
 
@@ -2551,7 +2816,7 @@ function renderServiceDetails(entity, details) {
     html += `<div class="detail-item"><strong>Provider:</strong> ${escapeHtml(entity.provider)}</div>`;
     html += `<div class="detail-item"><strong>Type:</strong> ${escapeHtml(entity.service_type)}</div>`;
     html += `<div class="detail-item"><strong>Confidence:</strong> ${(entity.confidence * 100).toFixed(1)}%</div>`;
-    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}</div>`;
+    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}${createFileLink(entity.file_path, entity.line_number, currentRepoData)}</div>`;
     if (entity.configuration) {
         try {
             const config = typeof entity.configuration === 'string' ? JSON.parse(entity.configuration) : entity.configuration;
@@ -2568,7 +2833,14 @@ function renderCodeElementDetails(entity, details) {
     html += `<div class="detail-item"><strong>Name:</strong> ${escapeHtml(entity.name)}</div>`;
     html += `<div class="detail-item"><strong>Type:</strong> ${escapeHtml(entity.element_type)}</div>`;
     html += `<div class="detail-item"><strong>Language:</strong> ${escapeHtml(entity.language)}</div>`;
-    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>:${entity.line_number}</div>`;
+    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>:${entity.line_number}${createFileLink(entity.file_path, entity.line_number, currentRepoData)}</div>`;
+    
+    // Add build artifact warning if applicable
+    const sourceHint = getSourceMappingHint(entity.file_path);
+    if (sourceHint) {
+        html += `<div class="detail-item">${sourceHint}</div>`;
+    }
+    
     if (entity.signature) html += `<div class="detail-item"><strong>Signature:</strong> <code>${escapeHtml(entity.signature)}</code></div>`;
     if (entity.visibility) html += `<div class="detail-item"><strong>Visibility:</strong> ${escapeHtml(entity.visibility)}</div>`;
     if (entity.parameters && entity.parameters.length > 0) {
@@ -2586,7 +2858,7 @@ function renderSecurityEntityDetails(entity, details) {
     html += `<div class="detail-item"><strong>Provider:</strong> ${escapeHtml(entity.provider)}</div>`;
     if (entity.arn) html += `<div class="detail-item"><strong>ARN:</strong> <code>${escapeHtml(entity.arn)}</code></div>`;
     if (entity.region) html += `<div class="detail-item"><strong>Region:</strong> ${escapeHtml(entity.region)}</div>`;
-    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}</div>`;
+    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}${createFileLink(entity.file_path, entity.line_number, currentRepoData)}</div>`;
     if (entity.configuration) {
         try {
             const config = typeof entity.configuration === 'string' ? JSON.parse(entity.configuration) : entity.configuration;
@@ -2931,6 +3203,9 @@ async function showToolDetail(repoId, toolId) {
     }
 }
 
+// Global editor protocol (default: vscode)
+let editorProtocol = 'vscode';
+
 async function loadVersion() {
     try {
         const response = await api.getVersion();
@@ -2938,6 +3213,11 @@ async function loadVersion() {
         if (versionElement && response.version) {
             versionElement.textContent = `v${response.version}`;
             console.log('Version loaded:', response.version);
+        }
+        // Store editor protocol from config
+        if (response.editor_protocol) {
+            editorProtocol = response.editor_protocol;
+            console.log('Editor protocol:', editorProtocol);
         }
     } catch (error) {
         console.error('Failed to load version:', error);
