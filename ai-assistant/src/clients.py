@@ -77,6 +77,22 @@ class ArchitectureDecoderClient:
         response.raise_for_status()
         return response.json()
 
+    async def get_tests(self, repo_id: str) -> List[Dict[str, Any]]:
+        """Get tests for repository"""
+        response = await self.client.get(
+            f"{self.base_url}/api/v1/repositories/{repo_id}/tests"
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def get_documentation(self, repo_id: str) -> List[Dict[str, Any]]:
+        """Get documentation files for repository"""
+        response = await self.client.get(
+            f"{self.base_url}/api/v1/repositories/{repo_id}/documentation"
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def get_graph(self, repo_id: str) -> Dict[str, Any]:
         """Get knowledge graph for repository"""
         response = await self.client.get(

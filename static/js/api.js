@@ -154,6 +154,10 @@ class WavelengthAPI {
     async getDocumentation(repoId) {
         return this.request(`/repositories/${repoId}/documentation`);
     }
+
+    async getTests(repoId) {
+        return this.request(`/repositories/${repoId}/tests`);
+    }
 }
 
 // Global API instance

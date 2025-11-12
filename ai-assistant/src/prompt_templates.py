@@ -84,6 +84,51 @@ Based on the following codebase analysis, answer the user's question:
                 prompt += "\n"
             prompt += "\n"
 
+        # Add tests
+        tests = [s for s in sources if s.get("type") == "test"]
+        if tests:
+            prompt += "\n## Tests:\n\n"
+            for test in tests:
+                prompt += f"- **{test.get('name')}**"
+                if test.get('test_framework'):
+                    prompt += f" ({test.get('test_framework')})"
+                if test.get('test_type'):
+                    prompt += f" - {test.get('test_type')}"
+                if test.get('file_path'):
+                    prompt += f"\n  Location: `{test['file_path']}`"
+                if test.get('line_number'):
+                    prompt += f" (line {test['line_number']})"
+                if test.get('suite_name'):
+                    prompt += f"\n  Suite: {test.get('suite_name')}"
+                if test.get('signature'):
+                    prompt += f"\n  Signature: `{test.get('signature')}`"
+                prompt += "\n"
+            prompt += "\n"
+
+        # Add documentation
+        documentation = [s for s in sources if s.get("type") == "documentation"]
+        if documentation:
+            prompt += "\n## Documentation:\n\n"
+            for doc in documentation:
+                prompt += f"- **{doc.get('file_name')}**"
+                if doc.get('title'):
+                    prompt += f" - {doc.get('title')}"
+                if doc.get('doc_type'):
+                    prompt += f" ({doc.get('doc_type')})"
+                if doc.get('file_path'):
+                    prompt += f"\n  Path: `{doc['file_path']}`"
+                if doc.get('description'):
+                    prompt += f"\n  Description: {doc.get('description')[:200]}"
+                if doc.get('has_code_examples'):
+                    prompt += f"\n  Contains code examples"
+                if doc.get('has_api_references'):
+                    prompt += f"\n  Contains API references"
+                if doc.get('content_preview'):
+                    preview = doc.get('content_preview', '')[:300]
+                    prompt += f"\n  Preview: {preview}..."
+                prompt += "\n"
+            prompt += "\n"
+
         # Add related entities
         related = context.get("related", {})
         if related.get("services") or related.get("dependencies"):

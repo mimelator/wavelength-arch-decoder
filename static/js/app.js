@@ -343,6 +343,10 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
         'PackageManager': 'Package Manager',
         'service_provider': 'Provider',
         'ServiceProvider': 'Provider',
+        'test': 'Test',
+        'Test': 'Test',
+        'test_framework': 'Test Framework',
+        'TestFramework': 'Test Framework',
     };
     
     // Map edge types to readable labels (empty string = no label shown)
@@ -357,6 +361,12 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
         'uses_package_manager': '',
         'ProvidedBy': 'by',  // Shorten to just "by"
         'provided_by': 'by',
+        'HasTest': '',  // Hide "has test" - obvious
+        'has_test': '',
+        'TestUsesFramework': 'uses',  // Show "uses" for test frameworks
+        'test_uses_framework': 'uses',
+        'TestTestsCode': 'tests',  // Show "tests" relationship
+        'test_tests_code': 'tests',
         'RelatedTo': '',  // Hide generic relationships
         'related_to': '',
     };
@@ -369,6 +379,8 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
         if (typeLower.includes('service') || typeLower.includes('provider')) return enabledNodeTypes.service;
         if (typeLower.includes('code') || typeLower.includes('function') || typeLower.includes('class')) return enabledNodeTypes.code;
         if (typeLower.includes('security')) return enabledNodeTypes.security;
+        if (typeLower.includes('test_framework') || typeLower.includes('testframework')) return enabledNodeTypes.test_framework;
+        if (typeLower.includes('test') && !typeLower.includes('framework')) return enabledNodeTypes.test;
         return true; // Default to showing unknown types
     };
     
@@ -614,6 +626,10 @@ function showNodeDetails(node, graphData, repoId = null) {
         nodeType = 'security_entity';
     } else if (nodeType === 'security_entity' || nodeType.includes('security_entity')) {
         nodeType = 'security_entity';
+    } else if (nodeType === 'testframework' || nodeType.includes('testframework') || nodeType.includes('test_framework')) {
+        nodeType = 'test_framework';
+    } else if (nodeType === 'test' || (nodeType.includes('test') && !nodeType.includes('framework'))) {
+        nodeType = 'test';
     }
     
     const tabMapping = {
@@ -624,6 +640,8 @@ function showNodeDetails(node, graphData, repoId = null) {
         'repository': 'overview',
         'package_manager': 'dependencies',
         'service_provider': 'services',
+        'test': 'tests',
+        'test_framework': 'tests',
     };
     const targetTab = tabMapping[nodeType] || null;
     
@@ -853,6 +871,12 @@ function getNodeColor(type) {
     } else if (typeLower.includes('security') || typeLower.includes('iam') || typeLower.includes('lambda') || typeLower.includes('s3')) {
         background = getColor('--entity-security', '#ef4444');
         border = isDarkMode ? '#f87171' : '#dc2626';
+    } else if (typeLower.includes('test_framework') || typeLower.includes('testframework')) {
+        background = getColor('--entity-test-framework', '#f472b6');
+        border = isDarkMode ? '#f9a8d4' : '#ec4899';
+    } else if (typeLower.includes('test') && !typeLower.includes('framework')) {
+        background = getColor('--entity-test', '#ec4899');
+        border = isDarkMode ? '#f9a8d4' : '#db2777';
     } else {
         background = getColor('--secondary-color', '#64748b');
         border = isDarkMode ? '#94a3b8' : '#475569';
@@ -873,6 +897,7 @@ function getNodeColor(type) {
 }
 
 function getNodeShape(type) {
+    const typeLower = (type || '').toLowerCase();
     const shapes = {
         'repository': 'box',
         'dependency': 'dot',
@@ -881,8 +906,18 @@ function getNodeShape(type) {
         'service_provider': 'star',
         'code_element': 'triangle',
         'security_entity': 'star',
+        'test': 'square',
+        'test_framework': 'triangleDown',
     };
-    return shapes[type] || 'dot';
+    
+    // Handle variations
+    if (typeLower.includes('test_framework') || typeLower.includes('testframework')) {
+        return 'triangleDown';
+    } else if (typeLower.includes('test') && !typeLower.includes('framework')) {
+        return 'square';
+    }
+    
+    return shapes[typeLower] || shapes[type] || 'dot';
 }
 
 // Search
@@ -1743,6 +1778,10 @@ function switchTab(tabName, repoId, updateHistory = true) {
             console.log('[TAB] Loading tools');
             loadTools(repoId);
             break;
+        case 'tests':
+            console.log('[TAB] Loading tests');
+            loadTests(repoId);
+            break;
         case 'documentation':
             console.log('[TAB] Loading documentation');
             loadDocumentation(repoId);
@@ -1758,18 +1797,20 @@ function switchTab(tabName, repoId, updateHistory = true) {
 
 async function loadRepositoryOverview(repoId) {
     try {
-        const [deps, services, code, security, tools] = await Promise.all([
+        const [deps, services, code, security, tools, tests] = await Promise.all([
             api.getDependencies(repoId).catch(() => []),
             api.getServices(repoId).catch(() => []),
             api.getCodeElements(repoId).catch(() => []),
             api.getSecurityEntities(repoId).catch(() => []),
-            api.getTools(repoId).catch(() => [])
+            api.getTools(repoId).catch(() => []),
+            api.getTests(repoId).catch(() => [])
         ]);
         
         document.getElementById('stat-deps-count').textContent = deps.length || 0;
         document.getElementById('stat-services-count').textContent = services.length || 0;
         document.getElementById('stat-code-count').textContent = code.length || 0;
         document.getElementById('stat-security-count').textContent = security.length || 0;
+        // Note: Tests count not shown in overview stats yet
     } catch (error) {
         console.error('Failed to load overview:', error);
     }
@@ -2654,6 +2695,8 @@ let enabledNodeTypes = {
     service: true,
     code: false, // Code elements off by default
     security: true,
+    test: false, // Tests off by default
+    test_framework: false, // Test frameworks off by default
 };
 
 async function loadRepositoryGraph(repoId) {
@@ -3020,31 +3063,51 @@ async function loadTools(repoId) {
             return;
         }
         
+        // Get repo data for file linking
+        let repoData = null;
+        try {
+            repoData = await api.getRepository(repoId).catch(() => null);
+        } catch (e) {
+            // Ignore - will use null repoData
+        }
+        
         // Setup filters
-        setupToolFilters(tools);
+        setupToolFilters(tools, repoData);
         
         // Initial render
-        filterAndRenderTools();
+        filterAndRenderTools(repoData);
     } catch (error) {
         container.innerHTML = `<p class="error-text">Failed to load tools: ${escapeHtml(error.message)}</p>`;
     }
 }
 
-function setupToolFilters(tools) {
+function setupToolFilters(tools, repoData = null) {
     const searchInput = document.getElementById('tools-search');
     const categoryFilter = document.getElementById('tools-category-filter');
     const typeFilter = document.getElementById('tools-type-filter');
     
+    // Store repoData for use in filterAndRenderTools
+    window.currentToolsRepoData = repoData;
+    
     // Setup event listeners
-    searchInput.addEventListener('input', () => filterAndRenderTools());
-    categoryFilter.addEventListener('change', () => filterAndRenderTools());
-    typeFilter.addEventListener('change', () => filterAndRenderTools());
+    searchInput.addEventListener('input', () => {
+        api.getRepository(currentRepoId).then(rd => filterAndRenderTools(rd)).catch(() => filterAndRenderTools(repoData));
+    });
+    categoryFilter.addEventListener('change', () => {
+        api.getRepository(currentRepoId).then(rd => filterAndRenderTools(rd)).catch(() => filterAndRenderTools(repoData));
+    });
+    typeFilter.addEventListener('change', () => {
+        api.getRepository(currentRepoId).then(rd => filterAndRenderTools(rd)).catch(() => filterAndRenderTools(repoData));
+    });
 }
 
-function filterAndRenderTools() {
-    const searchTerm = document.getElementById('tools-search').value.toLowerCase();
-    const categoryFilter = document.getElementById('tools-category-filter').value;
-    const typeFilter = document.getElementById('tools-type-filter').value;
+function filterAndRenderTools(repoData = null) {
+    const searchTerm = document.getElementById('tools-search')?.value.toLowerCase() || '';
+    const categoryFilter = document.getElementById('tools-category-filter')?.value || '';
+    const typeFilter = document.getElementById('tools-type-filter')?.value || '';
+    
+    // Use provided repoData or try to get from window
+    const repoDataToUse = repoData || window.currentToolsRepoData || null;
     
     let filtered = allTools.filter(tool => {
         const matchesSearch = !searchTerm || 
@@ -3092,15 +3155,16 @@ function filterAndRenderTools() {
             <div class="detail-group">
                 <h4 class="detail-group-header">${escapeHtml(categoryLabel)} <span class="detail-group-count">${categoryTools.length}</span></h4>
                 <div class="detail-group-content">
-                    ${categoryTools.map(tool => renderToolItem(tool)).join('')}
+                    ${categoryTools.map(tool => renderToolItem(tool, repoDataToUse)).join('')}
                 </div>
             </div>
         `;
     }).join('');
 }
 
-function renderToolItem(tool) {
+function renderToolItem(tool, repoData = null) {
     const filePath = tool.file_path ? tool.file_path.replace(/^\.\/cache\/repos\/[^\/]+\//, '') : '';
+    const fileLink = filePath ? createFileLink(tool.file_path, tool.line_number, repoData) : '';
     return `
         <div class="detail-item clickable" onclick="showToolDetail('${currentRepoId || ''}', '${tool.id}')">
             <div class="detail-item-header">
@@ -3113,7 +3177,7 @@ function renderToolItem(tool) {
                 </div>
             </div>
             <div class="detail-meta">
-                ${filePath ? `<p><strong>File:</strong> <code>${escapeHtml(filePath)}</code>${tool.line_number ? `:${tool.line_number}` : ''}</p>` : ''}
+                ${filePath ? `<p><strong>File:</strong> <code>${escapeHtml(filePath)}</code>${tool.line_number ? `:${tool.line_number}` : ''} ${fileLink}</p>` : ''}
                 <p><strong>Detection Method:</strong> ${escapeHtml(tool.detection_method || 'unknown')}</p>
                 ${tool.confidence ? `<p><strong>Confidence:</strong> ${(tool.confidence * 100).toFixed(0)}%</p>` : ''}
             </div>
@@ -3141,6 +3205,14 @@ async function showToolDetail(repoId, toolId) {
         
         const scripts = await api.getToolScripts(repoId, toolId).catch(() => []);
         
+        // Get repo data for file linking
+        let repoData = null;
+        try {
+            repoData = await api.getRepository(repoId).catch(() => null);
+        } catch (e) {
+            // Ignore - will use null repoData
+        }
+        
         const filePath = tool.file_path ? tool.file_path.replace(/^\.\/cache\/repos\/[^\/]+\//, '') : '';
         let config = {};
         try {
@@ -3162,7 +3234,8 @@ async function showToolDetail(repoId, toolId) {
             html += `<div class="detail-item"><strong>Version:</strong> ${escapeHtml(tool.version)}</div>`;
         }
         if (filePath) {
-            html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(filePath)}</code>${tool.line_number ? `:${tool.line_number}` : ''}</div>`;
+            const fileLink = createFileLink(tool.file_path, tool.line_number, repoData);
+            html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(filePath)}</code>${tool.line_number ? `:${tool.line_number}` : ''} ${fileLink}</div>`;
         }
         html += `<div class="detail-item"><strong>Detection Method:</strong> ${escapeHtml(tool.detection_method || 'unknown')}</div>`;
         if (tool.confidence) {
@@ -3228,6 +3301,9 @@ async function loadVersion() {
 // Store documentation for filtering
 let allDocumentation = [];
 
+// Store tests for filtering
+let allTests = [];
+
 async function loadDocumentation(repoId) {
     currentRepoId = repoId;
     const container = document.getElementById('documentation-list');
@@ -3246,25 +3322,37 @@ async function loadDocumentation(repoId) {
             return;
         }
         
+        // Get repo data for file linking
+        let repoData = null;
+        try {
+            repoData = await api.getRepository(repoId).catch(() => null);
+        } catch (e) {
+            // Ignore - will use null repoData
+        }
+        
         // Setup filter event listeners
         const searchInput = document.getElementById('documentation-search');
         const typeFilter = document.getElementById('documentation-type-filter');
         
         if (searchInput) {
-            searchInput.oninput = () => filterAndRenderDocumentation(repoId);
+            searchInput.oninput = () => {
+                api.getRepository(repoId).then(rd => filterAndRenderDocumentation(repoId, rd)).catch(() => filterAndRenderDocumentation(repoId, repoData));
+            };
         }
         if (typeFilter) {
-            typeFilter.onchange = () => filterAndRenderDocumentation(repoId);
+            typeFilter.onchange = () => {
+                api.getRepository(repoId).then(rd => filterAndRenderDocumentation(repoId, rd)).catch(() => filterAndRenderDocumentation(repoId, repoData));
+            };
         }
         
         // Initial render
-        filterAndRenderDocumentation(repoId);
+        filterAndRenderDocumentation(repoId, repoData);
     } catch (error) {
         container.innerHTML = `<p class="error-text">Failed to load documentation: ${escapeHtml(error.message)}</p>`;
     }
 }
 
-function filterAndRenderDocumentation(repoId) {
+function filterAndRenderDocumentation(repoId, repoData = null) {
     const searchTerm = document.getElementById('documentation-search')?.value.toLowerCase() || '';
     const typeFilter = document.getElementById('documentation-type-filter')?.value || '';
     
@@ -3318,18 +3406,180 @@ function filterAndRenderDocumentation(repoId) {
             <div class="detail-group">
                 <h4 class="detail-group-header">${escapeHtml(type)} <span class="detail-group-count">${typeDocs.length}</span></h4>
                 <div class="detail-group-content">
-                    ${typeDocs.map(doc => renderDocumentationItem(doc)).join('')}
+                    ${typeDocs.map(doc => renderDocumentationItem(doc, repoData)).join('')}
                 </div>
             </div>
         `;
     }).join('');
 }
 
-function renderDocumentationItem(doc) {
+async function loadTests(repoId) {
+    currentRepoId = repoId;
+    const container = document.getElementById('tests-list');
+    container.innerHTML = '<p class="loading-text">Loading tests...</p>';
+    
+    // Clear previous test data
+    allTests = [];
+    
+    try {
+        const tests = await api.getTests(repoId);
+        // Filter by repository_id as a safety measure
+        allTests = tests.filter(test => test.repository_id === repoId);
+        
+        if (allTests.length === 0) {
+            container.innerHTML = '<p>No tests found. Run analysis first.</p>';
+            return;
+        }
+        
+        // Get repo data for file linking
+        let repoData = null;
+        try {
+            repoData = await api.getRepository(repoId).catch(() => null);
+        } catch (e) {
+            // Ignore - will use null repoData
+        }
+        
+        // Setup filters
+        setupTestFilters();
+        
+        // Initial render
+        filterAndRenderTests(repoData);
+    } catch (error) {
+        container.innerHTML = `<p class="error-text">Failed to load tests: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+function setupTestFilters() {
+    const searchInput = document.getElementById('tests-search');
+    const frameworkFilter = document.getElementById('tests-framework-filter');
+    const languageFilter = document.getElementById('tests-language-filter');
+    
+    // Setup event listeners
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            api.getRepository(currentRepoId).then(repoData => filterAndRenderTests(repoData)).catch(() => filterAndRenderTests(null));
+        });
+    }
+    if (frameworkFilter) {
+        frameworkFilter.addEventListener('change', () => {
+            api.getRepository(currentRepoId).then(repoData => filterAndRenderTests(repoData)).catch(() => filterAndRenderTests(null));
+        });
+    }
+    if (languageFilter) {
+        languageFilter.addEventListener('change', () => {
+            api.getRepository(currentRepoId).then(repoData => filterAndRenderTests(repoData)).catch(() => filterAndRenderTests(null));
+        });
+    }
+}
+
+function filterAndRenderTests(repoData = null) {
+    const searchTerm = document.getElementById('tests-search')?.value.toLowerCase() || '';
+    const frameworkFilter = document.getElementById('tests-framework-filter')?.value || '';
+    const languageFilter = document.getElementById('tests-language-filter')?.value || '';
+    
+    let filtered = allTests.filter(test => {
+        const matchesSearch = !searchTerm || 
+            test.name.toLowerCase().includes(searchTerm) ||
+            (test.test_framework && test.test_framework.toLowerCase().includes(searchTerm)) ||
+            (test.file_path && test.file_path.toLowerCase().includes(searchTerm)) ||
+            (test.suite_name && test.suite_name.toLowerCase().includes(searchTerm));
+        const matchesFramework = !frameworkFilter || test.test_framework === frameworkFilter;
+        const matchesLanguage = !languageFilter || test.language === languageFilter;
+        return matchesSearch && matchesFramework && matchesLanguage;
+    });
+    
+    // Update filter info
+    const filterInfo = document.getElementById('tests-filter-info');
+    if (filterInfo) {
+        const activeFilters = [];
+        if (searchTerm) activeFilters.push(`search: "${searchTerm}"`);
+        if (frameworkFilter) activeFilters.push(`framework: ${frameworkFilter}`);
+        if (languageFilter) activeFilters.push(`language: ${languageFilter}`);
+        filterInfo.textContent = activeFilters.length > 0 
+            ? `Showing ${filtered.length} of ${allTests.length} tests (${activeFilters.join(', ')})`
+            : `Showing ${filtered.length} test(s)`;
+    }
+    
+    // Group by framework
+    const grouped = {};
+    filtered.forEach(test => {
+        const groupKey = test.test_framework || 'unknown';
+        if (!grouped[groupKey]) grouped[groupKey] = [];
+        grouped[groupKey].push(test);
+    });
+    
+    // Render
+    const container = document.getElementById('tests-list');
+    if (Object.keys(grouped).length === 0) {
+        container.innerHTML = '<p>No tests match the current filters.</p>';
+        return;
+    }
+    
+    const sortedGroups = Object.keys(grouped).sort();
+    container.innerHTML = sortedGroups.map(framework => {
+        const frameworkTests = grouped[framework];
+        return `
+            <div class="detail-group">
+                <h4 class="detail-group-header">${escapeHtml(framework)} <span class="detail-group-count">${frameworkTests.length}</span></h4>
+                <div class="detail-group-content">
+                    ${frameworkTests.map(test => renderTestItem(test, repoData)).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderTestItem(test, repoData = null) {
+    let assertions = [];
+    let setupMethods = [];
+    let teardownMethods = [];
+    let parameters = [];
+    
+    try {
+        assertions = JSON.parse(test.assertions || '[]');
+        setupMethods = JSON.parse(test.setup_methods || '[]');
+        teardownMethods = JSON.parse(test.teardown_methods || '[]');
+        parameters = JSON.parse(test.parameters || '[]');
+    } catch (e) {
+        console.warn('Failed to parse test JSON fields:', e);
+    }
+    
+    const fileLink = createFileLink(test.file_path, test.line_number, repoData);
+    
+    return `
+        <div class="detail-item" data-test-id="${test.id}">
+            <div class="detail-item-header">
+                <span class="entity-id-badge">${getShortId(test.id)}</span>
+                <h4 class="detail-item-title">${escapeHtml(test.name)}</h4>
+                <span class="detail-item-badge">${escapeHtml(test.test_framework)}</span>
+                ${test.test_type ? `<span class="detail-item-badge">${escapeHtml(test.test_type)}</span>` : ''}
+                <span class="detail-item-badge">${escapeHtml(test.language)}</span>
+            </div>
+            <div class="detail-item-content">
+                ${test.suite_name ? `<div class="detail-item-row"><strong>Suite:</strong> ${escapeHtml(test.suite_name)}</div>` : ''}
+                <div class="detail-item-row">
+                    <strong>File:</strong> ${fileLink}
+                    ${test.line_number ? ` <span class="text-muted">(line ${test.line_number})</span>` : ''}
+                </div>
+                ${test.signature ? `<div class="detail-item-row"><strong>Signature:</strong> <code>${escapeHtml(test.signature)}</code></div>` : ''}
+                ${parameters.length > 0 ? `<div class="detail-item-row"><strong>Parameters:</strong> ${parameters.map(p => `<code>${escapeHtml(p)}</code>`).join(', ')}</div>` : ''}
+                ${test.return_type ? `<div class="detail-item-row"><strong>Return Type:</strong> <code>${escapeHtml(test.return_type)}</code></div>` : ''}
+                ${assertions.length > 0 ? `<div class="detail-item-row"><strong>Assertions:</strong> ${assertions.length} assertion(s)</div>` : ''}
+                ${setupMethods.length > 0 ? `<div class="detail-item-row"><strong>Setup:</strong> ${setupMethods.map(m => `<code>${escapeHtml(m)}</code>`).join(', ')}</div>` : ''}
+                ${teardownMethods.length > 0 ? `<div class="detail-item-row"><strong>Teardown:</strong> ${teardownMethods.map(m => `<code>${escapeHtml(m)}</code>`).join(', ')}</div>` : ''}
+                ${test.doc_comment ? `<div class="detail-item-row"><strong>Documentation:</strong> <pre>${escapeHtml(test.doc_comment)}</pre></div>` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function renderDocumentationItem(doc, repoData = null) {
     const badges = [];
     if (doc.has_code_examples) badges.push('<span class="detail-badge badge-info">Code Examples</span>');
     if (doc.has_api_references) badges.push('<span class="detail-badge badge-info">API References</span>');
     if (doc.has_diagrams) badges.push('<span class="detail-badge badge-info">Diagrams</span>');
+    
+    const fileLink = createFileLink(doc.file_path, null, repoData);
     
     return `
         <div class="detail-item">
@@ -3342,7 +3592,7 @@ function renderDocumentationItem(doc) {
                 </div>
             </div>
             <div class="detail-meta">
-                <p><strong>Path:</strong> <code>${escapeHtml(doc.file_path)}</code></p>
+                <p><strong>Path:</strong> <code>${escapeHtml(doc.file_path)}</code> ${fileLink}</p>
                 ${doc.title ? `<p><strong>Title:</strong> ${escapeHtml(doc.title)}</p>` : ''}
                 ${doc.description ? `<p><strong>Description:</strong> ${escapeHtml(doc.description)}</p>` : ''}
                 <p><strong>Stats:</strong> ${doc.word_count} words, ${doc.line_count} lines</p>

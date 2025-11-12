@@ -5,7 +5,7 @@ use base64::{Engine as _, engine::general_purpose};
 use crate::api::{ApiState, ErrorResponse};
 use crate::storage::{RepositoryRepository, DependencyRepository, ToolRepository};
 use crate::ingestion::{RepositoryCrawler, RepositoryCredentials, AuthType};
-use crate::analysis::{DependencyExtractor, ToolDetector};
+use crate::analysis::{DependencyExtractor, ToolDetector, TestDetector};
 use crate::security::ServiceDetector;
 use crate::security::analyzer::SecurityAnalyzer;
 use crate::graph::GraphBuilder;
@@ -86,8 +86,8 @@ pub async fn analyze_repository(
     let repository_id = body.repository_id.clone();
     log::info!("Starting analysis for repository ID: {}", repository_id);
     
-    // Start progress tracking (10 steps including documentation indexing)
-    state.progress_tracker.start_analysis(&repository_id, 10);
+    // Start progress tracking (11 steps including test detection and documentation indexing)
+    state.progress_tracker.start_analysis(&repository_id, 11);
     
     // Clone state for the blocking task
     let state_clone = state.clone();
@@ -354,6 +354,7 @@ fn perform_analysis(
         state.service_repo.clone(),
         state.tool_repo.clone(),
         state.code_relationship_repo.clone(),
+        state.test_repo.clone(),
     );
     
     log::info!("Building knowledge graph from stored data (dependencies, services, code elements)...");
@@ -436,6 +437,58 @@ fn perform_analysis(
     }
     log::info!("✓ Stored {} code calls", code_structure.calls.len());
 
+    // Detect tests
+    state.progress_tracker.update_progress(&repository_id, 9, "Detecting tests", "Scanning for test files and test functions...", None);
+    log::info!("Step 9/11: Detecting tests...");
+    log::info!("Scanning repository for test files (this may take a while for large repositories)...");
+    let test_detector = TestDetector::new();
+    let tests = match test_detector.detect_tests(&repo_path) {
+        Ok(t) => {
+            // Count test frameworks for better diagnostics
+            use std::collections::HashMap;
+            let mut framework_counts: HashMap<String, usize> = HashMap::new();
+            let mut language_counts: HashMap<String, usize> = HashMap::new();
+            for test in &t {
+                *framework_counts.entry(format!("{:?}", test.test_framework)).or_insert(0) += 1;
+                *language_counts.entry(test.language.clone()).or_insert(0) += 1;
+            }
+            let framework_summary: Vec<String> = framework_counts.iter()
+                .map(|(k, v)| format!("{}: {}", k, v))
+                .collect();
+            let language_summary: Vec<String> = language_counts.iter()
+                .map(|(k, v)| format!("{}: {}", k, v))
+                .collect();
+            log::info!("✓ Test detection complete: {} test(s) ({}), languages: {}", 
+                t.len(), framework_summary.join(", "), language_summary.join(", "));
+            state.progress_tracker.update_progress(&repository_id, 9, "Detecting tests", 
+                format!("Found {} test(s) using {}", t.len(), framework_summary.join(", ")).as_str(),
+                Some(serde_json::json!({
+                    "tests": t.len(),
+                    "frameworks": framework_counts.len()
+                })));
+            t
+        },
+        Err(e) => {
+            log::error!("✗ Failed to detect tests: {}", e);
+            // Don't fail the entire analysis if test detection fails
+            log::warn!("⚠ Continuing analysis without test detection");
+            Vec::new()
+        }
+    };
+
+    // Store tests
+    if !tests.is_empty() {
+        log::info!("Storing {} test(s) in database...", tests.len());
+        if let Err(e) = state.test_repo.store_tests(&repo.id, &tests) {
+            log::warn!("⚠ Failed to store tests: {}", e);
+            // Don't fail the entire analysis if test storage fails
+        } else {
+            log::info!("✓ Stored {} test(s)", tests.len());
+        }
+    } else {
+        log::info!("✓ No tests detected");
+    }
+
     // Detect relationships between code elements and services/dependencies
     log::info!("Detecting relationships between code elements and services/dependencies...");
     use crate::analysis::CodeRelationshipDetector;
@@ -493,8 +546,8 @@ fn perform_analysis(
     }
 
     // Analyze security configuration
-    state.progress_tracker.update_progress(&repository_id, 9, "Analyzing security configuration", "Scanning configuration files and source code for security entities, API keys, and vulnerabilities...", None);
-    log::info!("Step 9/10: Analyzing security configuration...");
+    state.progress_tracker.update_progress(&repository_id, 10, "Analyzing security configuration", "Scanning configuration files and source code for security entities, API keys, and vulnerabilities...", None);
+    log::info!("Step 10/11: Analyzing security configuration...");
     log::info!("Scanning repository for security entities (API keys, secrets, IAM roles, etc.)...");
     let security_analyzer = SecurityAnalyzer::new();
     let security_analysis = match security_analyzer.analyze_repository(&repo_path, Some(&code_structure), Some(&services)) {
@@ -567,8 +620,8 @@ fn perform_analysis(
     log::info!("✓ Stored {} security vulnerabilities", security_analysis.vulnerabilities.len());
 
     // Index documentation files (experimental - may be removed)
-    state.progress_tracker.update_progress(&repository_id, 10, "Indexing developer documentation", "Scanning for README, API docs, and other documentation files...", None);
-    log::info!("Step 10/10: Indexing developer documentation...");
+    state.progress_tracker.update_progress(&repository_id, 11, "Indexing developer documentation", "Scanning for README, API docs, and other documentation files...", None);
+    log::info!("Step 11/11: Indexing developer documentation...");
     use crate::analysis::DocumentationIndexer;
     let doc_indexer = DocumentationIndexer::new();
     match doc_indexer.index_repository(&repo_path, &repo.id) {
@@ -620,6 +673,7 @@ fn perform_analysis(
             "security_entities_found": security_analysis.entities.len(),
             "security_relationships_found": security_analysis.relationships.len(),
             "security_vulnerabilities_found": security_analysis.vulnerabilities.len(),
+            "tests_found": tests.len(),
             "documentation_indexed": true
         }),
     })

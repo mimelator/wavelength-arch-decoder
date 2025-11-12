@@ -24,6 +24,8 @@
     --entity-code: #8b5cf6; /* Purple */
     --entity-security: #ef4444; /* Red */
     --entity-repository: #f59e0b; /* Orange */
+    --entity-test: #ec4899; /* Pink */
+    --entity-test-framework: #f472b6; /* Light Pink */
 }
 
 /* Dark theme */
@@ -47,6 +49,8 @@
     --entity-code: #a78bfa;
     --entity-security: #f87171;
     --entity-repository: #fbbf24;
+    --entity-test: #f9a8d4;
+    --entity-test-framework: #fbcfe8;
 }
 
 body {

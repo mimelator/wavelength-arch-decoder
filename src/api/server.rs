@@ -18,9 +18,10 @@ use crate::api::jobs::{create_job, get_job_status, list_jobs, create_scheduled_j
 use crate::api::progress::get_analysis_progress;
 use crate::api::reports::generate_report;
 use crate::api::documentation::{get_documentation, get_documentation_by_type, search_documentation};
+use crate::api::tests::{get_tests, get_tests_by_framework};
 use crate::crawler::webhooks::{handle_github_webhook, handle_gitlab_webhook};
 use crate::config::Config;
-use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository, DocumentationRepository};
+use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository, DocumentationRepository, TestRepository};
 use crate::api::progress::ProgressTracker;
 use std::sync::Arc;
 use actix_web::HttpResponse;
@@ -48,6 +49,7 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
     let security_repo = SecurityRepository::new(db.clone());
     let tool_repo = ToolRepository::new(db.clone());
     let documentation_repo = DocumentationRepository::new(db.clone());
+    let test_repo = TestRepository::new(db.clone());
     
     // Initialize progress tracker
     let progress_tracker = Arc::new(ProgressTracker::new());
@@ -62,6 +64,7 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
         security_repo: security_repo.clone(),
         tool_repo: tool_repo.clone(),
         documentation_repo: documentation_repo.clone(),
+        test_repo: test_repo.clone(),
         progress_tracker: progress_tracker.clone(),
     });
     
@@ -149,6 +152,9 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     .route("/repositories/{id}/documentation", web::get().to(get_documentation))
                     .route("/repositories/{id}/documentation/type/{doc_type}", web::get().to(get_documentation_by_type))
                     .route("/repositories/{id}/documentation/search", web::get().to(search_documentation))
+                    // Test endpoints
+                    .route("/repositories/{id}/tests", web::get().to(get_tests))
+                    .route("/repositories/{repo_id}/tests/framework/{framework}", web::get().to(get_tests_by_framework))
                     // Job endpoints (Phase 8)
                     .route("/jobs", web::post().to(create_job))
                     .route("/jobs", web::get().to(list_jobs))

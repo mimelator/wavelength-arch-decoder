@@ -8,6 +8,8 @@ class QueryIntent(Enum):
     FIND_DEPENDENCIES = "find_dependencies"
     REFACTORING_IMPACT = "refactoring_impact"
     TOOL_DISCOVERY = "tool_discovery"
+    FIND_TESTS = "find_tests"
+    FIND_DOCUMENTATION = "find_documentation"
     GENERAL = "general"
 
 class QueryParser:
@@ -52,6 +54,27 @@ class QueryParser:
             r"test.*tools",
             r"linter",
             r"which tools",
+        ],
+        QueryIntent.FIND_TESTS: [
+            r"what tests",
+            r"which tests",
+            r"test.*files",
+            r"test.*functions",
+            r"test.*cases",
+            r"show.*tests",
+            r"list.*tests",
+            r"test.*coverage",
+            r"test.*framework",
+        ],
+        QueryIntent.FIND_DOCUMENTATION: [
+            r"what documentation",
+            r"which documentation",
+            r"readme",
+            r"api.*docs",
+            r"documentation.*files",
+            r"show.*docs",
+            r"list.*docs",
+            r"documentation.*available",
         ],
     }
 

@@ -51,6 +51,14 @@ class ContextBuilder:
             context.update(await self._build_tool_context(
                 repository_id, max_results
             ))
+        elif intent_type == QueryIntent.FIND_TESTS:
+            context.update(await self._build_test_context(
+                repository_id, topics, max_results
+            ))
+        elif intent_type == QueryIntent.FIND_DOCUMENTATION:
+            context.update(await self._build_documentation_context(
+                repository_id, topics, max_results
+            ))
         else:
             # General query - get all relevant data
             context.update(await self._build_general_context(
@@ -245,17 +253,116 @@ class ContextBuilder:
             "related": {}
         }
 
+    async def _build_test_context(
+        self, repo_id: str, topics: List[str], max_results: int
+    ) -> Dict[str, Any]:
+        """Build context for test discovery"""
+        try:
+            tests = await self.client.get_tests(repo_id)
+        except Exception as e:
+            print(f"Warning: Could not get tests: {e}")
+            return {"sources": [], "related": {}}
+
+        # Filter by topics
+        if topics:
+            filtered = [
+                t for t in tests
+                if any(topic.lower() in t.get("name", "").lower()
+                      or topic.lower() in t.get("test_framework", "").lower()
+                      or topic.lower() in t.get("file_path", "").lower()
+                      for topic in topics)
+            ]
+        else:
+            filtered = tests
+
+        sources = [
+            {
+                "type": "test",
+                "id": t.get("id"),
+                "name": t.get("name"),
+                "test_framework": t.get("test_framework"),
+                "test_type": t.get("test_type"),
+                "file_path": t.get("file_path"),
+                "line_number": t.get("line_number"),
+                "language": t.get("language"),
+                "suite_name": t.get("suite_name"),
+                "signature": t.get("signature"),
+            }
+            for t in filtered[:max_results]
+        ]
+
+        return {
+            "sources": sources,
+            "related": {}
+        }
+
+    async def _build_documentation_context(
+        self, repo_id: str, topics: List[str], max_results: int
+    ) -> Dict[str, Any]:
+        """Build context for documentation discovery"""
+        try:
+            docs = await self.client.get_documentation(repo_id)
+        except Exception as e:
+            print(f"Warning: Could not get documentation: {e}")
+            return {"sources": [], "related": {}}
+
+        # Filter by topics
+        if topics:
+            filtered = [
+                d for d in docs
+                if any(topic.lower() in d.get("file_name", "").lower()
+                      or topic.lower() in d.get("title", "").lower()
+                      or topic.lower() in d.get("description", "").lower()
+                      or topic.lower() in d.get("file_path", "").lower()
+                      for topic in topics)
+            ]
+        else:
+            filtered = docs
+
+        sources = [
+            {
+                "type": "documentation",
+                "id": d.get("id"),
+                "file_name": d.get("file_name"),
+                "file_path": d.get("file_path"),
+                "doc_type": d.get("doc_type"),
+                "title": d.get("title"),
+                "description": d.get("description"),
+                "word_count": d.get("word_count"),
+                "line_count": d.get("line_count"),
+                "has_code_examples": d.get("has_code_examples"),
+                "has_api_references": d.get("has_api_references"),
+                "has_diagrams": d.get("has_diagrams"),
+                "content_preview": d.get("content_preview", "")[:500],  # Limit preview length
+            }
+            for d in filtered[:max_results]
+        ]
+
+        return {
+            "sources": sources,
+            "related": {}
+        }
+
     async def _build_general_context(
         self, repo_id: str, topics: List[str], entities: List[str], max_results: int
     ) -> Dict[str, Any]:
         """Build general context for any query"""
         sources = []
 
-        # Get a mix of code elements, services, dependencies
+        # Get a mix of code elements, services, dependencies, tests, documentation
         try:
             code_elements = await self.client.get_code_elements(repo_id)
             services = await self.client.get_services(repo_id)
             dependencies = await self.client.get_dependencies(repo_id)
+            # Try to get tests and docs, but don't fail if they're not available
+            try:
+                tests = await self.client.get_tests(repo_id)
+            except:
+                tests = []
+            try:
+                docs = await self.client.get_documentation(repo_id)
+            except:
+                docs = []
         except Exception as e:
             print(f"Warning: Could not get general context: {e}")
             return {"sources": [], "related": {}}
@@ -297,6 +404,53 @@ class ContextBuilder:
                 "name": dep.get("name"),
                 "version": dep.get("version")
             })
+
+        # Add relevant tests if available
+        if tests:
+            for test in tests[:max_results//5]:
+                if topics or entities:
+                    name = test.get("name", "").lower()
+                    if any(topic.lower() in name for topic in topics) or \
+                       any(entity.lower() in name for entity in entities):
+                        sources.append({
+                            "type": "test",
+                            "id": test.get("id"),
+                            "name": test.get("name"),
+                            "test_framework": test.get("test_framework"),
+                            "file_path": test.get("file_path")
+                        })
+                else:
+                    sources.append({
+                        "type": "test",
+                        "id": test.get("id"),
+                        "name": test.get("name"),
+                        "test_framework": test.get("test_framework"),
+                        "file_path": test.get("file_path")
+                    })
+
+        # Add relevant documentation if available
+        if docs:
+            for doc in docs[:max_results//5]:
+                if topics or entities:
+                    name = doc.get("file_name", "").lower()
+                    title = doc.get("title", "").lower() if doc.get("title") else ""
+                    if any(topic.lower() in name or topic.lower() in title for topic in topics) or \
+                       any(entity.lower() in name or entity.lower() in title for entity in entities):
+                        sources.append({
+                            "type": "documentation",
+                            "id": doc.get("id"),
+                            "file_name": doc.get("file_name"),
+                            "file_path": doc.get("file_path"),
+                            "title": doc.get("title")
+                        })
+                else:
+                    sources.append({
+                        "type": "documentation",
+                        "id": doc.get("id"),
+                        "file_name": doc.get("file_name"),
+                        "file_path": doc.get("file_path"),
+                        "title": doc.get("title")
+                    })
 
         return {
             "sources": sources,

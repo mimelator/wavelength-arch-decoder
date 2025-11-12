@@ -101,6 +101,7 @@
                     <button class="repo-tab" data-tab="code" data-entity-type="code">Code Structure</button>
                     <button class="repo-tab" data-tab="security" data-entity-type="security">Security</button>
                     <button class="repo-tab" data-tab="tools" data-entity-type="tools">Tools</button>
+                    <button class="repo-tab" data-tab="tests" data-entity-type="tests">Tests</button>
                     <button class="repo-tab" data-tab="documentation" data-entity-type="documentation">📄 Documentation</button>
                     <button class="repo-tab" data-tab="graph">Graph</button>
                 </div>
@@ -257,6 +258,41 @@
                             <p class="loading-text">Loading tools...</p>
                         </div>
                     </div>
+                    <div id="tab-tests" class="repo-tab-content">
+                        <div class="code-filters">
+                            <div class="filter-row">
+                                <input type="text" id="tests-search" placeholder="Search tests..." class="search-input" style="flex: 1;">
+                                <select id="tests-framework-filter" class="select-input">
+                                    <option value="">All Frameworks</option>
+                                    <option value="jest">Jest</option>
+                                    <option value="mocha">Mocha</option>
+                                    <option value="vitest">Vitest</option>
+                                    <option value="pytest">Pytest</option>
+                                    <option value="unittest">Unittest</option>
+                                    <option value="cargo-test">Cargo Test</option>
+                                    <option value="go-test">Go Test</option>
+                                    <option value="junit">JUnit</option>
+                                    <option value="testng">TestNG</option>
+                                    <option value="xctest">XCTest</option>
+                                    <option value="quick">Quick</option>
+                                </select>
+                                <select id="tests-language-filter" class="select-input">
+                                    <option value="">All Languages</option>
+                                    <option value="javascript">JavaScript</option>
+                                    <option value="typescript">TypeScript</option>
+                                    <option value="python">Python</option>
+                                    <option value="rust">Rust</option>
+                                    <option value="go">Go</option>
+                                    <option value="java">Java</option>
+                                    <option value="swift">Swift</option>
+                                </select>
+                            </div>
+                            <div class="filter-info" id="tests-filter-info"></div>
+                        </div>
+                        <div id="tests-list" class="detail-list">
+                            <p class="loading-text">Loading tests...</p>
+                        </div>
+                    </div>
                     <div id="tab-documentation" class="repo-tab-content">
                         <div class="code-filters">
                             <div class="filter-row">
@@ -310,6 +346,16 @@
                                         <input type="checkbox" class="node-type-toggle" data-node-type="security" checked>
                                         <span class="graph-legend-color" style="background: var(--entity-security, #ef4444);"></span>
                                         <span>Security</span>
+                                    </label>
+                                    <label class="graph-legend-item">
+                                        <input type="checkbox" class="node-type-toggle" data-node-type="test">
+                                        <span class="graph-legend-color" style="background: var(--entity-test, #ec4899);"></span>
+                                        <span>Tests</span>
+                                    </label>
+                                    <label class="graph-legend-item">
+                                        <input type="checkbox" class="node-type-toggle" data-node-type="test_framework">
+                                        <span class="graph-legend-color" style="background: var(--entity-test-framework, #f472b6);"></span>
+                                        <span>Test Frameworks</span>
                                     </label>
                                 </div>
                             </div>

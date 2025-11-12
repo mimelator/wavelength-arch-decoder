@@ -19,6 +19,7 @@ pub async fn generate_report(
         state.service_repo.clone(),
         state.tool_repo.clone(),
         state.code_relationship_repo.clone(),
+        state.test_repo.clone(),
     );
     
     // Create report generator

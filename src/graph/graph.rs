@@ -2,8 +2,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, ToolRepository, CodeRelationshipRepository};
-use crate::storage::{Repository, StoredDependency, StoredService, StoredTool};
+use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, ToolRepository, CodeRelationshipRepository, TestRepository};
+use crate::storage::{Repository, StoredDependency, StoredService, StoredTool, StoredTest};
 use crate::analysis::RelationshipTargetType;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -16,6 +16,8 @@ pub enum NodeType {
     Tool,
     CodeElement,
     SecurityEntity,
+    Test,
+    TestFramework,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +42,9 @@ pub enum EdgeType {
     ToolGenerates,      // Tool -> CodeElement
     CodeUsesService,     // CodeElement -> Service
     CodeUsesDependency, // CodeElement -> Dependency
+    HasTest,            // Repository -> Test
+    TestUsesFramework,  // Test -> TestFramework
+    TestTestsCode,      // Test -> CodeElement
     RelatedTo,          // Generic relationship
 }
 
@@ -65,6 +70,7 @@ pub struct GraphBuilder {
     service_repo: ServiceRepository,
     tool_repo: ToolRepository,
     code_relationship_repo: CodeRelationshipRepository,
+    test_repo: TestRepository,
 }
 
 impl GraphBuilder {
@@ -75,6 +81,7 @@ impl GraphBuilder {
         service_repo: ServiceRepository,
         tool_repo: ToolRepository,
         code_relationship_repo: CodeRelationshipRepository,
+        test_repo: TestRepository,
     ) -> Self {
         GraphBuilder {
             db,
@@ -83,6 +90,7 @@ impl GraphBuilder {
             service_repo,
             tool_repo,
             code_relationship_repo,
+            test_repo,
         }
     }
 
@@ -282,6 +290,83 @@ impl GraphBuilder {
                     source_node_id: service_node_id.clone(),
                     target_node_id: provider_node_id.clone(),
                     edge_type: EdgeType::ProvidedBy,
+                    properties: HashMap::new(),
+                });
+            }
+        }
+
+        // Get tests
+        let tests = match self.test_repo.get_by_repository(repository_id) {
+            Ok(t) => t,
+            Err(e) => {
+                log::warn!("Failed to load tests for graph: {}", e);
+                Vec::new()
+            }
+        };
+        
+        // Group tests by framework
+        let mut test_frameworks: HashSet<String> = HashSet::new();
+        for test in &tests {
+            test_frameworks.insert(test.test_framework.clone());
+        }
+        
+        // Create test framework nodes
+        let mut framework_node_ids: HashMap<String, String> = HashMap::new();
+        for framework in &test_frameworks {
+            let framework_node_id = Uuid::new_v4().to_string();
+            framework_node_ids.insert(framework.clone(), framework_node_id.clone());
+            let mut framework_props = HashMap::new();
+            framework_props.insert("type".to_string(), "test_framework".to_string());
+            
+            nodes.push(GraphNode {
+                id: framework_node_id.clone(),
+                node_type: NodeType::TestFramework,
+                name: framework.clone(),
+                properties: framework_props,
+                repository_id: Some(repository_id.to_string()),
+            });
+        }
+        
+        // Create test nodes
+        for test in &tests {
+            let test_node_id = Uuid::new_v4().to_string();
+            let mut test_props = HashMap::new();
+            test_props.insert("test_framework".to_string(), test.test_framework.clone());
+            test_props.insert("test_type".to_string(), test.test_type.clone());
+            test_props.insert("language".to_string(), test.language.clone());
+            test_props.insert("file_path".to_string(), test.file_path.clone());
+            test_props.insert("line_number".to_string(), test.line_number.to_string());
+            if let Some(suite) = &test.suite_name {
+                test_props.insert("suite_name".to_string(), suite.clone());
+            }
+            if let Some(sig) = &test.signature {
+                test_props.insert("signature".to_string(), sig.clone());
+            }
+            
+            nodes.push(GraphNode {
+                id: test_node_id.clone(),
+                node_type: NodeType::Test,
+                name: test.name.clone(),
+                properties: test_props,
+                repository_id: Some(repository_id.to_string()),
+            });
+            
+            // Repository has test
+            edges.push(GraphEdge {
+                id: Uuid::new_v4().to_string(),
+                source_node_id: repo_node_id.clone(),
+                target_node_id: test_node_id.clone(),
+                edge_type: EdgeType::HasTest,
+                properties: HashMap::new(),
+            });
+            
+            // Test uses framework
+            if let Some(framework_node_id) = framework_node_ids.get(&test.test_framework) {
+                edges.push(GraphEdge {
+                    id: Uuid::new_v4().to_string(),
+                    source_node_id: test_node_id.clone(),
+                    target_node_id: framework_node_id.clone(),
+                    edge_type: EdgeType::TestUsesFramework,
                     properties: HashMap::new(),
                 });
             }
@@ -606,6 +691,8 @@ impl GraphBuilder {
             NodeType::Tool => "tool",
             NodeType::CodeElement => "code_element",
             NodeType::SecurityEntity => "security_entity",
+            NodeType::Test => "test",
+            NodeType::TestFramework => "test_framework",
         }.to_string()
     }
 
@@ -619,6 +706,8 @@ impl GraphBuilder {
             "tool" => NodeType::Tool,
             "code_element" => NodeType::CodeElement,
             "security_entity" => NodeType::SecurityEntity,
+            "test" => NodeType::Test,
+            "test_framework" => NodeType::TestFramework,
             _ => NodeType::Repository,
         }
     }
@@ -636,6 +725,9 @@ impl GraphBuilder {
             EdgeType::ToolGenerates => "tool_generates",
             EdgeType::CodeUsesService => "code_uses_service",
             EdgeType::CodeUsesDependency => "code_uses_dependency",
+            EdgeType::HasTest => "has_test",
+            EdgeType::TestUsesFramework => "test_uses_framework",
+            EdgeType::TestTestsCode => "test_tests_code",
             EdgeType::RelatedTo => "related_to",
         }.to_string()
     }
@@ -653,6 +745,9 @@ impl GraphBuilder {
             "tool_generates" => EdgeType::ToolGenerates,
             "code_uses_service" => EdgeType::CodeUsesService,
             "code_uses_dependency" => EdgeType::CodeUsesDependency,
+            "has_test" => EdgeType::HasTest,
+            "test_uses_framework" => EdgeType::TestUsesFramework,
+            "test_tests_code" => EdgeType::TestTestsCode,
             "related_to" => EdgeType::RelatedTo,
             _ => EdgeType::RelatedTo,
         }
