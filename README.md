@@ -161,6 +161,32 @@ The server will start on `http://localhost:8080` by default.
    - URL (GitHub, GitLab, or local file path)
    - Branch (defaults to `main`)
 3. **Analyze**: Click "Analyze" and watch real-time progress
+
+### 🤖 Using the AI Assistant
+
+The AI Assistant provides an interactive chat interface for querying your codebase architecture:
+
+1. **Start the AI Assistant**:
+   ```bash
+   cd ai-assistant
+   ./start.sh
+   ```
+
+2. **Open the Chat UI**: Navigate to `http://localhost:8000`
+
+3. **Select a Repository**: Choose from the dropdown menu
+
+4. **Ask Questions**: Try queries like:
+   - "What functions are available?"
+   - "What services are used?"
+   - "What dependencies does this use?"
+   - "What functions use Firebase?"
+   - "What would break if I rename getAdminStorage?"
+
+**Requirements**: 
+- Architecture Decoder must be running on `http://localhost:8080`
+- OpenAI API key (optional - works without it but with less detailed responses)
+- See [AI Assistant README](ai-assistant/README.md) for full setup instructions
 4. **Explore**: Browse dependencies, services, code structure, security, and the knowledge graph
 5. **Generate Report**: Click "Generate Report" to create a comprehensive HTML report
 
