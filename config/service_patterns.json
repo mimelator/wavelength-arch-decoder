@@ -1,0 +1,710 @@
+{
+  "version": "1.0",
+  "patterns": {
+    "environment_variables": [
+      {
+        "pattern": "CLERK",
+        "provider": "Clerk",
+        "service_type": "Auth",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "AUTH0",
+        "provider": "Auth0",
+        "service_type": "Auth",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "STRIPE",
+        "provider": "Stripe",
+        "service_type": "Payment",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "TWILIO",
+        "provider": "Twilio",
+        "service_type": "Api",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "SENDGRID",
+        "provider": "SendGrid",
+        "service_type": "Api",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "MAILGUN",
+        "provider": "Mailgun",
+        "service_type": "Api",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "SLACK",
+        "provider": "Slack",
+        "service_type": "Api",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "DISCORD",
+        "provider": "Discord",
+        "service_type": "Api",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "DATADOG",
+        "provider": "Datadog",
+        "service_type": "Monitoring",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "NEW_RELIC",
+        "provider": "NewRelic",
+        "service_type": "Monitoring",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "SENTRY",
+        "provider": "Sentry",
+        "service_type": "Monitoring",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "LOGROCKET",
+        "provider": "LogRocket",
+        "service_type": "Monitoring",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "VERCEL",
+        "provider": "Vercel",
+        "service_type": "CloudProvider",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "NETLIFY",
+        "provider": "Netlify",
+        "service_type": "CloudProvider",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "CLOUDFLARE",
+        "provider": "Cloudflare",
+        "service_type": "Cdn",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "OPENAI",
+        "provider": "OpenAI",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "ANTHROPIC",
+        "provider": "Anthropic",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "GITHUB_COPILOT",
+        "provider": "GitHubCopilot",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "GOOGLE_AI",
+        "provider": "GoogleAI",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "GEMINI",
+        "provider": "GoogleAI",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "COHERE",
+        "provider": "Cohere",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "HUGGINGFACE",
+        "provider": "HuggingFace",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "HF_",
+        "provider": "HuggingFace",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "REPLICATE",
+        "provider": "Replicate",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "TOGETHER",
+        "provider": "TogetherAI",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "TOGETHER_AI",
+        "provider": "TogetherAI",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "MISTRAL",
+        "provider": "MistralAI",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "PERPLEXITY",
+        "provider": "Perplexity",
+        "service_type": "AI",
+        "confidence": 0.7
+      }
+    ],
+    "sdk_patterns": [
+      {
+        "pattern": "@clerk/",
+        "provider": "Clerk",
+        "service_type": "Auth",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@auth0/",
+        "provider": "Auth0",
+        "service_type": "Auth",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "stripe",
+        "provider": "Stripe",
+        "service_type": "Payment",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "twilio",
+        "provider": "Twilio",
+        "service_type": "Api",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@sendgrid/",
+        "provider": "SendGrid",
+        "service_type": "Api",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@slack/",
+        "provider": "Slack",
+        "service_type": "Api",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "discord.js",
+        "provider": "Discord",
+        "service_type": "Api",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@datadog/",
+        "provider": "Datadog",
+        "service_type": "Monitoring",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@sentry/",
+        "provider": "Sentry",
+        "service_type": "Monitoring",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@vercel/",
+        "provider": "Vercel",
+        "service_type": "CloudProvider",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "openai",
+        "provider": "OpenAI",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@openai/",
+        "provider": "OpenAI",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "anthropic",
+        "provider": "Anthropic",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@anthropic-ai/",
+        "provider": "Anthropic",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@anthropic-ai/sdk",
+        "provider": "Anthropic",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "github-copilot",
+        "provider": "GitHubCopilot",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@copilot/",
+        "provider": "GitHubCopilot",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@google/generative-ai",
+        "provider": "GoogleAI",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@google-ai/generativelanguage",
+        "provider": "GoogleAI",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "google-generativeai",
+        "provider": "GoogleAI",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "cohere",
+        "provider": "Cohere",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@cohere-ai/",
+        "provider": "Cohere",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "huggingface",
+        "provider": "HuggingFace",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@huggingface/",
+        "provider": "HuggingFace",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "transformers",
+        "provider": "HuggingFace",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "replicate",
+        "provider": "Replicate",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "together",
+        "provider": "TogetherAI",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@together-ai/",
+        "provider": "TogetherAI",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "mistralai",
+        "provider": "MistralAI",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@mistralai/",
+        "provider": "MistralAI",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "perplexity",
+        "provider": "Perplexity",
+        "service_type": "AI",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "@perplexity/",
+        "provider": "Perplexity",
+        "service_type": "AI",
+        "confidence": 0.8
+      }
+    ],
+    "api_endpoints": [
+      {
+        "pattern": "api.github.com",
+        "provider": "GitHub",
+        "service_type": "Api",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "api.gitlab.com",
+        "provider": "GitLab",
+        "service_type": "Api",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "api.linear.app",
+        "provider": "Linear",
+        "service_type": "Api",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "api.atlassian.com",
+        "provider": "Jira",
+        "service_type": "Api",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "api.openai.com",
+        "provider": "OpenAI",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "api.anthropic.com",
+        "provider": "Anthropic",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "api.cohere.ai",
+        "provider": "Cohere",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "api-inference.huggingface.co",
+        "provider": "HuggingFace",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "api.replicate.com",
+        "provider": "Replicate",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "api.together.xyz",
+        "provider": "TogetherAI",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "api.mistral.ai",
+        "provider": "MistralAI",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "api.perplexity.ai",
+        "provider": "Perplexity",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "generativelanguage.googleapis.com",
+        "provider": "GoogleAI",
+        "service_type": "AI",
+        "confidence": 0.7
+      },
+      {
+        "pattern": "generativeai.googleapis.com",
+        "provider": "GoogleAI",
+        "service_type": "AI",
+        "confidence": 0.7
+      }
+    ],
+    "database_patterns": [
+      {
+        "pattern": "postgresql://",
+        "provider": "Postgres",
+        "service_type": "Database",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "postgres://",
+        "provider": "Postgres",
+        "service_type": "Database",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "mysql://",
+        "provider": "MySQL",
+        "service_type": "Database",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "mongodb://",
+        "provider": "MongoDB",
+        "service_type": "Database",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "redis://",
+        "provider": "Redis",
+        "service_type": "Database",
+        "confidence": 0.9
+      },
+      {
+        "pattern": "dynamodb",
+        "provider": "DynamoDB",
+        "service_type": "Database",
+        "confidence": 0.9
+      }
+    ],
+    "aws_infrastructure": [
+      {
+        "pattern": "aws_s3_bucket",
+        "provider": "Aws",
+        "service_name": "S3",
+        "service_type": "CloudProvider",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "aws_lambda",
+        "provider": "Aws",
+        "service_name": "Lambda",
+        "service_type": "CloudProvider",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "aws_iam",
+        "provider": "Aws",
+        "service_name": "IAM",
+        "service_type": "CloudProvider",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "aws_dynamodb",
+        "provider": "DynamoDB",
+        "service_name": "DynamoDB",
+        "service_type": "Database",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "aws_rds",
+        "provider": "RDS",
+        "service_name": "RDS",
+        "service_type": "Database",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "aws_ec2",
+        "provider": "Aws",
+        "service_name": "EC2",
+        "service_type": "CloudProvider",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "aws_ecs",
+        "provider": "Aws",
+        "service_name": "ECS",
+        "service_type": "CloudProvider",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "aws_cloudfront",
+        "provider": "CloudFront",
+        "service_name": "CloudFront",
+        "service_type": "Cdn",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "aws_sns",
+        "provider": "Aws",
+        "service_name": "SNS",
+        "service_type": "CloudProvider",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "aws_sqs",
+        "provider": "Aws",
+        "service_name": "SQS",
+        "service_type": "CloudProvider",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "aws_api_gateway",
+        "provider": "Aws",
+        "service_name": "API Gateway",
+        "service_type": "CloudProvider",
+        "confidence": 0.8
+      },
+      {
+        "pattern": "aws_cognito",
+        "provider": "Aws",
+        "service_name": "Cognito",
+        "service_type": "Auth",
+        "confidence": 0.8
+      }
+    ],
+    "aws_sdk_v2_services": [
+      {
+        "pattern": "s3",
+        "display_name": "S3",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "dynamodb",
+        "display_name": "DynamoDB",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "lambda",
+        "display_name": "Lambda",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "sns",
+        "display_name": "SNS",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "sqs",
+        "display_name": "SQS",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "ses",
+        "display_name": "SES",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "ec2",
+        "display_name": "EC2",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "rds",
+        "display_name": "RDS",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "cloudfront",
+        "display_name": "CloudFront",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "cognito",
+        "display_name": "Cognito",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "iam",
+        "display_name": "IAM",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "sts",
+        "display_name": "STS",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "cloudwatch",
+        "display_name": "CloudWatch",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "kms",
+        "display_name": "KMS",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "secretsmanager",
+        "display_name": "Secrets Manager",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "ssm",
+        "display_name": "Systems Manager",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "apigateway",
+        "display_name": "API Gateway",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "eventbridge",
+        "display_name": "EventBridge",
+        "confidence": 0.85
+      },
+      {
+        "pattern": "stepfunctions",
+        "display_name": "Step Functions",
+        "confidence": 0.85
+      }
+    ],
+    "aws_sdk_v3_service_map": {
+      "s3": "S3",
+      "dynamodb": "DynamoDB",
+      "lambda": "Lambda",
+      "sns": "SNS",
+      "sqs": "SQS",
+      "ses": "SES",
+      "ec2": "EC2",
+      "rds": "RDS",
+      "cloudfront": "CloudFront",
+      "cognito": "Cognito",
+      "cognito-identity-provider": "Cognito",
+      "iam": "IAM",
+      "sts": "STS",
+      "cloudwatch": "CloudWatch",
+      "kms": "KMS",
+      "secrets-manager": "Secrets Manager",
+      "ssm": "Systems Manager",
+      "apigateway": "API Gateway",
+      "apigatewayv2": "API Gateway v2",
+      "eventbridge": "EventBridge",
+      "stepfunctions": "Step Functions",
+      "s3-control": "S3 Control",
+      "s3-outposts": "S3 Outposts",
+      "textract": "Textract",
+      "comprehend": "Comprehend",
+      "translate": "Translate",
+      "polly": "Polly",
+      "rekognition": "Rekognition",
+      "transcribe": "Transcribe",
+      "bedrock": "Bedrock",
+      "bedrock-runtime": "Bedrock Runtime"
+    }
+  }
+}
+

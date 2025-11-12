@@ -1,5 +1,6 @@
 use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use base64::{Engine as _, engine::general_purpose};
 use crate::api::{ApiState, ErrorResponse};
 use crate::storage::{RepositoryRepository, DependencyRepository};
@@ -235,7 +236,22 @@ pub async fn analyze_repository(
 
     // Detect services
     log::info!("Step 5/8: Detecting external services...");
-    let detector = ServiceDetector::new();
+    // Load plugins from config/plugins directory if it exists
+    let plugin_dir = Path::new("config/plugins");
+    let detector = if plugin_dir.exists() && plugin_dir.is_dir() {
+        match ServiceDetector::with_plugins(Some(plugin_dir)) {
+            Ok(d) => {
+                log::info!("✓ Loaded service detection patterns with plugins");
+                d
+            }
+            Err(e) => {
+                log::warn!("⚠ Failed to load plugins, using default patterns: {}", e);
+                ServiceDetector::new()
+            }
+        }
+    } else {
+        ServiceDetector::new()
+    };
     let services = match detector.detect_services(&repo_path) {
         Ok(s) => {
             log::info!("✓ Detected {} services", s.len());

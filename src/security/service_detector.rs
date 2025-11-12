@@ -2,8 +2,9 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use regex::Regex;
 use crate::ingestion::FileType;
+use crate::security::pattern_config::{PatternConfig, PatternLoader};
+use crate::security::generic_provider::GenericProviderDetector;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ServiceType {
@@ -91,16 +92,85 @@ pub struct DetectedService {
     pub confidence: f64, // 0.0 to 1.0
 }
 
-pub struct ServiceDetector;
+pub struct ServiceDetector {
+    pattern_config: PatternConfig,
+    generic_detector: GenericProviderDetector,
+}
 
 impl ServiceDetector {
     pub fn new() -> Self {
-        ServiceDetector
+        // Try to load patterns from config, fall back to empty if not found
+        let pattern_config = PatternLoader::load_default()
+            .unwrap_or_else(|_| {
+                // Create minimal default config if file doesn't exist
+                PatternConfig {
+                    version: "1.0".to_string(),
+                    patterns: crate::security::pattern_config::PatternSet {
+                        environment_variables: Vec::new(),
+                        sdk_patterns: Vec::new(),
+                        api_endpoints: Vec::new(),
+                        database_patterns: Vec::new(),
+                        aws_infrastructure: Vec::new(),
+                        aws_sdk_v2_services: Vec::new(),
+                        aws_sdk_v3_service_map: HashMap::new(),
+                    },
+                }
+            });
+        
+        ServiceDetector {
+            pattern_config,
+            generic_detector: GenericProviderDetector::new(),
+        }
+    }
+
+    /// Create with custom pattern config (for testing or plugins)
+    pub fn with_config(pattern_config: PatternConfig) -> Self {
+        ServiceDetector {
+            pattern_config,
+            generic_detector: GenericProviderDetector::new(),
+        }
+    }
+
+    /// Create with plugin directory support
+    pub fn with_plugins(plugin_dir: Option<&Path>) -> Result<Self> {
+        let base_path = Path::new("config/service_patterns.json");
+        let pattern_config = PatternLoader::load_with_plugins(base_path, plugin_dir)?;
+        
+        Ok(ServiceDetector {
+            pattern_config,
+            generic_detector: GenericProviderDetector::new(),
+        })
     }
 
     /// Detect services in a repository
     pub fn detect_services(&self, repo_path: &Path) -> Result<Vec<DetectedService>> {
         let mut services = Vec::new();
+        
+        // First, detect from generic package files
+        if let Ok(generic_providers) = self.generic_detector.detect_from_packages(repo_path) {
+            for gp in generic_providers {
+                if let Some(provider) = self.parse_provider(&gp.provider_hint.as_deref().unwrap_or("Unknown")) {
+                    let service_type = self.parse_service_type(
+                        gp.service_type_hint.as_deref().unwrap_or("Other")
+                    );
+                    
+                    services.push(DetectedService {
+                        provider,
+                        service_type,
+                        name: gp.name.clone(),
+                        configuration: {
+                            let mut config = HashMap::new();
+                            config.insert("source".to_string(), gp.source.clone());
+                            config.insert("detection_method".to_string(), "generic_package".to_string());
+                            config
+                        },
+                        file_path: format!("{}/{}", repo_path.display(), gp.source),
+                        line_number: None,
+                        confidence: gp.confidence,
+                    });
+                }
+            }
+        }
         
         // Use direct directory walking instead of FileIndexer
         use walkdir::WalkDir;
@@ -205,6 +275,70 @@ impl ServiceDetector {
         Ok(deduplicated)
     }
 
+    /// Parse provider string to ServiceProvider enum
+    fn parse_provider(&self, provider_str: &str) -> Option<ServiceProvider> {
+        match provider_str.to_uppercase().as_str() {
+            "AWS" => Some(ServiceProvider::Aws),
+            "AZURE" => Some(ServiceProvider::Azure),
+            "GCP" => Some(ServiceProvider::Gcp),
+            "VERCEL" => Some(ServiceProvider::Vercel),
+            "NETLIFY" => Some(ServiceProvider::Netlify),
+            "HEROKU" => Some(ServiceProvider::Heroku),
+            "DIGITALOCEAN" => Some(ServiceProvider::DigitalOcean),
+            "CLERK" => Some(ServiceProvider::Clerk),
+            "AUTH0" => Some(ServiceProvider::Auth0),
+            "STRIPE" => Some(ServiceProvider::Stripe),
+            "TWILIO" => Some(ServiceProvider::Twilio),
+            "SENDGRID" => Some(ServiceProvider::SendGrid),
+            "MAILGUN" => Some(ServiceProvider::Mailgun),
+            "SLACK" => Some(ServiceProvider::Slack),
+            "DISCORD" => Some(ServiceProvider::Discord),
+            "POSTGRES" => Some(ServiceProvider::Postgres),
+            "MYSQL" => Some(ServiceProvider::MySQL),
+            "MONGODB" => Some(ServiceProvider::MongoDB),
+            "REDIS" => Some(ServiceProvider::Redis),
+            "DYNAMODB" => Some(ServiceProvider::DynamoDB),
+            "RDS" => Some(ServiceProvider::RDS),
+            "GITHUB" => Some(ServiceProvider::GitHub),
+            "GITLAB" => Some(ServiceProvider::GitLab),
+            "JIRA" => Some(ServiceProvider::Jira),
+            "LINEAR" => Some(ServiceProvider::Linear),
+            "CLOUDFLARE" => Some(ServiceProvider::Cloudflare),
+            "CLOUDFRONT" => Some(ServiceProvider::CloudFront),
+            "DATADOG" => Some(ServiceProvider::Datadog),
+            "NEWRELIC" => Some(ServiceProvider::NewRelic),
+            "SENTRY" => Some(ServiceProvider::Sentry),
+            "LOGROCKET" => Some(ServiceProvider::LogRocket),
+            "OPENAI" => Some(ServiceProvider::OpenAI),
+            "ANTHROPIC" => Some(ServiceProvider::Anthropic),
+            "GITHUBCOPILOT" => Some(ServiceProvider::GitHubCopilot),
+            "GOOGLEAI" => Some(ServiceProvider::GoogleAI),
+            "COHERE" => Some(ServiceProvider::Cohere),
+            "HUGGINGFACE" => Some(ServiceProvider::HuggingFace),
+            "REPLICATE" => Some(ServiceProvider::Replicate),
+            "TOGETHERAI" => Some(ServiceProvider::TogetherAI),
+            "MISTRALAI" => Some(ServiceProvider::MistralAI),
+            "PERPLEXITY" => Some(ServiceProvider::Perplexity),
+            _ => Some(ServiceProvider::Unknown),
+        }
+    }
+
+    /// Parse service type string to ServiceType enum
+    fn parse_service_type(&self, type_str: &str) -> ServiceType {
+        match type_str {
+            "CloudProvider" => ServiceType::CloudProvider,
+            "SaaS" => ServiceType::SaaS,
+            "Database" => ServiceType::Database,
+            "Api" => ServiceType::Api,
+            "Cdn" => ServiceType::Cdn,
+            "Monitoring" => ServiceType::Monitoring,
+            "Auth" => ServiceType::Auth,
+            "Payment" => ServiceType::Payment,
+            "AI" => ServiceType::AI,
+            _ => ServiceType::Other,
+        }
+    }
+
     /// Detect services in a specific file
     fn detect_in_file(&self, file_path: &Path, file_type: &FileType) -> Result<Vec<DetectedService>> {
         let mut services = Vec::new();
@@ -276,37 +410,25 @@ impl ServiceDetector {
         let mut services = Vec::new();
         let content_lower = content.to_lowercase();
         
-        // AWS service patterns
-        let aws_patterns = vec![
-            ("aws_s3_bucket", ServiceProvider::Aws, "S3"),
-            ("aws_lambda", ServiceProvider::Aws, "Lambda"),
-            ("aws_iam", ServiceProvider::Aws, "IAM"),
-            ("aws_dynamodb", ServiceProvider::DynamoDB, "DynamoDB"),
-            ("aws_rds", ServiceProvider::RDS, "RDS"),
-            ("aws_ec2", ServiceProvider::Aws, "EC2"),
-            ("aws_ecs", ServiceProvider::Aws, "ECS"),
-            ("aws_cloudfront", ServiceProvider::CloudFront, "CloudFront"),
-            ("aws_sns", ServiceProvider::Aws, "SNS"),
-            ("aws_sqs", ServiceProvider::Aws, "SQS"),
-            ("aws_api_gateway", ServiceProvider::Aws, "API Gateway"),
-            ("aws_cognito", ServiceProvider::Aws, "Cognito"),
-        ];
-        
-        for (pattern, provider, service_name) in aws_patterns {
-            if content_lower.contains(pattern) {
-                let mut config = HashMap::new();
-                config.insert("service".to_string(), service_name.to_string());
-                config.insert("provider".to_string(), "AWS".to_string());
-                
-                services.push(DetectedService {
-                    provider: provider.clone(),
-                    service_type: ServiceType::CloudProvider,
-                    name: service_name.to_string(),
-                    configuration: config,
-                    file_path: file_path.to_string_lossy().to_string(),
-                    line_number: self.find_line_number(content, pattern),
-                    confidence: 0.8,
-                });
+        // Use patterns from config
+        for rule in &self.pattern_config.patterns.aws_infrastructure {
+            if content_lower.contains(&rule.pattern.to_lowercase()) {
+                if let Some(provider) = self.parse_provider(&rule.provider) {
+                    let service_type = self.parse_service_type(&rule.service_type);
+                    let mut config = HashMap::new();
+                    config.insert("service".to_string(), rule.service_name.clone());
+                    config.insert("provider".to_string(), rule.provider.clone());
+                    
+                    services.push(DetectedService {
+                        provider,
+                        service_type,
+                        name: rule.service_name.clone(),
+                        configuration: config,
+                        file_path: file_path.to_string_lossy().to_string(),
+                        line_number: self.find_line_number(content, &rule.pattern),
+                        confidence: rule.confidence,
+                    });
+                }
             }
         }
         
@@ -330,57 +452,35 @@ impl ServiceDetector {
     fn detect_from_env_vars(&self, content: &str, file_path: &Path) -> Result<Vec<DetectedService>> {
         let mut services = Vec::new();
         
-        // Common service environment variable patterns
-        let env_patterns = vec![
-            ("CLERK", ServiceProvider::Clerk, ServiceType::Auth),
-            ("AUTH0", ServiceProvider::Auth0, ServiceType::Auth),
-            ("STRIPE", ServiceProvider::Stripe, ServiceType::Payment),
-            ("TWILIO", ServiceProvider::Twilio, ServiceType::Api),
-            ("SENDGRID", ServiceProvider::SendGrid, ServiceType::Api),
-            ("MAILGUN", ServiceProvider::Mailgun, ServiceType::Api),
-            ("SLACK", ServiceProvider::Slack, ServiceType::Api),
-            ("DISCORD", ServiceProvider::Discord, ServiceType::Api),
-            ("DATADOG", ServiceProvider::Datadog, ServiceType::Monitoring),
-            ("NEW_RELIC", ServiceProvider::NewRelic, ServiceType::Monitoring),
-            ("SENTRY", ServiceProvider::Sentry, ServiceType::Monitoring),
-            ("LOGROCKET", ServiceProvider::LogRocket, ServiceType::Monitoring),
-            ("VERCEL", ServiceProvider::Vercel, ServiceType::CloudProvider),
-            ("NETLIFY", ServiceProvider::Netlify, ServiceType::CloudProvider),
-            ("CLOUDFLARE", ServiceProvider::Cloudflare, ServiceType::Cdn),
-            // AI Services
-            ("OPENAI", ServiceProvider::OpenAI, ServiceType::AI),
-            ("ANTHROPIC", ServiceProvider::Anthropic, ServiceType::AI),
-            ("GITHUB_COPILOT", ServiceProvider::GitHubCopilot, ServiceType::AI),
-            ("GOOGLE_AI", ServiceProvider::GoogleAI, ServiceType::AI),
-            ("GEMINI", ServiceProvider::GoogleAI, ServiceType::AI),
-            ("COHERE", ServiceProvider::Cohere, ServiceType::AI),
-            ("HUGGINGFACE", ServiceProvider::HuggingFace, ServiceType::AI),
-            ("HF_", ServiceProvider::HuggingFace, ServiceType::AI),
-            ("REPLICATE", ServiceProvider::Replicate, ServiceType::AI),
-            ("TOGETHER", ServiceProvider::TogetherAI, ServiceType::AI),
-            ("TOGETHER_AI", ServiceProvider::TogetherAI, ServiceType::AI),
-            ("MISTRAL", ServiceProvider::MistralAI, ServiceType::AI),
-            ("PERPLEXITY", ServiceProvider::Perplexity, ServiceType::AI),
-        ];
-        
+        // Use patterns from config
         for line in content.lines() {
             let line_upper = line.to_uppercase();
-            for (pattern, provider, service_type) in &env_patterns {
-                if line_upper.contains(pattern) && (line_upper.contains("API_KEY") || 
-                    line_upper.contains("SECRET") || line_upper.contains("TOKEN") ||
-                    line_upper.contains("ID") || line_upper.contains("KEY")) {
-                    let mut config = HashMap::new();
-                    config.insert("env_var".to_string(), line.trim().to_string());
-                    
-                    services.push(DetectedService {
-                        provider: provider.clone(),
-                        service_type: service_type.clone(),
-                        name: format!("{} Service", pattern),
-                        configuration: config,
-                        file_path: file_path.to_string_lossy().to_string(),
-                        line_number: self.find_line_number(content, line),
-                        confidence: 0.7,
-                    });
+            for rule in &self.pattern_config.patterns.environment_variables {
+                if line_upper.contains(&rule.pattern.to_uppercase()) && 
+                   (line_upper.contains("API_KEY") || 
+                    line_upper.contains("SECRET") || 
+                    line_upper.contains("TOKEN") ||
+                    line_upper.contains("ID") || 
+                    line_upper.contains("KEY")) {
+                    if let Some(provider) = self.parse_provider(&rule.provider) {
+                        let service_type = self.parse_service_type(&rule.service_type);
+                        let mut config = HashMap::new();
+                        config.insert("env_var".to_string(), line.trim().to_string());
+                        
+                        let service_name = rule.service_name.as_ref()
+                            .map(|s| s.clone())
+                            .unwrap_or_else(|| format!("{} Service", rule.pattern));
+                        
+                        services.push(DetectedService {
+                            provider,
+                            service_type,
+                            name: service_name.clone(),
+                            configuration: config,
+                            file_path: file_path.to_string_lossy().to_string(),
+                            line_number: self.find_line_number(content, line),
+                            confidence: rule.confidence,
+                        });
+                    }
                 }
             }
         }
@@ -393,26 +493,25 @@ impl ServiceDetector {
         let mut services = Vec::new();
         let content_lower = content.to_lowercase();
         
-        let db_patterns = vec![
-            ("postgresql://", ServiceProvider::Postgres),
-            ("postgres://", ServiceProvider::Postgres),
-            ("mysql://", ServiceProvider::MySQL),
-            ("mongodb://", ServiceProvider::MongoDB),
-            ("redis://", ServiceProvider::Redis),
-            ("dynamodb", ServiceProvider::DynamoDB),
-        ];
-        
-        for (pattern, provider) in db_patterns {
-            if content_lower.contains(pattern) {
-                services.push(DetectedService {
-                    provider: provider.clone(),
-                    service_type: ServiceType::Database,
-                    name: format!("{} Database", pattern.replace("://", "")),
-                    configuration: HashMap::new(),
-                    file_path: file_path.to_string_lossy().to_string(),
-                    line_number: self.find_line_number(content, pattern),
-                    confidence: 0.9,
-                });
+        // Use patterns from config
+        for rule in &self.pattern_config.patterns.database_patterns {
+            if content_lower.contains(&rule.pattern.to_lowercase()) {
+                if let Some(provider) = self.parse_provider(&rule.provider) {
+                    let service_type = self.parse_service_type(&rule.service_type);
+                    let service_name = rule.service_name.as_ref()
+                        .map(|s| s.clone())
+                        .unwrap_or_else(|| format!("{} Database", rule.pattern.replace("://", "")));
+                    
+                    services.push(DetectedService {
+                        provider,
+                        service_type,
+                        name: service_name.clone(),
+                        configuration: HashMap::new(),
+                        file_path: file_path.to_string_lossy().to_string(),
+                        line_number: self.find_line_number(content, &rule.pattern),
+                        confidence: rule.confidence,
+                    });
+                }
             }
         }
         
@@ -449,38 +548,15 @@ impl ServiceDetector {
         
         // Detect AWS SDK v2 imports (aws-sdk package with specific service imports)
         if content_lower.contains("aws-sdk") || content_lower.contains("from 'aws-sdk'") || content_lower.contains("require('aws-sdk')") {
-            // Try to detect which specific AWS services are being used
-            let aws_service_patterns = vec![
-                ("s3", "S3"),
-                ("dynamodb", "DynamoDB"),
-                ("lambda", "Lambda"),
-                ("sns", "SNS"),
-                ("sqs", "SQS"),
-                ("ses", "SES"),
-                ("ec2", "EC2"),
-                ("rds", "RDS"),
-                ("cloudfront", "CloudFront"),
-                ("cognito", "Cognito"),
-                ("iam", "IAM"),
-                ("sts", "STS"),
-                ("cloudwatch", "CloudWatch"),
-                ("kms", "KMS"),
-                ("secretsmanager", "Secrets Manager"),
-                ("ssm", "Systems Manager"),
-                ("apigateway", "API Gateway"),
-                ("eventbridge", "EventBridge"),
-                ("stepfunctions", "Step Functions"),
-            ];
-            
-            for (pattern, display_name) in aws_service_patterns {
-                // Look for patterns like: new AWS.S3(), AWS.S3(), s3 = new AWS.S3()
+            // Use patterns from config
+            for rule in &self.pattern_config.patterns.aws_sdk_v2_services {
                 let service_patterns = vec![
-                    format!("aws.{}", pattern),
-                    format!("aws['{}']", pattern),
-                    format!("aws[\"{}\"]", pattern),
-                    format!("new aws.{}", pattern),
-                    format!("new aws['{}']", pattern),
-                    format!("new aws[\"{}\"]", pattern),
+                    format!("aws.{}", rule.pattern),
+                    format!("aws['{}']", rule.pattern),
+                    format!("aws[\"{}\"]", rule.pattern),
+                    format!("new aws.{}", rule.pattern),
+                    format!("new aws['{}']", rule.pattern),
+                    format!("new aws[\"{}\"]", rule.pattern),
                 ];
                 
                 for service_pattern in &service_patterns {
@@ -488,16 +564,16 @@ impl ServiceDetector {
                         services.push(DetectedService {
                             provider: ServiceProvider::Aws,
                             service_type: ServiceType::CloudProvider,
-                            name: format!("AWS {}", display_name),
+                            name: format!("AWS {}", rule.display_name),
                             configuration: {
                                 let mut config = HashMap::new();
                                 config.insert("sdk_version".to_string(), "v2".to_string());
-                                config.insert("service".to_string(), pattern.to_string());
+                                config.insert("service".to_string(), rule.pattern.clone());
                                 config
                             },
                             file_path: file_path.to_string_lossy().to_string(),
                             line_number: self.find_line_number(content, service_pattern),
-                            confidence: 0.85,
+                            confidence: rule.confidence,
                         });
                         break; // Only add once per service per file
                     }
@@ -523,54 +599,25 @@ impl ServiceDetector {
             }
         }
         
-        // Detect other service SDKs
-        let sdk_patterns = vec![
-            ("@clerk/", ServiceProvider::Clerk, ServiceType::Auth),
-            ("@auth0/", ServiceProvider::Auth0, ServiceType::Auth),
-            ("stripe", ServiceProvider::Stripe, ServiceType::Payment),
-            ("twilio", ServiceProvider::Twilio, ServiceType::Api),
-            ("@sendgrid/", ServiceProvider::SendGrid, ServiceType::Api),
-            ("@slack/", ServiceProvider::Slack, ServiceType::Api),
-            ("discord.js", ServiceProvider::Discord, ServiceType::Api),
-            ("@datadog/", ServiceProvider::Datadog, ServiceType::Monitoring),
-            ("@sentry/", ServiceProvider::Sentry, ServiceType::Monitoring),
-            ("@vercel/", ServiceProvider::Vercel, ServiceType::CloudProvider),
-            // AI SDKs
-            ("openai", ServiceProvider::OpenAI, ServiceType::AI),
-            ("@openai/", ServiceProvider::OpenAI, ServiceType::AI),
-            ("anthropic", ServiceProvider::Anthropic, ServiceType::AI),
-            ("@anthropic-ai/", ServiceProvider::Anthropic, ServiceType::AI),
-            ("@anthropic-ai/sdk", ServiceProvider::Anthropic, ServiceType::AI),
-            ("github-copilot", ServiceProvider::GitHubCopilot, ServiceType::AI),
-            ("@copilot/", ServiceProvider::GitHubCopilot, ServiceType::AI),
-            ("@google/generative-ai", ServiceProvider::GoogleAI, ServiceType::AI),
-            ("@google-ai/generativelanguage", ServiceProvider::GoogleAI, ServiceType::AI),
-            ("google-generativeai", ServiceProvider::GoogleAI, ServiceType::AI),
-            ("cohere", ServiceProvider::Cohere, ServiceType::AI),
-            ("@cohere-ai/", ServiceProvider::Cohere, ServiceType::AI),
-            ("huggingface", ServiceProvider::HuggingFace, ServiceType::AI),
-            ("@huggingface/", ServiceProvider::HuggingFace, ServiceType::AI),
-            ("transformers", ServiceProvider::HuggingFace, ServiceType::AI),
-            ("replicate", ServiceProvider::Replicate, ServiceType::AI),
-            ("together", ServiceProvider::TogetherAI, ServiceType::AI),
-            ("@together-ai/", ServiceProvider::TogetherAI, ServiceType::AI),
-            ("mistralai", ServiceProvider::MistralAI, ServiceType::AI),
-            ("@mistralai/", ServiceProvider::MistralAI, ServiceType::AI),
-            ("perplexity", ServiceProvider::Perplexity, ServiceType::AI),
-            ("@perplexity/", ServiceProvider::Perplexity, ServiceType::AI),
-        ];
-        
-        for (pattern, provider, service_type) in sdk_patterns {
-            if content_lower.contains(pattern) {
-                services.push(DetectedService {
-                    provider: provider.clone(),
-                    service_type: service_type.clone(),
-                    name: format!("{} SDK", pattern.replace("@", "").replace("/", "")),
-                    configuration: HashMap::new(),
-                    file_path: file_path.to_string_lossy().to_string(),
-                    line_number: self.find_line_number(content, pattern),
-                    confidence: 0.8,
-                });
+        // Detect other service SDKs from config
+        for rule in &self.pattern_config.patterns.sdk_patterns {
+            if content_lower.contains(&rule.pattern.to_lowercase()) {
+                if let Some(provider) = self.parse_provider(&rule.provider) {
+                    let service_type = self.parse_service_type(&rule.service_type);
+                    let service_name = rule.service_name.as_ref()
+                        .map(|s| s.clone())
+                        .unwrap_or_else(|| format!("{} SDK", rule.pattern.replace("@", "").replace("/", "")));
+                    
+                    services.push(DetectedService {
+                        provider,
+                        service_type,
+                        name: service_name.clone(),
+                        configuration: HashMap::new(),
+                        file_path: file_path.to_string_lossy().to_string(),
+                        line_number: self.find_line_number(content, &rule.pattern),
+                        confidence: rule.confidence,
+                    });
+                }
             }
         }
         
@@ -579,47 +626,9 @@ impl ServiceDetector {
     
     /// Format AWS service name from SDK client name
     fn format_aws_service_name(&self, service: &str) -> String {
-        // Map common AWS SDK client names to display names
-        let service_map: std::collections::HashMap<&str, &str> = [
-            ("s3", "S3"),
-            ("dynamodb", "DynamoDB"),
-            ("lambda", "Lambda"),
-            ("sns", "SNS"),
-            ("sqs", "SQS"),
-            ("ses", "SES"),
-            ("ec2", "EC2"),
-            ("rds", "RDS"),
-            ("cloudfront", "CloudFront"),
-            ("cognito", "Cognito"),
-            ("cognito-identity-provider", "Cognito"),
-            ("iam", "IAM"),
-            ("sts", "STS"),
-            ("cloudwatch", "CloudWatch"),
-            ("kms", "KMS"),
-            ("secrets-manager", "Secrets Manager"),
-            ("ssm", "Systems Manager"),
-            ("apigateway", "API Gateway"),
-            ("apigatewayv2", "API Gateway v2"),
-            ("eventbridge", "EventBridge"),
-            ("stepfunctions", "Step Functions"),
-            ("s3-control", "S3 Control"),
-            ("s3-outposts", "S3 Outposts"),
-            ("textract", "Textract"),
-            ("comprehend", "Comprehend"),
-            ("translate", "Translate"),
-            ("polly", "Polly"),
-            ("rekognition", "Rekognition"),
-            ("transcribe", "Transcribe"),
-            ("bedrock", "Bedrock"),
-            ("bedrock-runtime", "Bedrock Runtime"),
-        ]
-        .iter()
-        .cloned()
-        .collect();
-        
-        // Check if we have a mapping
-        if let Some(display_name) = service_map.get(service) {
-            return display_name.to_string();
+        // Use mapping from config first
+        if let Some(display_name) = self.pattern_config.patterns.aws_sdk_v3_service_map.get(service) {
+            return display_name.clone();
         }
         
         // Otherwise, format it nicely
@@ -639,36 +648,25 @@ impl ServiceDetector {
     fn detect_api_endpoints(&self, content: &str, file_path: &Path) -> Result<Vec<DetectedService>> {
         let mut services = Vec::new();
         
-        // Common API endpoint patterns
-        let api_patterns = vec![
-            ("api.github.com", ServiceProvider::GitHub),
-            ("api.gitlab.com", ServiceProvider::GitLab),
-            ("api.linear.app", ServiceProvider::Linear),
-            ("api.atlassian.com", ServiceProvider::Jira),
-            // AI API endpoints
-            ("api.openai.com", ServiceProvider::OpenAI),
-            ("api.anthropic.com", ServiceProvider::Anthropic),
-            ("api.cohere.ai", ServiceProvider::Cohere),
-            ("api-inference.huggingface.co", ServiceProvider::HuggingFace),
-            ("api.replicate.com", ServiceProvider::Replicate),
-            ("api.together.xyz", ServiceProvider::TogetherAI),
-            ("api.mistral.ai", ServiceProvider::MistralAI),
-            ("api.perplexity.ai", ServiceProvider::Perplexity),
-            ("generativelanguage.googleapis.com", ServiceProvider::GoogleAI),
-            ("generativeai.googleapis.com", ServiceProvider::GoogleAI),
-        ];
-        
-        for (pattern, provider) in api_patterns {
-            if content.contains(pattern) {
-                services.push(DetectedService {
-                    provider: provider.clone(),
-                    service_type: ServiceType::Api,
-                    name: format!("{} API", pattern),
-                    configuration: HashMap::new(),
-                    file_path: file_path.to_string_lossy().to_string(),
-                    line_number: self.find_line_number(content, pattern),
-                    confidence: 0.7,
-                });
+        // Use patterns from config
+        for rule in &self.pattern_config.patterns.api_endpoints {
+            if content.contains(&rule.pattern) {
+                if let Some(provider) = self.parse_provider(&rule.provider) {
+                    let service_type = self.parse_service_type(&rule.service_type);
+                    let service_name = rule.service_name.as_ref()
+                        .map(|s| s.clone())
+                        .unwrap_or_else(|| format!("{} API", rule.pattern));
+                    
+                    services.push(DetectedService {
+                        provider,
+                        service_type,
+                        name: service_name.clone(),
+                        configuration: HashMap::new(),
+                        file_path: file_path.to_string_lossy().to_string(),
+                        line_number: self.find_line_number(content, &rule.pattern),
+                        confidence: rule.confidence,
+                    });
+                }
             }
         }
         
@@ -757,6 +755,84 @@ STRIPE_API_KEY=sk_live_456
         
         assert!(services.iter().any(|s| s.provider == ServiceProvider::Clerk));
         assert!(services.iter().any(|s| s.provider == ServiceProvider::Stripe));
+    }
+
+    #[test]
+    fn test_printify_detection_from_env_file() {
+        // Create a temporary directory with a .env file containing Printify config
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join(".env");
+        
+        fs::write(&env_file, r#"
+# Printify Configuration
+PRINTIFY_API_KEY=sk_live_test123
+PRINTIFY_SHOP_ID=24952672
+PRINTIFY_ENVIRONMENT=sandbox
+        "#).unwrap();
+
+        // Load detector with plugins
+        let plugin_dir = Path::new("config/plugins");
+        let detector = if plugin_dir.exists() {
+            ServiceDetector::with_plugins(Some(plugin_dir)).unwrap_or_else(|_| ServiceDetector::new())
+        } else {
+            ServiceDetector::new()
+        };
+
+        // Detect services
+        let services = detector.detect_services(temp_dir.path()).unwrap();
+        
+        // Check if Printify was detected
+        let printify_services: Vec<_> = services.iter()
+            .filter(|s| s.name.to_lowercase().contains("printify"))
+            .collect();
+        
+        if printify_services.is_empty() {
+            println!("⚠ Printify not detected - plugin may not be loaded");
+        } else {
+            println!("✓ Detected {} Printify service(s):", printify_services.len());
+            for service in &printify_services {
+                println!("  - {} (confidence: {})", service.name, service.confidence);
+            }
+        }
+    }
+
+    #[test]
+    fn test_printify_detection_from_api_endpoint() {
+        // Create a temporary directory with a code file containing Printify API call
+        let temp_dir = TempDir::new().unwrap();
+        let code_file = temp_dir.path().join("printify-service.js");
+        
+        fs::write(&code_file, r#"
+async function fetchPrintifyProducts() {
+    const response = await fetch('https://api.printify.com/v1/products');
+    return response.json();
+}
+        "#).unwrap();
+
+        // Load detector with plugins
+        let plugin_dir = Path::new("config/plugins");
+        let detector = if plugin_dir.exists() {
+            ServiceDetector::with_plugins(Some(plugin_dir)).unwrap_or_else(|_| ServiceDetector::new())
+        } else {
+            ServiceDetector::new()
+        };
+
+        // Detect services
+        let services = detector.detect_services(temp_dir.path()).unwrap();
+        
+        // Check if Printify API endpoint was detected
+        let printify_services: Vec<_> = services.iter()
+            .filter(|s| s.name.to_lowercase().contains("printify"))
+            .collect();
+        
+        if printify_services.is_empty() {
+            println!("⚠ Printify not detected from API endpoint - plugin may not be loaded");
+        } else {
+            println!("✓ Detected {} Printify service(s) from API endpoint:", printify_services.len());
+            for service in &printify_services {
+                println!("  - {} (confidence: {})", service.name, service.confidence);
+            }
+        }
     }
 }
 

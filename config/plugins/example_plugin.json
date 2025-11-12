@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "patterns": {
+    "environment_variables": [
+      {
+        "pattern": "CUSTOM_SERVICE",
+        "provider": "Unknown",
+        "service_type": "Other",
+        "confidence": 0.6
+      }
+    ],
+    "sdk_patterns": [
+      {
+        "pattern": "@custom-service/",
+        "provider": "Unknown",
+        "service_type": "Other",
+        "confidence": 0.7
+      }
+    ],
+    "api_endpoints": [],
+    "database_patterns": [],
+    "aws_infrastructure": [],
+    "aws_sdk_v2_services": [],
+    "aws_sdk_v3_service_map": {}
+  }
+}
+
