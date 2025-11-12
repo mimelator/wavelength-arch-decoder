@@ -1453,14 +1453,12 @@ impl CodeAnalyzer {
             let parts: Vec<&str> = before_paren.split_whitespace().collect();
             if let Some(last_part) = parts.last() {
                 // Skip if it's a modifier or type keyword
+                let modifiers = ["public", "private", "protected", "static", "final", "abstract",
+                                 "synchronized", "native", "strictfp", "void", "int", "String",
+                                 "boolean", "long", "double", "float", "char", "byte", "short"];
                 if !last_part.is_empty() && 
-                   last_part != "public" && last_part != "private" && last_part != "protected" &&
-                   last_part != "static" && last_part != "final" && last_part != "abstract" &&
-                   last_part != "synchronized" && last_part != "native" && last_part != "strictfp" &&
-                   last_part != "void" && last_part != "int" && last_part != "String" &&
-                   last_part != "boolean" && last_part != "long" && last_part != "double" &&
-                   last_part != "float" && last_part != "char" && last_part != "byte" &&
-                   last_part != "short" && !last_part.contains('.') {
+                   !modifiers.contains(last_part) &&
+                   !last_part.contains('.') {
                     return Some(last_part.to_string());
                 }
             }
@@ -1533,8 +1531,8 @@ impl CodeAnalyzer {
             let parts: Vec<&str> = before_paren.split_whitespace().collect();
             // Return type is usually the second-to-last or last part (before method name)
             // Skip modifiers: public, private, static, final, etc.
-            let modifiers = vec!["public", "private", "protected", "static", "final", "abstract", 
-                                 "synchronized", "native", "strictfp"];
+            let modifiers = ["public", "private", "protected", "static", "final", "abstract", 
+                             "synchronized", "native", "strictfp"];
             for part in parts.iter().rev() {
                 if !modifiers.contains(part) && !part.is_empty() {
                     return Some(part.to_string());
