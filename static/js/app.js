@@ -19,6 +19,7 @@ function initializeApp() {
     setupSearch();
     setupGraph();
     loadVersion();
+    setupVersionCheckButton();
     // setupRepositories removed - not needed
     
     // Handle deep links from AI Assistant
@@ -3211,9 +3212,9 @@ async function showToolDetail(repoId, toolId) {
 // Global editor protocol (default: vscode)
 let editorProtocol = 'vscode';
 
-async function loadVersion() {
+async function loadVersion(force = false) {
     try {
-        const response = await api.getVersion();
+        const response = await api.getVersion(force);
         const versionElement = document.getElementById('app-version');
         if (versionElement && response.version) {
             versionElement.textContent = `v${response.version}`;
@@ -3229,10 +3230,67 @@ async function loadVersion() {
         if (response.update_available && response.latest_version) {
             showUpdateNotification(response.version, response.latest_version);
         }
+        
+        return response;
     } catch (error) {
         console.error('Failed to load version:', error);
         // Keep the fallback version from HTML if API fails
+        throw error;
     }
+}
+
+// Setup version check button
+function setupVersionCheckButton() {
+    const btn = document.getElementById('btn-check-updates');
+    if (!btn) return;
+    
+    btn.onclick = function() {
+        btn.disabled = true;
+        btn.textContent = 'Checking...';
+        
+        fetch('/api/v1/version?force=true')
+            .then(response => response.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.textContent = '🔄 Check for Updates';
+                
+                // Update version display
+                const versionElement = document.getElementById('app-version');
+                if (versionElement && data.version) {
+                    versionElement.textContent = `v${data.version}`;
+                }
+                
+                // Show result
+                if (data.update_available && data.latest_version) {
+                    // Clear dismissed notifications
+                    const keys = Object.keys(localStorage);
+                    keys.forEach(key => {
+                        if (key.startsWith('update-dismissed-')) {
+                            localStorage.removeItem(key);
+                        }
+                    });
+                    
+                    // Remove existing notification
+                    const existingNotification = document.getElementById('update-notification');
+                    if (existingNotification) {
+                        existingNotification.remove();
+                    }
+                    
+                    // Show notification
+                    if (typeof showUpdateNotification === 'function') {
+                        showUpdateNotification(data.version, data.latest_version);
+                    }
+                    alert(`Update available!\n\nCurrent version: v${data.version}\nLatest version: v${data.latest_version}\n\nCheck GitHub releases for the update.`);
+                } else {
+                    alert(`You're running the latest version: v${data.version}`);
+                }
+            })
+            .catch(error => {
+                btn.disabled = false;
+                btn.textContent = '🔄 Check for Updates';
+                alert('Failed to check for updates: ' + error.message);
+            });
+    };
 }
 
 function showUpdateNotification(currentVersion, latestVersion) {

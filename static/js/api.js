@@ -130,8 +130,9 @@ class WavelengthAPI {
         return this.request(`/repositories/${repoId}/entities/${entityType}/${entityId}`);
     }
 
-    async getVersion() {
-        return this.request('/version');
+    async getVersion(force = false) {
+        const url = force ? '/version?force=true' : '/version';
+        return this.request(url);
     }
 
     async getAnalysisProgress(repoId) {

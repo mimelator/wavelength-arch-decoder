@@ -45,7 +45,7 @@ pub async fn health() -> impl Responder {
 }
 
 // Version endpoint
-pub async fn version() -> impl Responder {
+pub async fn version(query: web::Query<std::collections::HashMap<String, String>>) -> impl Responder {
     use crate::api::version_check;
     
     // Get current version
@@ -55,10 +55,13 @@ pub async fn version() -> impl Responder {
     let editor_protocol = std::env::var("EDITOR_PROTOCOL")
         .unwrap_or_else(|_| "vscode".to_string());
     
-    // Check for updates (non-blocking, uses cache)
-    let version_info = version_check::check_for_updates(false).await;
+    // Check if force refresh is requested
+    let force = query.get("force").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false);
     
-    log::debug!("Version endpoint returning: {}, editor_protocol: {}", current_version, editor_protocol);
+    // Check for updates (non-blocking, uses cache unless forced)
+    let version_info = version_check::check_for_updates(force).await;
+    
+    log::debug!("Version endpoint returning: {}, editor_protocol: {}, force: {}", current_version, editor_protocol, force);
     HttpResponse::Ok().json(serde_json::json!({
         "version": current_version,
         "editor_protocol": editor_protocol,
