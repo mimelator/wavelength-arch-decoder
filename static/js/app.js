@@ -19,6 +19,36 @@ function initializeApp() {
     setupGraph();
     loadVersion();
     // setupRepositories removed - not needed
+    
+    // Handle deep links from AI Assistant
+    handleDeepLinks();
+}
+
+function handleDeepLinks() {
+    // Check for deep link parameters in URL hash
+    const hash = window.location.hash;
+    if (hash && hash.includes('repository-detail')) {
+        const urlParams = new URLSearchParams(hash.split('?')[1] || '');
+        const repoId = urlParams.get('repo');
+        const entityId = urlParams.get('entity');
+        const entityType = urlParams.get('entityType');
+        
+        if (repoId && entityId && entityType) {
+            // Navigate to repository detail page first, then open entity modal
+            setTimeout(async () => {
+                await viewRepository(repoId);
+                // Wait a bit for the page to load, then open entity detail
+                setTimeout(() => {
+                    showEntityDetail(repoId, entityType, entityId);
+                }, 800);
+            }, 300);
+        } else if (repoId) {
+            // Just navigate to repository detail
+            setTimeout(async () => {
+                await viewRepository(repoId);
+            }, 300);
+        }
+    }
 }
 
 // Theme Management

@@ -114,6 +114,20 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **Knowledge Graph Summary**: Graph statistics and node type breakdowns
 - **Print-Friendly**: Clean, professional formatting suitable for documentation
 
+### 🤖 **AI Assistant Integration**
+- **Natural Language Queries**: Ask questions about your codebase in plain English
+- **Interactive Chat UI**: Beautiful dark-themed chat interface for easy interaction
+- **Intelligent Responses**: AI-powered answers using OpenAI GPT-4 with full context
+- **Function Discovery**: "What functions are available?" - Discover available functions and their usage
+- **Service Analysis**: "What services are used?" - Get comprehensive service listings
+- **Dependency Insights**: "What dependencies does this use?" - Understand your dependency graph
+- **Refactoring Impact**: "What would break if I rename X?" - Analyze refactoring risks
+- **Rich Results Display**: Shows sources, graph statistics, and related entities
+- **Repository Selection**: Easy dropdown to switch between repositories
+- **Knowledge Graph Integration**: Leverages the full knowledge graph for context-aware responses
+- **Standalone Service**: Runs on port 8000, isolated in `ai-assistant/` folder
+- **No Hard-Coding**: Automatically discovers relationships from your codebase analysis
+
 ---
 
 ## 🚀 Quick Start
@@ -147,6 +161,32 @@ The server will start on `http://localhost:8080` by default.
    - URL (GitHub, GitLab, or local file path)
    - Branch (defaults to `main`)
 3. **Analyze**: Click "Analyze" and watch real-time progress
+
+### 🤖 Using the AI Assistant
+
+The AI Assistant provides an interactive chat interface for querying your codebase architecture:
+
+1. **Start the AI Assistant**:
+   ```bash
+   cd ai-assistant
+   ./start.sh
+   ```
+
+2. **Open the Chat UI**: Navigate to `http://localhost:8000`
+
+3. **Select a Repository**: Choose from the dropdown menu
+
+4. **Ask Questions**: Try queries like:
+   - "What functions are available?"
+   - "What services are used?"
+   - "What dependencies does this use?"
+   - "What functions use Firebase?"
+   - "What would break if I rename getAdminStorage?"
+
+**Requirements**: 
+- Architecture Decoder must be running on `http://localhost:8080`
+- OpenAI API key (optional - works without it but with less detailed responses)
+- See [AI Assistant README](ai-assistant/README.md) for full setup instructions
 4. **Explore**: Browse dependencies, services, code structure, security, and the knowledge graph
 5. **Generate Report**: Click "Generate Report" to create a comprehensive HTML report
 
@@ -229,7 +269,7 @@ Discover hidden dependencies, undocumented service integrations, and security co
 Identify hardcoded API keys, analyze IAM policies, detect security vulnerabilities, and map security relationships.
 
 ### 🤖 **AI Assistant Integration**
-Provide structured knowledge graphs to AI assistants for better code understanding and problem-solving.
+Use the interactive AI Assistant chat interface (`http://localhost:8000`) to ask natural language questions about your codebase. Get AI-powered answers about functions, services, dependencies, and refactoring impact analysis. Perfect for quick codebase exploration and understanding.
 
 ### 📊 **Architecture Documentation**
 Automatically generate up-to-date architecture documentation and dependency graphs.
