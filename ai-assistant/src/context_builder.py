@@ -78,23 +78,39 @@ class ContextBuilder:
             print(f"Warning: Could not get code elements: {e}")
             return {"sources": [], "related": {}}
 
+        # Filter out common query words that aren't actual function names
+        common_words = {"functions", "function", "available", "list", "show", "what", "which", "are", "is"}
+        filtered_entities = [e for e in entities if e.lower() not in common_words]
+
         # Filter by topics/entities
         filtered = []
         for element in code_elements:
-            if element.get("element_type") != "function":
+            # Check for function (case-insensitive)
+            element_type = element.get("element_type", "").lower()
+            if element_type != "function":
+                continue
+
+            # Skip functions from dependency directories (venv, node_modules, etc.)
+            file_path = element.get("file_path", "")
+            if not file_path:
+                continue
+            file_path_lower = file_path.lower()
+            if any(dep_dir in file_path_lower for dep_dir in ["venv/", "node_modules/", ".venv/", "__pycache__/", "site-packages/"]):
                 continue
 
             name = element.get("name", "").lower()
-            file_path = element.get("file_path", "").lower()
 
             # Check if matches topics or entities
             matches = False
             if topics:
-                matches = any(topic.lower() in name or topic.lower() in file_path
+                # If we have topics (like "firebase"), match against those
+                matches = any(topic.lower() in name or topic.lower() in file_path_lower
                              for topic in topics)
-            if entities:
-                matches = matches or any(entity.lower() in name for entity in entities)
-            if not topics and not entities:
+            elif filtered_entities:
+                # If we have specific entity names (not common words), match those
+                matches = any(entity.lower() in name for entity in filtered_entities)
+            else:
+                # No specific topics or entities - match all functions
                 matches = True
 
             if matches:
