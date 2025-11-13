@@ -252,6 +252,25 @@ body {
     align-items: center;
 }
 
+.analyze-info-note {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-secondary);
+    border-left: 3px solid var(--primary-color);
+    border-radius: 4px;
+    width: 100%;
+}
+
+.analyze-info-note small {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
+.analyze-info-note strong {
+    color: var(--text-primary);
+}
+
 .analyze-button-group {
     display: flex;
     flex-direction: column;
@@ -1013,8 +1032,16 @@ body {
 
 .repo-detail-actions {
     display: flex;
-    gap: 0.5rem;
+    flex-direction: column;
+    gap: 0.75rem;
     align-items: flex-start;
+}
+
+.repo-detail-buttons {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
 }
 
 .repo-detail-tabs {
@@ -1138,11 +1165,56 @@ body {
     display: block;
 }
 
+.overview-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.overview-section {
+    background: var(--bg-color);
+    border-radius: 0.5rem;
+    border: 1px solid var(--border-color);
+    padding: 1.5rem;
+}
+
+.overview-section-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.overview-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.overview-info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.overview-info-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.overview-info-value {
+    font-size: 1rem;
+    color: var(--text-primary);
+    word-break: break-all;
+}
+
 .detail-stats {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 1rem;
-    margin-bottom: 2rem;
 }
 
 .detail-stat-card {
@@ -1151,6 +1223,18 @@ body {
     border-radius: 0.5rem;
     border: 1px solid var(--border-color);
     text-align: center;
+    transition: all 0.2s;
+    position: relative;
+}
+
+.detail-stat-card.clickable-stat {
+    cursor: pointer;
+}
+
+.detail-stat-card.clickable-stat:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+    transform: translateY(-2px);
 }
 
 .detail-stat-card h4 {
@@ -1163,6 +1247,20 @@ body {
 .detail-stat-card p {
     color: var(--text-secondary);
     font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+}
+
+.detail-stat-card .stat-link {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--primary-color);
+    opacity: 0;
+    transition: opacity 0.2s;
+    margin-top: 0.5rem;
+}
+
+.detail-stat-card.clickable-stat:hover .stat-link {
+    opacity: 1;
 }
 
 .detail-section {

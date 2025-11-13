@@ -117,12 +117,14 @@
                         </div>
                     </div>
                     <div class="repo-detail-actions">
-                        <div class="analyze-button-group">
+                        <div class="repo-detail-buttons">
                             <button class="btn btn-primary" id="btn-analyze-detail">Analyze</button>
-                            <small class="analyze-info-text">⚠️ Monitor progress in server logs</small>
+                            <button class="btn btn-secondary" id="btn-generate-report">📄 Generate Report</button>
+                            <button class="btn btn-danger" id="btn-delete-detail">Delete</button>
                         </div>
-                        <button class="btn btn-secondary" id="btn-generate-report">📄 Generate Report</button>
-                        <button class="btn btn-danger" id="btn-delete-detail">Delete</button>
+                        <div class="analyze-info-note">
+                            <small>💡 <strong>Tip:</strong> When re-analyzing, check the server logs for detailed progress and any issues.</small>
+                        </div>
                     </div>
                 </div>
                 <div id="analysis-status-detail" class="analysis-status" style="display: none;"></div>
@@ -139,22 +141,66 @@
                 </div>
                 <div class="repo-detail-content">
                     <div id="tab-overview" class="repo-tab-content active">
-                        <div class="detail-stats">
-                            <div class="detail-stat-card" data-entity-type="dependencies">
-                                <h4 id="stat-deps-count">0</h4>
-                                <p>Dependencies</p>
+                        <div class="overview-content">
+                            <!-- Repository Information Section -->
+                            <div class="overview-section">
+                                <h3 class="overview-section-title">Repository Information</h3>
+                                <div class="overview-info-grid">
+                                    <div class="overview-info-item">
+                                        <span class="overview-info-label">Repository URL:</span>
+                                        <span class="overview-info-value" id="overview-repo-url">-</span>
+                                    </div>
+                                    <div class="overview-info-item">
+                                        <span class="overview-info-label">Branch:</span>
+                                        <span class="overview-info-value" id="overview-repo-branch">-</span>
+                                    </div>
+                                    <div class="overview-info-item">
+                                        <span class="overview-info-label">Last Analyzed:</span>
+                                        <span class="overview-info-value" id="overview-repo-last-analyzed">-</span>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="detail-stat-card" data-entity-type="services">
-                                <h4 id="stat-services-count">0</h4>
-                                <p>Services</p>
-                            </div>
-                            <div class="detail-stat-card" data-entity-type="code">
-                                <h4 id="stat-code-count">0</h4>
-                                <p>Code Elements</p>
-                            </div>
-                            <div class="detail-stat-card" data-entity-type="security">
-                                <h4 id="stat-security-count">0</h4>
-                                <p>Security Entities</p>
+
+                            <!-- Statistics Section -->
+                            <div class="overview-section">
+                                <h3 class="overview-section-title">Statistics</h3>
+                                <div class="detail-stats">
+                                    <div class="detail-stat-card clickable-stat" data-entity-type="dependencies" onclick="switchTab('dependencies', currentRepoId)">
+                                        <h4 id="stat-deps-count">0</h4>
+                                        <p>Dependencies</p>
+                                        <span class="stat-link">View all →</span>
+                                    </div>
+                                    <div class="detail-stat-card clickable-stat" data-entity-type="services" onclick="switchTab('services', currentRepoId)">
+                                        <h4 id="stat-services-count">0</h4>
+                                        <p>Services</p>
+                                        <span class="stat-link">View all →</span>
+                                    </div>
+                                    <div class="detail-stat-card clickable-stat" data-entity-type="code" onclick="switchTab('code', currentRepoId)">
+                                        <h4 id="stat-code-count">0</h4>
+                                        <p>Code Elements</p>
+                                        <span class="stat-link">View all →</span>
+                                    </div>
+                                    <div class="detail-stat-card clickable-stat" data-entity-type="security" onclick="switchTab('security', currentRepoId)">
+                                        <h4 id="stat-security-count">0</h4>
+                                        <p>Security Entities</p>
+                                        <span class="stat-link">View all →</span>
+                                    </div>
+                                    <div class="detail-stat-card clickable-stat" data-entity-type="tools" onclick="switchTab('tools', currentRepoId)">
+                                        <h4 id="stat-tools-count">0</h4>
+                                        <p>Tools</p>
+                                        <span class="stat-link">View all →</span>
+                                    </div>
+                                    <div class="detail-stat-card clickable-stat" data-entity-type="tests" onclick="switchTab('tests', currentRepoId)">
+                                        <h4 id="stat-tests-count">0</h4>
+                                        <p>Tests</p>
+                                        <span class="stat-link">View all →</span>
+                                    </div>
+                                    <div class="detail-stat-card clickable-stat" data-entity-type="documentation" onclick="switchTab('documentation', currentRepoId)">
+                                        <h4 id="stat-docs-count">0</h4>
+                                        <p>Documentation</p>
+                                        <span class="stat-link">View all →</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

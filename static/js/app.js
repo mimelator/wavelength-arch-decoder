@@ -268,7 +268,7 @@ const ENTITY_CONFIGS = {
     },
     test: {
         entityType: 'test',
-        detailEntityType: null, // Tests don't have detail modal yet
+        detailEntityType: null, // Tests use custom onClickHandler
         nameField: 'name',
         idField: 'id',
         searchFields: ['name', 'test_framework', 'file_path', 'suite_name'],
@@ -276,6 +276,9 @@ const ENTITY_CONFIGS = {
         metaFields: ['test_framework', 'language'],
         fileField: 'file_path',
         lineNumberField: 'line_number',
+        onClickHandler: (item) => {
+            return `event.stopPropagation(); viewTest('${item.id}');`;
+        },
         groupByOptions: {
             'framework': (item) => item.test_framework || 'unknown',
             'language': (item) => item.language || 'unknown',
@@ -292,6 +295,7 @@ const ENTITY_CONFIGS = {
                 badges.push(`<span class="detail-badge">${escapeHtml(item.test_type)}</span>`);
             }
             badges.push(`<span class="detail-badge">${escapeHtml(item.language)}</span>`);
+            badges.push('<span class="detail-badge badge-info">🧪 Click for details</span>');
             return badges.join('');
         },
         renderMeta: (item, repoData) => {
@@ -382,11 +386,19 @@ function renderEntityList(entityType, items, options = {}) {
     
     // Filter items if needed
     let filtered = items;
-    if (options.filters) {
+    if (options.filters && Object.keys(options.filters).length > 0) {
         filtered = items.filter(item => {
             return Object.entries(options.filters).every(([field, value]) => {
+                // Skip empty filter values (means "show all")
+                if (!value || value === '') {
+                    return true;
+                }
                 const filterFn = config.filterFields?.[field];
-                return filterFn ? filterFn(item, value) : true;
+                if (!filterFn) {
+                    console.warn(`[FILTER] No filter function for field: ${field}`);
+                    return true;
+                }
+                return filterFn(item, value);
             });
         });
     }
@@ -565,14 +577,22 @@ async function loadEntityList(entityType, repoId, apiLoader, containerId, filter
                                entityType === 'documentation' ? 'allDocumentation' :
                                `all${entityType.charAt(0).toUpperCase() + entityType.slice(1).replace('_', '')}`;
         window[storageVarName] = items;
+        // Also set the direct variable for code elements
+        if (entityType === 'code_element') {
+            allCodeElements = items;
+            console.log('[CODE] Set allCodeElements to', items.length, 'items');
+        }
         
         // Setup filters if provided
         if (filterSetupFn) {
             filterSetupFn(items, repoData);
+        } else {
+            // If no filter setup function, do initial render
+            // But for code_element, we handle rendering in the callback
+            if (entityType !== 'code_element') {
+                renderEntityListUnified(entityType, items, containerId, repoData);
+            }
         }
-        
-        // Initial render
-        renderEntityListUnified(entityType, items, containerId, repoData);
     } catch (error) {
         container.innerHTML = `<p class="error-text">Failed to load ${entityType}: ${escapeHtml(error.message)}</p>`;
     }
@@ -589,19 +609,43 @@ function renderEntityListUnified(entityType, items, containerId, repoData = null
     if (!container) return;
     
     // Get filter values from DOM
-    const searchInput = document.getElementById(`${entityType}-search`);
-    const groupBySelect = document.getElementById(`${entityType}-group-by`);
+    // Handle naming differences: code_element vs code, security_entity vs security
+    const searchId = entityType === 'code_element' ? 'code-search' :
+                     entityType === 'security_entity' ? 'security-search' :
+                     `${entityType}-search`;
+    const groupById = entityType === 'code_element' ? 'code-group-by' :
+                      entityType === 'security_entity' ? 'security-group-by' :
+                      `${entityType}-group-by`;
+    
+    const searchInput = document.getElementById(searchId);
+    const groupBySelect = document.getElementById(groupById);
     const searchTerm = searchInput?.value.toLowerCase() || '';
     const groupBy = groupBySelect?.value || 'none';
     
     // Build filters object from DOM
     const filters = {};
     Object.keys(config.filterFields || {}).forEach(filterField => {
-        const filterInput = document.getElementById(`${entityType}-filter-${filterField}`);
+        // Handle naming differences for filter inputs
+        let filterId = `${entityType}-filter-${filterField}`;
+        if (entityType === 'code_element') {
+            filterId = `code-filter-${filterField}`;
+        } else if (entityType === 'security_entity') {
+            filterId = `security-filter-${filterField}`;
+        }
+        const filterInput = document.getElementById(filterId);
         if (filterInput) {
-            filters[filterField] = filterInput.value || '';
+            const value = filterInput.value || '';
+            // Only add filter if value is not empty (empty means "show all")
+            if (value) {
+                filters[filterField] = value;
+            }
+        } else {
+            console.warn(`[FILTER] Filter input not found: ${filterId} for entityType: ${entityType}, filterField: ${filterField}`);
         }
     });
+    
+    // Debug logging
+    console.log(`[RENDER] entityType: ${entityType}, items count: ${items.length}, filters:`, filters, 'searchTerm:', searchTerm);
     
     // Render
     const html = renderEntityList(entityType, items, {
@@ -613,7 +657,10 @@ function renderEntityListUnified(entityType, items, containerId, repoData = null
         maxInitial: 50
     });
     
+    console.log(`[RENDER] Generated HTML length: ${html ? html.length : 0}`);
+    
     if (!html || html.trim() === '') {
+        console.warn(`[RENDER] No HTML generated for ${entityType}, showing empty message`);
         container.innerHTML = '<p>No items match the current filters.</p>';
         return;
     }
@@ -621,7 +668,11 @@ function renderEntityListUnified(entityType, items, containerId, repoData = null
     container.innerHTML = html;
     
     // Update filter info
-    const filterInfo = document.getElementById(`${entityType}-filter-info`);
+    // Handle naming differences for filter info element
+    const filterInfoId = entityType === 'code_element' ? 'code-filter-info' :
+                          entityType === 'security_entity' ? 'security-filter-info' :
+                          `${entityType}-filter-info`;
+    const filterInfo = document.getElementById(filterInfoId);
     if (filterInfo) {
         const activeFilters = [];
         if (searchTerm) activeFilters.push(`search: "${searchTerm}"`);
@@ -2449,20 +2500,40 @@ function switchTab(tabName, repoId, updateHistory = true) {
 
 async function loadRepositoryOverview(repoId) {
     try {
-        const [deps, services, code, security, tools, tests] = await Promise.all([
+        const [repo, deps, services, code, security, tools, tests, docs] = await Promise.all([
+            api.getRepository(repoId).catch(() => null),
             api.getDependencies(repoId).catch(() => []),
             api.getServices(repoId).catch(() => []),
             api.getCodeElements(repoId).catch(() => []),
             api.getSecurityEntities(repoId).catch(() => []),
             api.getTools(repoId).catch(() => []),
-            api.getTests(repoId).catch(() => [])
+            api.getTests(repoId).catch(() => []),
+            api.getDocumentation(repoId).catch(() => [])
         ]);
         
+        // Update repository information
+        if (repo) {
+            const urlElem = document.getElementById('overview-repo-url');
+            const branchElem = document.getElementById('overview-repo-branch');
+            const lastAnalyzedElem = document.getElementById('overview-repo-last-analyzed');
+            
+            if (urlElem) urlElem.textContent = repo.url || '-';
+            if (branchElem) branchElem.textContent = repo.branch || 'main';
+            if (lastAnalyzedElem) {
+                lastAnalyzedElem.textContent = repo.last_analyzed_at 
+                    ? new Date(repo.last_analyzed_at).toLocaleString()
+                    : 'Not analyzed yet';
+            }
+        }
+        
+        // Update statistics
         document.getElementById('stat-deps-count').textContent = deps.length || 0;
         document.getElementById('stat-services-count').textContent = services.length || 0;
         document.getElementById('stat-code-count').textContent = code.length || 0;
         document.getElementById('stat-security-count').textContent = security.length || 0;
-        // Note: Tests count not shown in overview stats yet
+        document.getElementById('stat-tools-count').textContent = tools.length || 0;
+        document.getElementById('stat-tests-count').textContent = tests.length || 0;
+        document.getElementById('stat-docs-count').textContent = docs.length || 0;
     } catch (error) {
         console.error('Failed to load overview:', error);
     }
@@ -2828,47 +2899,177 @@ let allCodeElements = [];
 let currentCodeGroupBy = 'type';
 
 async function loadCodeElements(repoId) {
-    // Use unified loader
-    await loadEntityList('code_element', repoId, (id) => api.getCodeElements(id), 'code-list', (items, repoData) => {
-        // Populate filter dropdowns
+    const container = document.getElementById('code-list');
+    if (!container) return;
+    
+    container.innerHTML = '<p class="loading-text">Loading code elements...</p>';
+    
+    try {
+        // Load code elements
+        const items = await api.getCodeElements(repoId);
+        
+        if (!items || items.length === 0) {
+            container.innerHTML = '<p>No code elements found. Run analysis first.</p>';
+            return;
+        }
+        
+        // Get repo data for file linking
+        let repoData = null;
+        try {
+            repoData = await api.getRepository(repoId).catch(() => null);
+        } catch (e) {
+            // Ignore
+        }
+        
+        // Set allCodeElements immediately
+        allCodeElements = items;
+        const cafCount = items.filter(e => e.language === 'webmethods-caf').length;
+        const mwsCount = items.filter(e => e.language === 'webmethods-mws').length;
+        const isCount = items.filter(e => e.language === 'webmethods-is').length;
+        console.log('[CODE] Loaded', items.length, 'code elements');
+        console.log('[CODE]   Languages:', [...new Set(items.map(el => el.language || 'unknown'))].sort());
+        console.log('[CODE]   webMethods assets:', { CAF: cafCount, MWS: mwsCount, IS: isCount });
+        
+        // Populate filter dropdowns FIRST, before any rendering
         const typeFilter = document.getElementById('code-filter-type');
         const languageFilter = document.getElementById('code-filter-language');
+        const searchInput = document.getElementById('code-search');
+        const groupBySelect = document.getElementById('code-group-by');
         
+        // Reset all filters to empty/All before populating
         if (typeFilter) {
-            const types = [...new Set(items.map(el => el.element_type || 'unknown'))].sort();
             typeFilter.innerHTML = '<option value="">All Types</option>';
+            const types = [...new Set(items.map(el => el.element_type || 'unknown'))].sort();
             types.forEach(type => {
                 const option = document.createElement('option');
                 option.value = type;
                 option.textContent = type;
                 typeFilter.appendChild(option);
             });
+            typeFilter.value = '';
+            typeFilter.selectedIndex = 0;
+            console.log('[CODE] Type filter populated and reset to empty');
         }
         
         if (languageFilter) {
-            const languages = [...new Set(items.map(el => el.language || 'unknown'))].sort();
             languageFilter.innerHTML = '<option value="">All Languages</option>';
+            const languages = [...new Set(items.map(el => el.language || 'unknown'))].sort();
             languages.forEach(lang => {
                 const option = document.createElement('option');
                 option.value = lang;
                 option.textContent = lang;
                 languageFilter.appendChild(option);
             });
+            languageFilter.value = '';
+            languageFilter.selectedIndex = 0;
+            console.log('[CODE] Language filter populated and reset to empty');
         }
         
-        // Setup filter event listeners
-        const searchInput = document.getElementById('code-search');
-        const groupBySelect = document.getElementById('code-group-by');
+        if (searchInput) {
+            searchInput.value = '';
+        }
         
+        if (groupBySelect) {
+            groupBySelect.value = 'type';
+            currentCodeGroupBy = 'type';
+        }
+        
+        // Now render with all elements (filters are empty = show all)
         const renderFn = () => {
-            renderEntityListUnified('code_element', allCodeElements, 'code-list', repoData || currentRepoData);
+            const codeElements = allCodeElements || [];
+            if (!codeElements || codeElements.length === 0) {
+                console.warn('[CODE] allCodeElements is empty');
+                container.innerHTML = '<p>No code elements available.</p>';
+                return;
+            }
+            
+            // Get current filter values
+            const searchTerm = searchInput?.value.toLowerCase() || '';
+            const typeFilterValue = typeFilter?.value || '';
+            const langFilterValue = languageFilter?.value || '';
+            const groupBy = groupBySelect?.value || 'type';
+            
+            console.log('[CODE] Rendering with filters:', {
+                total: codeElements.length,
+                searchTerm,
+                typeFilter: typeFilterValue || '(all)',
+                langFilter: langFilterValue || '(all)',
+                groupBy
+            });
+            
+            // Filter elements
+            let filtered = codeElements.filter(el => {
+                const matchesSearch = !searchTerm || 
+                    el.name.toLowerCase().includes(searchTerm) ||
+                    (el.file_path && el.file_path.toLowerCase().includes(searchTerm));
+                const matchesType = !typeFilterValue || el.element_type === typeFilterValue;
+                const matchesLang = !langFilterValue || el.language === langFilterValue;
+                return matchesSearch && matchesType && matchesLang;
+            });
+            
+            console.log('[CODE] Filtered to', filtered.length, 'elements');
+            console.log('[CODE]   CAF in filtered:', filtered.filter(e => e.language === 'webmethods-caf').length);
+            console.log('[CODE]   MWS in filtered:', filtered.filter(e => e.language === 'webmethods-mws').length);
+            
+            // Render directly - items are already filtered, so pass empty filters object
+            // to prevent renderEntityList from filtering again
+            // When grouping, show all items in each group (not just first 50 total)
+            const html = renderEntityList('code_element', filtered, {
+                searchTerm: '', // Already filtered
+                groupBy: groupBy,
+                filters: {}, // Empty - items are already filtered
+                repoData: repoData,
+                showAll: groupBy !== 'none', // Show all when grouping, paginate when not grouping
+                maxInitial: groupBy === 'none' ? 50 : 999999 // Only paginate when not grouping
+            });
+            
+            if (!html || html.trim() === '') {
+                container.innerHTML = '<p>No code elements match the current filters.</p>';
+            } else {
+                container.innerHTML = html;
+            }
+            
+            // Update filter info
+            const infoDiv = document.getElementById('code-filter-info');
+            if (infoDiv) {
+                const activeFilters = [];
+                if (searchTerm) activeFilters.push(`search: "${searchTerm}"`);
+                if (typeFilterValue) activeFilters.push(`type: ${typeFilterValue}`);
+                if (langFilterValue) activeFilters.push(`language: ${langFilterValue}`);
+                
+                if (activeFilters.length > 0) {
+                    infoDiv.textContent = `Showing ${filtered.length} of ${codeElements.length} code elements (${activeFilters.join(', ')})`;
+                    infoDiv.style.display = 'block';
+                } else {
+                    infoDiv.style.display = 'none';
+                }
+            }
         };
         
-        if (searchInput) searchInput.oninput = renderFn;
-        if (typeFilter) typeFilter.onchange = renderFn;
-        if (languageFilter) languageFilter.onchange = renderFn;
-        if (groupBySelect) groupBySelect.onchange = renderFn;
-    });
+        // Setup event listeners
+        if (searchInput) {
+            searchInput.oninput = renderFn;
+        }
+        if (typeFilter) {
+            typeFilter.onchange = renderFn;
+        }
+        if (languageFilter) {
+            languageFilter.onchange = renderFn;
+        }
+        if (groupBySelect) {
+            groupBySelect.onchange = () => {
+                currentCodeGroupBy = groupBySelect.value;
+                renderFn();
+            };
+        }
+        
+        // Initial render - filters are now properly reset
+        renderFn();
+        
+    } catch (error) {
+        console.error('[CODE] Failed to load code elements:', error);
+        container.innerHTML = `<p class="error-text">Failed to load code elements: ${escapeHtml(error.message)}</p>`;
+    }
 }
 
 function setupCodeFilters(elements) {
@@ -2898,29 +3099,49 @@ function setupCodeFilters(elements) {
 }
 
 function filterAndRenderCode() {
-    const searchTerm = document.getElementById('code-search').value.toLowerCase();
-    const typeFilter = document.getElementById('code-filter-type').value;
-    const langFilter = document.getElementById('code-filter-language').value;
+    const searchTerm = document.getElementById('code-search')?.value.toLowerCase() || '';
+    const typeFilter = document.getElementById('code-filter-type')?.value || '';
+    const langFilter = document.getElementById('code-filter-language')?.value || '';
+    
+    if (!allCodeElements || allCodeElements.length === 0) {
+        console.warn('[CODE] filterAndRenderCode: allCodeElements is empty');
+        return [];
+    }
     
     let filtered = allCodeElements.filter(el => {
         const matchesSearch = !searchTerm || 
             el.name.toLowerCase().includes(searchTerm) ||
             (el.file_path && el.file_path.toLowerCase().includes(searchTerm));
-        const matchesType = !typeFilter || el.element_type === typeFilter;
-        const matchesLang = !langFilter || el.language === langFilter;
+        // Type filter: empty string means show all types
+        const matchesType = !typeFilter || typeFilter === '' || el.element_type === typeFilter;
+        // Language filter: empty string means show all languages
+        const matchesLang = !langFilter || langFilter === '' || el.language === langFilter;
         return matchesSearch && matchesType && matchesLang;
+    });
+    
+    console.log('[CODE] filterAndRenderCode:', {
+        total: allCodeElements.length,
+        filtered: filtered.length,
+        searchTerm,
+        typeFilter,
+        langFilter,
+        cafInFiltered: filtered.filter(e => e.language === 'webmethods-caf').length,
+        mwsInFiltered: filtered.filter(e => e.language === 'webmethods-mws').length,
     });
     
     // Update filter info
     const infoDiv = document.getElementById('code-filter-info');
-    if (filtered.length !== allCodeElements.length) {
-        infoDiv.textContent = `Showing ${filtered.length} of ${allCodeElements.length} code elements`;
-        infoDiv.style.display = 'block';
-    } else {
-        infoDiv.style.display = 'none';
+    if (infoDiv) {
+        if (filtered.length !== allCodeElements.length) {
+            infoDiv.textContent = `Showing ${filtered.length} of ${allCodeElements.length} code elements`;
+            infoDiv.style.display = 'block';
+        } else {
+            infoDiv.style.display = 'none';
+        }
     }
     
     renderCodeElements(filtered);
+    return filtered;
 }
 
 function renderCodeElements(elements) {
@@ -4612,13 +4833,14 @@ function renderTestItem(test, repoData = null) {
     const fileLink = createFileLink(test.file_path, test.line_number, repoData);
     
     return `
-        <div class="detail-item" data-test-id="${test.id}">
+        <div class="detail-item clickable" data-test-id="${test.id}" onclick="event.stopPropagation(); viewTest('${test.id}');" style="cursor: pointer;" title="Click to view test details">
             <div class="detail-item-header">
                 <span class="entity-id-badge">${getShortId(test.id)}</span>
                 <h4 class="detail-item-title">${escapeHtml(test.name)}</h4>
                 <span class="detail-item-badge">${escapeHtml(test.test_framework)}</span>
                 ${test.test_type ? `<span class="detail-item-badge">${escapeHtml(test.test_type)}</span>` : ''}
                 <span class="detail-item-badge">${escapeHtml(test.language)}</span>
+                <span class="detail-badge badge-info" style="margin-left: auto;">🧪 Click for details</span>
             </div>
             <div class="detail-item-content">
                 ${test.suite_name ? `<div class="detail-item-row"><strong>Suite:</strong> ${escapeHtml(test.suite_name)}</div>` : ''}
@@ -4673,7 +4895,7 @@ function renderDocumentationItem(doc, repoData = null) {
 }
 
 // View documentation in modal
-window.viewDocumentation = function(docId) {
+window.viewDocumentation = async function(docId) {
     console.log('[DOC] viewDocumentation called with docId:', docId);
     console.log('[DOC] allDocumentation length:', allDocumentation.length);
     
@@ -4703,7 +4925,18 @@ window.viewDocumentation = function(docId) {
     if (doc.has_api_references) badges.push('<span class="detail-badge badge-info">API References</span>');
     if (doc.has_diagrams) badges.push('<span class="detail-badge badge-info">Diagrams</span>');
     
-    const fileLink = createFileLink(doc.file_path, null, currentRepoData);
+    // Get repo data if not available
+    let repoDataForLink = currentRepoData;
+    if (!repoDataForLink && currentRepoId) {
+        try {
+            repoDataForLink = await api.getRepository(currentRepoId).catch(() => null);
+        } catch (e) {
+            console.warn('[DOC] Failed to fetch repo data for file link:', e);
+        }
+    }
+    
+    const fileLink = createFileLink(doc.file_path, null, repoDataForLink);
+    console.log('[DOC] File link generated:', fileLink ? 'yes' : 'no', 'for path:', doc.file_path);
     
     bodyEl.innerHTML = `
         <div class="entity-detail-content">
@@ -4716,7 +4949,7 @@ window.viewDocumentation = function(docId) {
                     </div>
                 </div>
                 <div class="detail-meta">
-                    <p><strong>File Path:</strong> <code>${escapeHtml(doc.file_path)}</code> ${fileLink}</p>
+                    <p><strong>File Path:</strong> <code>${escapeHtml(doc.file_path)}</code> ${fileLink || ''}</p>
                     ${doc.title ? `<p><strong>Title:</strong> ${escapeHtml(doc.title)}</p>` : ''}
                     ${doc.description ? `<p><strong>Description:</strong> ${escapeHtml(doc.description)}</p>` : ''}
                     <p><strong>Statistics:</strong> ${doc.word_count} words, ${doc.line_count} lines</p>
@@ -4731,6 +4964,7 @@ window.viewDocumentation = function(docId) {
                 <p style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary);">
                     <em>Note: This is a preview of the documentation. ${fileLink ? 'Click the file path above to open the full file in your editor.' : 'Use the file path to access the complete documentation.'}</em>
                 </p>
+                ${!fileLink ? `<p style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-secondary);"><em>File link not available. Repo data: ${repoDataForLink ? 'available' : 'not available'}, Repo ID: ${currentRepoId || 'none'}</em></p>` : ''}
             </div>
         </div>
     `;
@@ -4738,4 +4972,119 @@ window.viewDocumentation = function(docId) {
     modal.classList.add('active');
     modal.style.display = 'flex';
 }
+
+// View test in modal
+window.viewTest = function(testId) {
+    console.log('[TEST] viewTest called with testId:', testId);
+    console.log('[TEST] allTests length:', allTests.length);
+    
+    const test = allTests.find(t => t.id === testId);
+    if (!test) {
+        console.error('[TEST] Test not found. Available IDs:', allTests.map(t => t.id).slice(0, 5));
+        alert('Failed to load test details. Test ID: ' + testId);
+        return;
+    }
+    
+    console.log('[TEST] Found test:', test.name);
+    
+    const modal = document.getElementById('entity-detail-modal');
+    const titleEl = document.getElementById('entity-detail-title');
+    const bodyEl = document.getElementById('entity-detail-body');
+    
+    if (!modal || !titleEl || !bodyEl) {
+        alert('Modal not found');
+        return;
+    }
+    
+    titleEl.textContent = test.name || 'Test';
+    
+    // Parse JSON fields
+    let assertions = [];
+    let setupMethods = [];
+    let teardownMethods = [];
+    let parameters = [];
+    
+    try {
+        assertions = JSON.parse(test.assertions || '[]');
+        setupMethods = JSON.parse(test.setup_methods || '[]');
+        teardownMethods = JSON.parse(test.teardown_methods || '[]');
+        parameters = JSON.parse(test.parameters || '[]');
+    } catch (e) {
+        console.warn('[TEST] Failed to parse JSON fields:', e);
+    }
+    
+    const badges = [];
+    badges.push(`<span class="detail-badge">${escapeHtml(test.test_framework)}</span>`);
+    if (test.test_type) badges.push(`<span class="detail-badge">${escapeHtml(test.test_type)}</span>`);
+    badges.push(`<span class="detail-badge">${escapeHtml(test.language)}</span>`);
+    
+    const fileLink = createFileLink(test.file_path, test.line_number, currentRepoData);
+    
+    bodyEl.innerHTML = `
+        <div class="entity-detail-content">
+            <div class="detail-item">
+                <div class="detail-item-header">
+                    <strong>${escapeHtml(test.name)}</strong>
+                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        ${badges.join('')}
+                    </div>
+                </div>
+                <div class="detail-meta">
+                    <p><strong>Test ID:</strong> <code>${escapeHtml(test.id)}</code></p>
+                    ${test.suite_name ? `<p><strong>Suite:</strong> ${escapeHtml(test.suite_name)}</p>` : ''}
+                    <p><strong>File Path:</strong> <code>${escapeHtml(test.file_path)}</code> ${fileLink}</p>
+                    ${test.line_number ? `<p><strong>Line Number:</strong> ${test.line_number}</p>` : ''}
+                    ${test.signature ? `<p><strong>Signature:</strong> <code>${escapeHtml(test.signature)}</code></p>` : ''}
+                    ${parameters.length > 0 ? `<p><strong>Parameters:</strong> ${parameters.map(p => `<code>${escapeHtml(p)}</code>`).join(', ')}</p>` : ''}
+                    ${test.return_type ? `<p><strong>Return Type:</strong> <code>${escapeHtml(test.return_type)}</code></p>` : ''}
+                </div>
+            </div>
+            
+            ${assertions.length > 0 ? `
+            <div class="detail-section" style="margin-top: 2rem;">
+                <h4>Assertions (${assertions.length})</h4>
+                <div style="background: var(--bg-color); padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border-color); margin-top: 1rem;">
+                    <ul style="margin: 0; padding-left: 1.5rem;">
+                        ${assertions.map(a => `<li><code>${escapeHtml(String(a))}</code></li>`).join('')}
+                    </ul>
+                </div>
+            </div>
+            ` : ''}
+            
+            ${setupMethods.length > 0 ? `
+            <div class="detail-section" style="margin-top: 2rem;">
+                <h4>Setup Methods</h4>
+                <div style="background: var(--bg-color); padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border-color); margin-top: 1rem;">
+                    <ul style="margin: 0; padding-left: 1.5rem;">
+                        ${setupMethods.map(m => `<li><code>${escapeHtml(m)}</code></li>`).join('')}
+                    </ul>
+                </div>
+            </div>
+            ` : ''}
+            
+            ${teardownMethods.length > 0 ? `
+            <div class="detail-section" style="margin-top: 2rem;">
+                <h4>Teardown Methods</h4>
+                <div style="background: var(--bg-color); padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border-color); margin-top: 1rem;">
+                    <ul style="margin: 0; padding-left: 1.5rem;">
+                        ${teardownMethods.map(m => `<li><code>${escapeHtml(m)}</code></li>`).join('')}
+                    </ul>
+                </div>
+            </div>
+            ` : ''}
+            
+            ${test.doc_comment ? `
+            <div class="detail-section" style="margin-top: 2rem;">
+                <h4>Documentation</h4>
+                <div style="background: var(--bg-color); padding: 1.5rem; border-radius: 0.5rem; border: 1px solid var(--border-color); margin-top: 1rem;">
+                    <pre style="white-space: pre-wrap; word-wrap: break-word; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; font-size: 0.9rem; line-height: 1.6; color: var(--text-primary); margin: 0;">${escapeHtml(test.doc_comment)}</pre>
+                </div>
+            </div>
+            ` : ''}
+        </div>
+    `;
+    
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+};
 

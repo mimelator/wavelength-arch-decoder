@@ -15,6 +15,7 @@ pub enum PackageManager {
     NuGet,
     SwiftPackageManager,
     CocoaPods,
+    WebMethodsIS,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +82,11 @@ impl DependencyExtractor {
 
         // Look for Xcode project files (.xcodeproj/project.pbxproj) for Swift Package Manager dependencies
         if let Some(manifest) = self.extract_xcode_packages(repo_path)? {
+            manifests.push(manifest);
+        }
+
+        // Extract webMethods IS package dependencies
+        if let Some(manifest) = self.extract_webmethods_is(repo_path)? {
             manifests.push(manifest);
         }
 
@@ -314,42 +320,113 @@ impl DependencyExtractor {
         }))
     }
 
-    /// Extract Maven dependencies from pom.xml
+    /// Extract Maven dependencies from pom.xml files (searches recursively)
     fn extract_maven(&self, repo_path: &Path) -> Result<Option<DependencyManifest>> {
-        let pom_xml = repo_path.join("pom.xml");
-        if !pom_xml.exists() {
+        // Search for all pom.xml files recursively
+        let mut all_dependencies = Vec::new();
+        let mut found_files = Vec::new();
+        
+        // Skip common directories that shouldn't contain source pom.xml files
+        let skip_dirs = [".git", "node_modules", "__pycache__", ".venv", "target", "build", "dist", ".idea", ".vscode"];
+        
+        for entry in WalkDir::new(repo_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            
+            // Skip if in ignored directories
+            if path.components().any(|c| {
+                if let std::path::Component::Normal(name) = c {
+                    skip_dirs.iter().any(|skip| name.to_string_lossy() == *skip)
+                } else {
+                    false
+                }
+            }) {
+                continue;
+            }
+            
+            if path.file_name().and_then(|n| n.to_str()) == Some("pom.xml") {
+                if let Ok(deps) = self.extract_maven_from_file(path) {
+                    if !deps.is_empty() {
+                        found_files.push(path.strip_prefix(repo_path)
+                            .unwrap_or(path)
+                            .to_string_lossy()
+                            .to_string());
+                        all_dependencies.extend(deps);
+                    }
+                }
+            }
+        }
+        
+        if all_dependencies.is_empty() {
             return Ok(None);
         }
-
-        let content = std::fs::read_to_string(&pom_xml)?;
+        
+        // Combine all dependencies into a single manifest
+        // Use the first file path, or a combined path if multiple files
+        let file_path = if found_files.len() == 1 {
+            found_files[0].clone()
+        } else {
+            format!("{} pom.xml files", found_files.len())
+        };
+        
+        Ok(Some(DependencyManifest {
+            package_manager: PackageManager::Maven,
+            dependencies: all_dependencies,
+            file_path,
+        }))
+    }
+    
+    /// Extract dependencies from a single pom.xml file
+    fn extract_maven_from_file(&self, pom_path: &Path) -> Result<Vec<PackageDependency>> {
+        let content = std::fs::read_to_string(pom_path)?;
         
         // Simple XML parsing for dependencies
         // For production, consider using a proper XML parser
         let mut dependencies = Vec::new();
         let mut in_dependency = false;
+        let mut current_group = String::new();
         let mut current_name = String::new();
         let mut current_version = String::new();
+        let mut is_dev = false;
+        let mut is_optional = false;
 
         for line in content.lines() {
             let line = line.trim();
             if line.contains("<dependency>") {
                 in_dependency = true;
+                current_group.clear();
                 current_name.clear();
                 current_version.clear();
+                is_dev = false;
+                is_optional = false;
             } else if line.contains("</dependency>") {
                 if !current_name.is_empty() {
+                    // Use groupId:artifactId as the name if groupId is available
+                    let full_name = if !current_group.is_empty() {
+                        format!("{}:{}", current_group, current_name)
+                    } else {
+                        current_name.clone()
+                    };
+                    
                     dependencies.push(PackageDependency {
-                        name: current_name.clone(),
+                        name: full_name,
                         version: if current_version.is_empty() { "unknown".to_string() } else { current_version.clone() },
                         package_manager: PackageManager::Maven,
-                        is_dev: false,
-                        is_optional: false,
+                        is_dev,
+                        is_optional,
                     });
                 }
                 in_dependency = false;
             } else if in_dependency {
                 if line.contains("<groupId>") {
-                    // Extract groupId
+                    if let Some(start) = line.find(">") {
+                        if let Some(end) = line.find("</groupId>") {
+                            current_group = line[start + 1..end].trim().to_string();
+                        }
+                    }
                 } else if line.contains("<artifactId>") {
                     if let Some(start) = line.find(">") {
                         if let Some(end) = line.find("</artifactId>") {
@@ -362,19 +439,25 @@ impl DependencyExtractor {
                             current_version = line[start + 1..end].trim().to_string();
                         }
                     }
+                } else if line.contains("<scope>") {
+                    if let Some(start) = line.find(">") {
+                        if let Some(end) = line.find("</scope>") {
+                            let scope = line[start + 1..end].trim();
+                            is_dev = scope == "test";
+                        }
+                    }
+                } else if line.contains("<optional>") {
+                    if let Some(start) = line.find(">") {
+                        if let Some(end) = line.find("</optional>") {
+                            let opt = line[start + 1..end].trim();
+                            is_optional = opt == "true";
+                        }
+                    }
                 }
             }
         }
 
-        if dependencies.is_empty() {
-            return Ok(None);
-        }
-
-        Ok(Some(DependencyManifest {
-            package_manager: PackageManager::Maven,
-            dependencies,
-            file_path: "pom.xml".to_string(),
-        }))
+        Ok(dependencies)
     }
 
     /// Extract Go dependencies from go.mod
@@ -801,6 +884,144 @@ impl DependencyExtractor {
             package_manager: PackageManager::SwiftPackageManager,
             dependencies: all_dependencies,
             file_path: "project.pbxproj".to_string(),
+        }))
+    }
+
+    /// Extract webMethods IS package dependencies using the Python plugin
+    fn extract_webmethods_is(&self, repo_path: &Path) -> Result<Option<DependencyManifest>> {
+        use std::process::Command;
+        use serde_json::Value;
+        
+        // Try to find the plugin directory (could be in parent directory or installed)
+        let plugin_paths = vec![
+            "../wavelength-arch-decoder-webm-asset-plugin",
+            "../../wavelength-arch-decoder-webm-asset-plugin",
+            "wavelength-arch-decoder-webm-asset-plugin",
+        ];
+        
+        let mut plugin_dir: Option<&Path> = None;
+        for path_str in &plugin_paths {
+            let path = Path::new(path_str);
+            if path.exists() && path.join("webm_asset_plugin").exists() {
+                plugin_dir = Some(path);
+                break;
+            }
+        }
+        
+        // Call Python directly to import and use the detector
+        // This avoids needing click and other CLI dependencies
+        let repo_path_str = repo_path.to_string_lossy();
+        let plugin_paths_str: Vec<String> = plugin_paths.iter()
+            .map(|p| format!("'{}'", p))
+            .collect();
+        let plugin_paths_python = format!("[{}]", plugin_paths_str.join(", "));
+        
+        let python_script = format!(r#"
+import sys
+import json
+from pathlib import Path
+
+# Add plugin path to sys.path if needed
+plugin_paths = {}
+for path in plugin_paths:
+    path_obj = Path(path)
+    if path_obj.exists() and (path_obj / 'webm_asset_plugin').exists():
+        sys.path.insert(0, str(path_obj))
+        break
+
+try:
+    from webm_asset_plugin.detector import WebMethodsAssetDetector
+    
+    detector = WebMethodsAssetDetector()
+    result = detector.detect_assets('{}')
+    data = result.to_dict()
+    print(json.dumps(data))
+except Exception as e:
+    sys.exit(1)
+"#, plugin_paths_python, repo_path_str);
+        
+        let output = Command::new("python3")
+            .arg("-c")
+            .arg(&python_script)
+            .output();
+        
+        let output = match output {
+            Ok(o) => o,
+            Err(e) => {
+                // Plugin not available, silently skip
+                log::debug!("webMethods plugin not available: {}", e);
+                return Ok(None);
+            }
+        };
+        
+        if !output.status.success() {
+            // Plugin failed or not available, silently skip
+            log::debug!("webMethods plugin execution failed or no IS packages found");
+            return Ok(None);
+        }
+        
+        // Parse JSON output
+        let json_str = match String::from_utf8(output.stdout) {
+            Ok(s) => s,
+            Err(_) => return Ok(None),
+        };
+        
+        let json: Value = match serde_json::from_str(&json_str) {
+            Ok(v) => v,
+            Err(e) => {
+                log::debug!("Failed to parse webMethods plugin output: {}", e);
+                return Ok(None);
+            }
+        };
+        
+        // Extract IS packages and their dependencies
+        let mut all_dependencies = Vec::new();
+        let mut manifest_files = Vec::new();
+        
+        if let Some(is_packages) = json.get("is_packages").and_then(|v| v.as_array()) {
+            for pkg in is_packages {
+                if pkg.get("name").and_then(|v| v.as_str()).is_some() {
+                    if let Some(requires) = pkg.get("requires").and_then(|v| v.as_array()) {
+                        for req in requires {
+                            if let Some(dep_name) = req.as_str() {
+                                if !dep_name.trim().is_empty() {
+                                    all_dependencies.push(PackageDependency {
+                                        name: dep_name.to_string(),
+                                        version: "unknown".to_string(), // IS doesn't specify versions in requires
+                                        package_manager: PackageManager::WebMethodsIS,
+                                        is_dev: false,
+                                        is_optional: false,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Track manifest file path for this package
+                    if let Some(manifest) = pkg.get("manifest").and_then(|v| v.as_str()) {
+                        manifest_files.push(manifest.to_string());
+                    }
+                }
+            }
+        }
+        
+        if all_dependencies.is_empty() {
+            return Ok(None);
+        }
+        
+        // Use first manifest file path, or a combined path if multiple packages
+        let file_path = if manifest_files.len() == 1 {
+            manifest_files[0].clone()
+        } else if !manifest_files.is_empty() {
+            format!("{} manifest.v3 files", manifest_files.len())
+        } else {
+            "manifest.v3".to_string()
+        };
+        
+        Ok(Some(DependencyManifest {
+            package_manager: PackageManager::WebMethodsIS,
+            dependencies: all_dependencies,
+            file_path,
         }))
     }
 }

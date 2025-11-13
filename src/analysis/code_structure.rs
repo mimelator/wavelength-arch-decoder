@@ -154,8 +154,16 @@ impl CodeAnalyzer {
             let line_idx = line_num + 1;
 
             // Detect function declarations
-            if line.contains("function ") || line.contains("const ") && line.contains("=") && line.contains("=>") {
+            // Match: function name(...), const name = () =>, var name = function(), let name = function()
+            if line.contains("function ") 
+                || (line.contains("const ") && line.contains("=") && (line.contains("=>") || line.contains("function")))
+                || ((line.contains("var ") || line.contains("let ")) && line.contains("=") && line.contains("function")) {
                 if let Some(name) = self.extract_function_name_js(line) {
+                    // Skip anonymous functions (empty name after extraction)
+                    if name.is_empty() {
+                        continue;
+                    }
+                    
                     // Use UUID for ID to ensure uniqueness
                     let id = uuid::Uuid::new_v4().to_string();
                     element_map.insert(name.clone(), id.clone());
@@ -499,21 +507,44 @@ impl CodeAnalyzer {
 
     // Helper functions for extracting names and signatures
     fn extract_function_name_js(&self, line: &str) -> Option<String> {
-        // Match: function name(...) or const name = (...) =>
+        // Match: function name(...)
         if let Some(start) = line.find("function ") {
             let after_fn = &line[start + 9..];
             if let Some(end) = after_fn.find('(') {
-                return Some(after_fn[..end].trim().to_string());
-            }
-        }
-        if line.contains("const ") && line.contains("=") && line.contains("=>") {
-            if let Some(start) = line.find("const ") {
-                let after_const = &line[start + 6..];
-                if let Some(end) = after_const.find('=') {
-                    return Some(after_const[..end].trim().to_string());
+                let name = after_fn[..end].trim();
+                if !name.is_empty() {
+                    return Some(name.to_string());
                 }
             }
         }
+        
+        // Match: const name = (...) => or const name = function(...)
+        if line.contains("const ") && line.contains("=") {
+            if let Some(start) = line.find("const ") {
+                let after_const = &line[start + 6..];
+                if let Some(end) = after_const.find('=') {
+                    let name = after_const[..end].trim();
+                    if !name.is_empty() {
+                        return Some(name.to_string());
+                    }
+                }
+            }
+        }
+        
+        // Match: var name = function(...) or let name = function(...)
+        if (line.contains("var ") || line.contains("let ")) && line.contains("=") && line.contains("function") {
+            let keyword = if line.contains("var ") { "var " } else { "let " };
+            if let Some(start) = line.find(keyword) {
+                let after_keyword = &line[start + keyword.len()..];
+                if let Some(end) = after_keyword.find('=') {
+                    let name = after_keyword[..end].trim();
+                    if !name.is_empty() {
+                        return Some(name.to_string());
+                    }
+                }
+            }
+        }
+        
         None
     }
 
@@ -1526,6 +1557,11 @@ mod tests {
         let analyzer = CodeAnalyzer::new();
         assert_eq!(analyzer.extract_function_name_js("function test() {}"), Some("test".to_string()));
         assert_eq!(analyzer.extract_function_name_js("const arrow = () => {}"), Some("arrow".to_string()));
+        assert_eq!(analyzer.extract_function_name_js("var onOptionsChanged = function () {"), Some("onOptionsChanged".to_string()));
+        assert_eq!(analyzer.extract_function_name_js("let myFunc = function() {"), Some("myFunc".to_string()));
+        assert_eq!(analyzer.extract_function_name_js("const myConst = function() {"), Some("myConst".to_string()));
+        // Anonymous functions should return None
+        assert_eq!(analyzer.extract_function_name_js("var = function() {"), None);
     }
 
     #[test]

@@ -13,4 +13,3 @@ pub use code_relationships::{CodeRelationshipDetector, CodeRelationship, Relatio
 pub use tool_detector::{ToolDetector, DetectedTool, ToolType, ToolCategory};
 pub use documentation::DocumentationIndexer;
 pub use test_detector::{TestDetector, DetectedTest, TestFramework};
-

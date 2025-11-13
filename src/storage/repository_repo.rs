@@ -248,6 +248,7 @@ impl DependencyRepository {
                 PackageManager::NuGet => "nuget",
                 PackageManager::SwiftPackageManager => "swift-package-manager",
                 PackageManager::CocoaPods => "cocoapods",
+                PackageManager::WebMethodsIS => "webmethods-is",
             };
             
             conn.execute(

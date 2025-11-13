@@ -4,13 +4,16 @@ use std::path::Path;
 use base64::{Engine as _, engine::general_purpose};
 use crate::api::{ApiState, ErrorResponse};
 use crate::ingestion::{RepositoryCrawler, RepositoryCredentials, AuthType};
-use crate::analysis::{DependencyExtractor, ToolDetector, TestDetector};
+use crate::analysis::{DependencyExtractor, ToolDetector, TestDetector, CodeElement, CodeElementType};
 use crate::security::ServiceDetector;
 use crate::security::analyzer::SecurityAnalyzer;
 use crate::graph::GraphBuilder;
 use crate::analysis::CodeAnalyzer;
 use crate::config::StorageConfig;
 use crate::config::Config;
+use serde_json::Value;
+use std::process::Command;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateRepositoryRequest {
@@ -385,6 +388,388 @@ fn perform_analysis(
         }
     }
 
+    /// Extract webMethods assets via Python plugin and convert to code elements
+    fn extract_webmethods_assets_as_code_elements(repo_path: &Path) -> Result<Vec<CodeElement>, anyhow::Error> {
+        // Try to find the plugin directory using both relative and absolute paths
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+        let plugin_paths = vec![
+            current_dir.join("../wavelength-arch-decoder-webm-asset-plugin"),
+            current_dir.join("../../wavelength-arch-decoder-webm-asset-plugin"),
+            current_dir.join("wavelength-arch-decoder-webm-asset-plugin"),
+            Path::new("../wavelength-arch-decoder-webm-asset-plugin").to_path_buf(),
+            Path::new("../../wavelength-arch-decoder-webm-asset-plugin").to_path_buf(),
+            Path::new("wavelength-arch-decoder-webm-asset-plugin").to_path_buf(),
+        ];
+        
+        let mut plugin_dir: Option<std::path::PathBuf> = None;
+        for path in &plugin_paths {
+            if path.exists() && path.join("webm_asset_plugin").exists() {
+                plugin_dir = Some(path.clone());
+                break;
+            }
+        }
+        
+        if plugin_dir.is_none() {
+            log::debug!("webMethods plugin not found in any of these paths: {:?}", plugin_paths);
+            return Ok(Vec::new());
+        }
+        
+        let plugin_dir_path = plugin_dir.unwrap();
+        let plugin_dir_absolute = plugin_dir_path.canonicalize()
+            .unwrap_or_else(|_| plugin_dir_path.clone());
+        log::info!("Using webMethods plugin at: {}", plugin_dir_absolute.display());
+        
+        let repo_path_str = repo_path.to_string_lossy();
+        let plugin_path_str = plugin_dir_absolute.to_string_lossy();
+        
+        let python_script = format!(r#"
+import sys
+import json
+from pathlib import Path
+
+# Add plugin path to sys.path
+plugin_path = Path(r'{}')
+if plugin_path.exists() and (plugin_path / 'webm_asset_plugin').exists():
+    sys.path.insert(0, str(plugin_path))
+else:
+    print("ERROR: Plugin path not found: " + str(plugin_path), file=sys.stderr)
+    sys.exit(1)
+
+try:
+    from webm_asset_plugin.detector import WebMethodsAssetDetector
+    
+    detector = WebMethodsAssetDetector()
+    result = detector.detect_assets(r'{}')
+    data = result.to_dict()
+    print(json.dumps(data))
+except Exception as e:
+    import traceback
+    print("ERROR: " + str(e), file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
+    sys.exit(1)
+"#, plugin_path_str, repo_path_str);
+        
+        let output = Command::new("python3")
+            .arg("-c")
+            .arg(&python_script)
+            .output()?;
+        
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::warn!("webMethods plugin execution failed: {}", stderr);
+            return Ok(Vec::new());
+        }
+        
+        let json_str = String::from_utf8(output.stdout)?;
+        if json_str.trim().is_empty() {
+            log::warn!("webMethods plugin returned empty output");
+            return Ok(Vec::new());
+        }
+        
+        let json: Value = match serde_json::from_str(&json_str) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("Failed to parse webMethods plugin JSON output: {} (output: {})", e, json_str.chars().take(200).collect::<String>());
+                return Ok(Vec::new());
+            }
+        };
+        
+        log::debug!("webMethods plugin returned JSON with keys: {:?}", json.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+        
+        let mut elements = Vec::new();
+        
+        // Extract IS services as code elements
+        if let Some(is_packages) = json.get("is_packages").and_then(|v| v.as_array()) {
+            for pkg in is_packages {
+                let pkg_name = pkg.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown");
+                
+                if let Some(pkg_path) = pkg.get("path").and_then(|v| v.as_str()) {
+                    elements.push(CodeElement {
+                        id: Uuid::new_v4().to_string(),
+                        name: format!("IS Package: {}", pkg_name),
+                        element_type: CodeElementType::Module,
+                        file_path: pkg_path.to_string(),
+                        line_number: 1,
+                        language: "webmethods-is".to_string(),
+                        signature: None,
+                        doc_comment: None,
+                        visibility: None,
+                        parameters: Vec::new(),
+                        return_type: None,
+                    });
+                }
+                
+                if let Some(services) = pkg.get("services").and_then(|v| v.as_array()) {
+                    for service in services {
+                        if let Some(service_name) = service.get("name").and_then(|v| v.as_str()) {
+                            let service_path = service.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                            elements.push(CodeElement {
+                                id: Uuid::new_v4().to_string(),
+                                name: format!("IS Service: {}", service_name),
+                                element_type: CodeElementType::Function,
+                                file_path: service_path.to_string(),
+                                line_number: 1,
+                                language: "webmethods-is".to_string(),
+                                signature: service.get("node_definition").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                doc_comment: None,
+                                visibility: None,
+                                parameters: Vec::new(),
+                                return_type: None,
+                            });
+                        }
+                    }
+                }
+                
+                if let Some(adapters) = pkg.get("adapters").and_then(|v| v.as_array()) {
+                    for adapter in adapters {
+                        if let Some(adapter_name) = adapter.get("name").and_then(|v| v.as_str()) {
+                            let adapter_path = adapter.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                            let adapter_type = adapter.get("type").and_then(|v| v.as_str()).unwrap_or("Unknown");
+                            elements.push(CodeElement {
+                                id: Uuid::new_v4().to_string(),
+                                name: format!("IS Adapter: {} ({})", adapter_name, adapter_type),
+                                element_type: CodeElementType::Module,
+                                file_path: adapter_path.to_string(),
+                                line_number: 1,
+                                language: "webmethods-is".to_string(),
+                                signature: None,
+                                doc_comment: None,
+                                visibility: None,
+                                parameters: Vec::new(),
+                                return_type: None,
+                            });
+                        }
+                    }
+                }
+                
+                // Extract code files from IS package (Java, JavaScript, etc.)
+                if let Some(code_files) = pkg.get("code_files").and_then(|v| v.as_array()) {
+                    for code_file in code_files {
+                        if let Some(file_path) = code_file.get("path").and_then(|v| v.as_str()) {
+                            let file_name = code_file.get("name").and_then(|v| v.as_str())
+                                .unwrap_or_else(|| file_path.split('/').last().unwrap_or("Unknown"));
+                            
+                            // Determine language from file extension
+                            let language = if file_path.ends_with(".java") {
+                                "java"
+                            } else if file_path.ends_with(".js") || file_path.ends_with(".javascript") {
+                                "javascript"
+                            } else if file_path.ends_with(".groovy") {
+                                "groovy"
+                            } else if file_path.ends_with(".scala") {
+                                "scala"
+                            } else if file_path.ends_with(".kt") {
+                                "kotlin"
+                            } else {
+                                "webmethods-is"
+                            };
+                            
+                            elements.push(CodeElement {
+                                id: Uuid::new_v4().to_string(),
+                                name: format!("IS Code: {} ({})", file_name, pkg_name),
+                                element_type: CodeElementType::Module,
+                                file_path: file_path.to_string(),
+                                line_number: 1,
+                                language: language.to_string(),
+                                signature: None,
+                                doc_comment: None,
+                                visibility: None,
+                                parameters: Vec::new(),
+                                return_type: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Extract MWS assets as code elements
+        if let Some(mws_assets) = json.get("mws_assets").and_then(|v| v.as_array()) {
+            for asset in mws_assets {
+                let asset_type = asset.get("type").and_then(|v| v.as_str()).unwrap_or("Unknown");
+                let asset_file = asset.get("file").and_then(|v| v.as_str()).unwrap_or("");
+                
+                if asset_type == "MWS_Extraction" {
+                    if let Some(assets_array) = asset.get("assets").and_then(|v| v.as_array()) {
+                        for individual_asset in assets_array {
+                            if let Some(ind_type) = individual_asset.get("type").and_then(|v| v.as_str()) {
+                                let ind_name = individual_asset.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown");
+                                elements.push(CodeElement {
+                                    id: Uuid::new_v4().to_string(),
+                                    name: format!("MWS {}: {}", ind_type, ind_name),
+                                    element_type: CodeElementType::Module,
+                                    file_path: asset_file.to_string(),
+                                    line_number: 1,
+                                    language: "webmethods-mws".to_string(),
+                                    signature: None,
+                                    doc_comment: None,
+                                    visibility: None,
+                                    parameters: Vec::new(),
+                                    return_type: None,
+                                });
+                            }
+                        }
+                    }
+                } else if asset_type.starts_with("CAF_") {
+                    // Handle CAF assets
+                    let asset_name = match asset_type {
+                        "CAF_AppNavigation" => {
+                            let pages_count = asset.get("pages_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                            format!("CAF App Navigation ({} pages)", pages_count)
+                        },
+                        "CAF_FacesConfig" => {
+                            let beans_count = asset.get("managed_beans_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                            // Also create elements for individual managed beans
+                            if let Some(beans) = asset.get("managed_beans").and_then(|v| v.as_array()) {
+                                for bean in beans {
+                                    if let Some(bean_name) = bean.get("name").and_then(|v| v.as_str()) {
+                                        let bean_class = bean.get("class").and_then(|v| v.as_str()).unwrap_or("");
+                                        let bean_scope = bean.get("scope").and_then(|v| v.as_str()).unwrap_or("");
+                                        elements.push(CodeElement {
+                                            id: Uuid::new_v4().to_string(),
+                                            name: format!("CAF Managed Bean: {} ({})", bean_name, bean_scope),
+                                            element_type: CodeElementType::Class,
+                                            file_path: asset_file.to_string(),
+                                            line_number: 1,
+                                            language: "webmethods-caf".to_string(),
+                                            signature: Some(format!("class: {}", bean_class)),
+                                            doc_comment: None,
+                                            visibility: None,
+                                            parameters: Vec::new(),
+                                            return_type: None,
+                                        });
+                                    }
+                                }
+                            }
+                            format!("CAF Faces Config ({} managed beans)", beans_count)
+                        },
+                        "CAF_PortletConfig" => {
+                            let portlets_count = asset.get("portlets_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                            // Also create elements for individual portlets
+                            if let Some(portlets) = asset.get("portlets").and_then(|v| v.as_array()) {
+                                for portlet in portlets {
+                                    if let Some(portlet_name) = portlet.get("name").and_then(|v| v.as_str()) {
+                                        elements.push(CodeElement {
+                                            id: Uuid::new_v4().to_string(),
+                                            name: format!("CAF Portlet: {}", portlet_name),
+                                            element_type: CodeElementType::Module,
+                                            file_path: asset_file.to_string(),
+                                            line_number: 1,
+                                            language: "webmethods-caf".to_string(),
+                                            signature: None,
+                                            doc_comment: None,
+                                            visibility: None,
+                                            parameters: Vec::new(),
+                                            return_type: None,
+                                        });
+                                    }
+                                }
+                            }
+                            format!("CAF Portlet Config ({} portlets)", portlets_count)
+                        },
+                        "CAF_WMPortletConfig" => {
+                            let portlets_count = asset.get("portlets_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                            // Also create elements for individual webMethods portlets
+                            if let Some(portlets) = asset.get("portlets").and_then(|v| v.as_array()) {
+                                for portlet in portlets {
+                                    if let Some(portlet_name) = portlet.get("name").and_then(|v| v.as_str()) {
+                                        let category = portlet.get("category").and_then(|v| v.as_str()).unwrap_or("");
+                                        elements.push(CodeElement {
+                                            id: Uuid::new_v4().to_string(),
+                                            name: format!("CAF WM Portlet: {} ({})", portlet_name, category),
+                                            element_type: CodeElementType::Module,
+                                            file_path: asset_file.to_string(),
+                                            line_number: 1,
+                                            language: "webmethods-caf".to_string(),
+                                            signature: None,
+                                            doc_comment: None,
+                                            visibility: None,
+                                            parameters: Vec::new(),
+                                            return_type: None,
+                                        });
+                                    }
+                                }
+                            }
+                            format!("CAF WM Portlet Config ({} portlets)", portlets_count)
+                        },
+                        "CAF_WebConfig" => {
+                            asset.get("display_name")
+                                .and_then(|v| v.as_str())
+                                .map(|s| format!("CAF Web Config: {}", s))
+                                .unwrap_or_else(|| "CAF Web Config".to_string())
+                        },
+                        "CAF_FaceletsViews" => {
+                            let views_count = asset.get("views_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                            // Also create elements for sample views
+                            if let Some(sample_paths) = asset.get("sample_paths").and_then(|v| v.as_array()) {
+                                for path in sample_paths.iter().take(20) { // Limit to first 20
+                                    if let Some(view_path) = path.as_str() {
+                                        elements.push(CodeElement {
+                                            id: Uuid::new_v4().to_string(),
+                                            name: format!("CAF Facelets View: {}", view_path.split('/').last().unwrap_or(view_path)),
+                                            element_type: CodeElementType::Module,
+                                            file_path: view_path.to_string(),
+                                            line_number: 1,
+                                            language: "webmethods-caf".to_string(),
+                                            signature: None,
+                                            doc_comment: None,
+                                            visibility: None,
+                                            parameters: Vec::new(),
+                                            return_type: None,
+                                        });
+                                    }
+                                }
+                            }
+                            format!("CAF Facelets Views ({} views)", views_count)
+                        },
+                        "CAF_LegacyViews" => {
+                            let views_count = asset.get("views_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                            format!("CAF Legacy Views ({} views)", views_count)
+                        },
+                        _ => format!("CAF {}", asset_type.replace("CAF_", "")),
+                    };
+                    
+                    elements.push(CodeElement {
+                        id: Uuid::new_v4().to_string(),
+                        name: asset_name,
+                        element_type: CodeElementType::Module,
+                        file_path: asset_file.to_string(),
+                        line_number: 1,
+                        language: "webmethods-caf".to_string(),
+                        signature: None,
+                        doc_comment: None,
+                        visibility: None,
+                        parameters: Vec::new(),
+                        return_type: None,
+                    });
+                } else {
+                    // Handle other MWS asset types
+                    let asset_name = asset.get("display_name")
+                        .or_else(|| asset.get("name"))
+                        .and_then(|v| v.as_str())
+                        .or_else(|| asset_file.split('/').last())
+                        .unwrap_or("Unknown");
+                    
+                    elements.push(CodeElement {
+                        id: Uuid::new_v4().to_string(),
+                        name: format!("MWS {}: {}", asset_type, asset_name),
+                        element_type: CodeElementType::Module,
+                        file_path: asset_file.to_string(),
+                        line_number: 1,
+                        language: "webmethods-mws".to_string(),
+                        signature: None,
+                        doc_comment: None,
+                        visibility: None,
+                        parameters: Vec::new(),
+                        return_type: None,
+                    });
+                }
+            }
+        }
+        
+        Ok(elements)
+    }
+
     // Analyze code structure
     state.progress_tracker.update_progress(&repository_id, 8, "Analyzing code structure", "Scanning source files and extracting functions, classes, modules, and their relationships...", None);
     log::info!("Step 8/10: Analyzing code structure...");
@@ -419,14 +804,35 @@ fn perform_analysis(
         }
     };
 
+    // Extract webMethods assets via plugin and merge with code elements
+    log::info!("Extracting webMethods assets (IS packages, MWS assets, adapters)...");
+    let mut all_code_elements = code_structure.elements.clone();
+    match extract_webmethods_assets_as_code_elements(&repo_path) {
+        Ok(webmethods_elements) => {
+            if !webmethods_elements.is_empty() {
+                let caf_count = webmethods_elements.iter().filter(|e| e.language == "webmethods-caf").count();
+                let mws_count = webmethods_elements.iter().filter(|e| e.language == "webmethods-mws").count();
+                let is_count = webmethods_elements.iter().filter(|e| e.language == "webmethods-is").count();
+                log::info!("✓ Found {} webMethods assets ({} CAF, {} MWS, {} IS)", 
+                    webmethods_elements.len(), caf_count, mws_count, is_count);
+                all_code_elements.extend(webmethods_elements);
+            } else {
+                log::info!("✓ No webMethods assets found");
+            }
+        },
+        Err(e) => {
+            log::warn!("⚠ Failed to extract webMethods assets (plugin may not be available): {}", e);
+        }
+    }
+
     // Store code elements and calls
-    log::info!("Storing {} code elements in database...", code_structure.elements.len());
-    if let Err(e) = state.code_repo.store_elements(&repo.id, &code_structure.elements) {
+    log::info!("Storing {} code elements in database...", all_code_elements.len());
+    if let Err(e) = state.code_repo.store_elements(&repo.id, &all_code_elements) {
         log::error!("✗ Failed to store code elements: {}", e);
         state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to store code elements: {}", e));
         return Err(anyhow::anyhow!("Failed to store code elements: {}", e));
     }
-    log::info!("✓ Stored {} code elements", code_structure.elements.len());
+    log::info!("✓ Stored {} code elements", all_code_elements.len());
     
     log::info!("Storing {} code calls in database...", code_structure.calls.len());
     if let Err(e) = state.code_repo.store_calls(&repo.id, &code_structure.calls) {
@@ -518,7 +924,7 @@ fn perform_analysis(
     };
     
     log::info!("  Analyzing {} code element(s) for relationships to {} service(s) and {} dependencies...", 
-        code_structure.elements.len(), stored_services.len(), stored_deps_vec.len());
+        all_code_elements.len(), stored_services.len(), stored_deps_vec.len());
     let code_relationships = match relationship_detector.detect_relationships(&code_structure, &stored_services, &stored_deps_vec) {
         Ok(rels) => {
             if !rels.is_empty() {
