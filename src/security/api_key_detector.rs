@@ -91,6 +91,7 @@ impl ApiKeyDetector {
                     crate::security::ServiceProvider::TogetherAI => "together_ai",
                     crate::security::ServiceProvider::MistralAI => "mistral_ai",
                     crate::security::ServiceProvider::Perplexity => "perplexity",
+                    crate::security::ServiceProvider::WebMethods => "webmethods",
                     crate::security::ServiceProvider::Unknown => "generic",
                     _ => "generic",
                 };

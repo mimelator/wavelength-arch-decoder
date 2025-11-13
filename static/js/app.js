@@ -310,7 +310,7 @@ const ENTITY_CONFIGS = {
     },
     documentation: {
         entityType: 'documentation',
-        detailEntityType: null, // Documentation doesn't have detail modal yet
+        detailEntityType: null, // Documentation uses custom onClickHandler
         nameField: 'file_name',
         idField: 'id',
         searchFields: ['file_name', 'title', 'description', 'content_preview'],
@@ -325,8 +325,17 @@ const ENTITY_CONFIGS = {
         filterFields: {
             'type': (item, value) => !value || item.doc_type === value
         },
+        onClickHandler: (item) => {
+            return `event.stopPropagation(); viewDocumentation('${item.id}');`;
+        },
         renderBadges: (item) => {
-            return `<span class="detail-badge">${escapeHtml(item.doc_type || 'Other')}</span>`;
+            const badges = [];
+            badges.push(`<span class="detail-badge">${escapeHtml(item.doc_type || 'Other')}</span>`);
+            if (item.has_code_examples) badges.push('<span class="detail-badge badge-info">Code Examples</span>');
+            if (item.has_api_references) badges.push('<span class="detail-badge badge-info">API References</span>');
+            if (item.has_diagrams) badges.push('<span class="detail-badge badge-info">Diagrams</span>');
+            badges.push('<span class="detail-badge badge-info">📖 Click to read</span>');
+            return badges.join('');
         },
         renderMeta: (item, repoData) => {
             let html = '';
@@ -339,11 +348,12 @@ const ENTITY_CONFIGS = {
             if (item.file_path) {
                 html += `<p class="detail-meta"><strong>File:</strong> <code>${escapeHtml(item.file_path)}</code>${createFileLink(item.file_path, null, repoData)}</p>`;
             }
+            html += `<p class="detail-meta"><strong>Stats:</strong> ${item.word_count} words, ${item.line_count} lines</p>`;
             if (item.content_preview) {
                 const preview = item.content_preview.length > 200 
                     ? item.content_preview.substring(0, 200) + '...' 
                     : item.content_preview;
-                html += `<div class="detail-meta" style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem;"><em>${escapeHtml(preview)}</em></div>`;
+                html += `<div style="margin-top: 0.5rem; padding: 0.5rem; background: var(--bg-color); border-radius: 4px; font-size: 0.85rem;"><strong>Preview:</strong><pre style="margin-top: 0.25rem; white-space: pre-wrap; word-wrap: break-word; max-height: 150px; overflow-y: auto;">${escapeHtml(preview)}</pre></div>`;
             }
             return html;
         }
@@ -4635,15 +4645,17 @@ function renderDocumentationItem(doc, repoData = null) {
     if (doc.has_diagrams) badges.push('<span class="detail-badge badge-info">Diagrams</span>');
     
     const fileLink = createFileLink(doc.file_path, null, repoData);
+    const docId = doc.id;
     
     return `
-        <div class="detail-item">
+        <div class="detail-item clickable" data-doc-id="${docId}" onclick="event.stopPropagation(); viewDocumentation('${docId}');" style="cursor: pointer;" title="Click to view full documentation">
             <div class="detail-item-header">
                 <strong>${escapeHtml(doc.file_name)}</strong>
                 <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
                     <span class="entity-id-badge" title="Documentation ID: ${doc.id}">ID: ${getShortId(doc.id)}</span>
                     <span class="detail-badge">${escapeHtml(doc.doc_type)}</span>
                     ${badges.join('')}
+                    <span class="detail-badge badge-info" style="margin-left: auto;">📖 Click to read</span>
                 </div>
             </div>
             <div class="detail-meta">
@@ -4658,5 +4670,72 @@ function renderDocumentationItem(doc, repoData = null) {
             </div>
         </div>
     `;
+}
+
+// View documentation in modal
+window.viewDocumentation = function(docId) {
+    console.log('[DOC] viewDocumentation called with docId:', docId);
+    console.log('[DOC] allDocumentation length:', allDocumentation.length);
+    
+    // Find the doc in allDocumentation array
+    const doc = allDocumentation.find(d => d.id === docId);
+    if (!doc) {
+        console.error('[DOC] Document not found. Available IDs:', allDocumentation.map(d => d.id).slice(0, 5));
+        alert('Failed to load documentation details. Document ID: ' + docId);
+        return;
+    }
+    
+    console.log('[DOC] Found document:', doc.file_name);
+    
+    const modal = document.getElementById('entity-detail-modal');
+    const titleEl = document.getElementById('entity-detail-title');
+    const bodyEl = document.getElementById('entity-detail-body');
+    
+    if (!modal || !titleEl || !bodyEl) {
+        alert('Modal not found');
+        return;
+    }
+    
+    titleEl.textContent = doc.file_name || 'Documentation';
+    
+    const badges = [];
+    if (doc.has_code_examples) badges.push('<span class="detail-badge badge-info">Code Examples</span>');
+    if (doc.has_api_references) badges.push('<span class="detail-badge badge-info">API References</span>');
+    if (doc.has_diagrams) badges.push('<span class="detail-badge badge-info">Diagrams</span>');
+    
+    const fileLink = createFileLink(doc.file_path, null, currentRepoData);
+    
+    bodyEl.innerHTML = `
+        <div class="entity-detail-content">
+            <div class="detail-item">
+                <div class="detail-item-header">
+                    <strong>${escapeHtml(doc.file_name)}</strong>
+                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        <span class="detail-badge">${escapeHtml(doc.doc_type)}</span>
+                        ${badges.join('')}
+                    </div>
+                </div>
+                <div class="detail-meta">
+                    <p><strong>File Path:</strong> <code>${escapeHtml(doc.file_path)}</code> ${fileLink}</p>
+                    ${doc.title ? `<p><strong>Title:</strong> ${escapeHtml(doc.title)}</p>` : ''}
+                    ${doc.description ? `<p><strong>Description:</strong> ${escapeHtml(doc.description)}</p>` : ''}
+                    <p><strong>Statistics:</strong> ${doc.word_count} words, ${doc.line_count} lines</p>
+                </div>
+            </div>
+            
+            <div class="detail-section" style="margin-top: 2rem;">
+                <h4>Content</h4>
+                <div style="background: var(--bg-color); padding: 1.5rem; border-radius: 0.5rem; border: 1px solid var(--border-color); margin-top: 1rem;">
+                    <pre style="white-space: pre-wrap; word-wrap: break-word; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; font-size: 0.9rem; line-height: 1.6; color: var(--text-primary); margin: 0; max-height: 60vh; overflow-y: auto;">${escapeHtml(doc.content_preview)}</pre>
+                </div>
+                <p style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary);">
+                    <em>Note: This is a preview of the documentation. ${fileLink ? 'Click the file path above to open the full file in your editor.' : 'Use the file path to access the complete documentation.'}</em>
+                </p>
+            </div>
+        </div>
+    `;
+    
+    modal.classList.add('active');
+    modal.style.display = 'flex';
 }
 

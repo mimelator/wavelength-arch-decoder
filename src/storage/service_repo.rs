@@ -239,6 +239,7 @@ impl ServiceRepository {
             ServiceProvider::TogetherAI => "together_ai",
             ServiceProvider::MistralAI => "mistral_ai",
             ServiceProvider::Perplexity => "perplexity",
+            ServiceProvider::WebMethods => "webmethods",
             ServiceProvider::Unknown => "unknown",
         }.to_string()
     }

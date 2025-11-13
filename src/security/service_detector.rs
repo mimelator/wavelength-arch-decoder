@@ -78,6 +78,7 @@ pub enum ServiceProvider {
     Perplexity,
     
     // Other
+    WebMethods,
     Unknown,
 }
 
@@ -334,6 +335,7 @@ impl ServiceDetector {
             "TOGETHERAI" => Some(ServiceProvider::TogetherAI),
             "MISTRALAI" => Some(ServiceProvider::MistralAI),
             "PERPLEXITY" => Some(ServiceProvider::Perplexity),
+            "WEBMETHODS" | "SOFTWAREAG" => Some(ServiceProvider::WebMethods),
             _ => Some(ServiceProvider::Unknown),
         }
     }
