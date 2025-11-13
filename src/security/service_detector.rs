@@ -134,7 +134,7 @@ impl ServiceDetector {
     /// Create with plugin directory support
     pub fn with_plugins(plugin_dir: Option<&Path>) -> Result<Self> {
         let base_path = Path::new("config/service_patterns.json");
-        let pattern_config = PatternLoader::load_with_plugins(base_path, plugin_dir)?;
+        let (pattern_config, _plugins) = PatternLoader::load_with_plugins(base_path, plugin_dir)?;
         
         Ok(ServiceDetector {
             pattern_config,

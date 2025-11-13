@@ -1662,6 +1662,71 @@ function setupModals() {
         const authValueInput = document.getElementById('repo-auth-value');
         const authHint = document.getElementById('auth-hint');
         
+        // Auto-generate name from URL
+        const repoUrlInput = document.getElementById('repo-url');
+        const repoNameInput = document.getElementById('repo-name');
+        
+        function generateNameFromUrl(url) {
+            if (!url || url.trim() === '') return '';
+            
+            url = url.trim();
+            
+            // Remove .git extension if present
+            url = url.replace(/\.git$/, '');
+            
+            // Handle GitHub/GitLab/Bitbucket URLs
+            // https://github.com/user/repo -> repo
+            // https://gitlab.com/user/repo -> repo
+            const gitUrlMatch = url.match(/(?:https?:\/\/|git@)(?:www\.)?(?:github|gitlab|bitbucket)\.(?:com|org)[\/:]([^\/]+)\/([^\/]+)/);
+            if (gitUrlMatch) {
+                const user = gitUrlMatch[1];
+                const repo = gitUrlMatch[2];
+                // Use just the repo name, or user-repo if you prefer
+                return repo;
+            }
+            
+            // Handle SSH URLs: git@host:user/repo
+            const sshMatch = url.match(/git@[^:]+:([^\/]+)\/(.+)/);
+            if (sshMatch) {
+                return sshMatch[2].split('/').pop();
+            }
+            
+            // Handle local file paths: file:///path/to/repo or /path/to/repo
+            if (url.startsWith('file://')) {
+                url = url.replace(/^file:\/\//, '');
+            }
+            
+            // Extract last directory name from path
+            const pathParts = url.split('/').filter(part => part.length > 0);
+            if (pathParts.length > 0) {
+                return pathParts[pathParts.length - 1];
+            }
+            
+            return '';
+        }
+        
+        if (repoUrlInput && repoNameInput) {
+            repoUrlInput.addEventListener('input', () => {
+                // Only auto-generate if name field is empty
+                if (!repoNameInput.value || repoNameInput.value.trim() === '') {
+                    const generatedName = generateNameFromUrl(repoUrlInput.value);
+                    if (generatedName) {
+                        repoNameInput.value = generatedName;
+                    }
+                }
+            });
+            
+            // Also auto-generate on blur if name is still empty
+            repoUrlInput.addEventListener('blur', () => {
+                if (!repoNameInput.value || repoNameInput.value.trim() === '') {
+                    const generatedName = generateNameFromUrl(repoUrlInput.value);
+                    if (generatedName) {
+                        repoNameInput.value = generatedName;
+                    }
+                }
+            });
+        }
+        
         if (authTypeSelect) {
             authTypeSelect.addEventListener('change', () => {
                 const authType = authTypeSelect.value;
@@ -4068,6 +4133,17 @@ async function loadVersion(force = false) {
         if (response.editor_protocol) {
             editorProtocol = response.editor_protocol;
             console.log('Editor protocol:', editorProtocol);
+        }
+        
+        // Load and display plugins
+        const pluginsElement = document.getElementById('app-plugins');
+        if (pluginsElement && response.plugins && response.plugins.length > 0) {
+            const pluginText = `Plugins: ${response.plugins.join(', ')}`;
+            pluginsElement.textContent = pluginText;
+            pluginsElement.title = `${response.plugins.length} plugin(s) loaded`;
+            console.log('Plugins loaded:', response.plugins);
+        } else if (pluginsElement) {
+            pluginsElement.textContent = '';
         }
         
         // Check for updates

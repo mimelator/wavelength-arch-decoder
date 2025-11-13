@@ -72,35 +72,64 @@ impl PatternLoader {
     }
 
     /// Load patterns from multiple files (for plugin system)
-    pub fn load_with_plugins(base_path: &Path, plugin_dir: Option<&Path>) -> Result<PatternConfig> {
+    /// Returns the config and a list of loaded plugin names
+    pub fn load_with_plugins(base_path: &Path, plugin_dir: Option<&Path>) -> Result<(PatternConfig, Vec<String>)> {
         let mut config = Self::load_from_file(base_path)?;
+        let mut loaded_plugins = Vec::new();
 
         // Load custom pattern files from plugin directory
         if let Some(plugin_path) = plugin_dir {
             if plugin_path.exists() && plugin_path.is_dir() {
+                log::info!("Loading plugins from: {}", plugin_path.display());
                 for entry in fs::read_dir(plugin_path)? {
                     let entry = entry?;
                     let path = entry.path();
                     if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("json") {
-                        if let Ok(plugin_config) = Self::load_from_file(&path) {
-                            // Merge plugin patterns into base config
-                            config.patterns.environment_variables.extend(plugin_config.patterns.environment_variables);
-                            config.patterns.sdk_patterns.extend(plugin_config.patterns.sdk_patterns);
-                            config.patterns.api_endpoints.extend(plugin_config.patterns.api_endpoints);
-                            config.patterns.database_patterns.extend(plugin_config.patterns.database_patterns);
-                            config.patterns.aws_infrastructure.extend(plugin_config.patterns.aws_infrastructure);
-                            config.patterns.aws_sdk_v2_services.extend(plugin_config.patterns.aws_sdk_v2_services);
-                            // Merge service maps
-                            for (k, v) in plugin_config.patterns.aws_sdk_v3_service_map {
-                                config.patterns.aws_sdk_v3_service_map.insert(k, v);
+                        let plugin_name = path.file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("unknown")
+                            .to_string();
+                        
+                        match Self::load_from_file(&path) {
+                            Ok(plugin_config) => {
+                                // Merge plugin patterns into base config
+                                let env_vars_count = plugin_config.patterns.environment_variables.len();
+                                let sdk_patterns_count = plugin_config.patterns.sdk_patterns.len();
+                                let api_endpoints_count = plugin_config.patterns.api_endpoints.len();
+                                
+                                config.patterns.environment_variables.extend(plugin_config.patterns.environment_variables);
+                                config.patterns.sdk_patterns.extend(plugin_config.patterns.sdk_patterns);
+                                config.patterns.api_endpoints.extend(plugin_config.patterns.api_endpoints);
+                                config.patterns.database_patterns.extend(plugin_config.patterns.database_patterns);
+                                config.patterns.aws_infrastructure.extend(plugin_config.patterns.aws_infrastructure);
+                                config.patterns.aws_sdk_v2_services.extend(plugin_config.patterns.aws_sdk_v2_services);
+                                // Merge service maps
+                                for (k, v) in plugin_config.patterns.aws_sdk_v3_service_map {
+                                    config.patterns.aws_sdk_v3_service_map.insert(k, v);
+                                }
+                                
+                                loaded_plugins.push(plugin_name.clone());
+                                log::info!("  ✓ Loaded plugin: {} ({} env vars, {} SDK patterns, {} API endpoints)", 
+                                    plugin_name, env_vars_count, sdk_patterns_count, api_endpoints_count);
+                            }
+                            Err(e) => {
+                                log::warn!("  ⚠ Failed to load plugin {}: {}", path.display(), e);
                             }
                         }
                     }
                 }
+                
+                if loaded_plugins.is_empty() {
+                    log::info!("  No plugins found in {}", plugin_path.display());
+                } else {
+                    log::info!("✓ Loaded {} plugin(s): {}", loaded_plugins.len(), loaded_plugins.join(", "));
+                }
+            } else {
+                log::debug!("Plugin directory does not exist: {}", plugin_path.display());
             }
         }
 
-        Ok(config)
+        Ok((config, loaded_plugins))
     }
 }
 

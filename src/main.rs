@@ -26,6 +26,29 @@ async fn main() -> std::io::Result<()> {
         .expect("Failed to load configuration. Please check your environment variables.");
 
     info!("Configuration loaded successfully");
+    
+    // Check and log plugins at startup
+    let plugin_dir = std::path::Path::new("config/plugins");
+    if plugin_dir.exists() && plugin_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(plugin_dir) {
+            let plugins: Vec<String> = entries.filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path().is_file() && 
+                    e.path().extension().and_then(|s| s.to_str()) == Some("json")
+                })
+                .filter_map(|e| {
+                    e.path().file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+            
+            if !plugins.is_empty() {
+                info!("Found {} plugin(s) in config/plugins/: {}", plugins.len(), plugins.join(", "));
+            }
+        }
+    }
+    
     info!("Server will start on {}:{}", config.server.host, config.server.port);
 
     // Start server

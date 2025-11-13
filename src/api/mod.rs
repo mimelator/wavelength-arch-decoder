@@ -17,6 +17,7 @@ pub mod reports;
 pub mod documentation;
 pub mod tests;
 pub mod version_check;
+pub mod plugins;
 
 pub struct ApiState {
     pub repo_repo: RepositoryRepository,
@@ -61,13 +62,34 @@ pub async fn version(query: web::Query<std::collections::HashMap<String, String>
     // Check for updates (non-blocking, uses cache unless forced)
     let version_info = version_check::check_for_updates(force).await;
     
-    log::debug!("Version endpoint returning: {}, editor_protocol: {}, force: {}", current_version, editor_protocol, force);
+    // Get loaded plugins
+    let plugin_dir = std::path::Path::new("config/plugins");
+    let mut plugin_names = Vec::new();
+    if plugin_dir.exists() && plugin_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(plugin_dir) {
+            plugin_names = entries.filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path().is_file() && 
+                    e.path().extension().and_then(|s| s.to_str()) == Some("json")
+                })
+                .filter_map(|e| {
+                    e.path().file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+            plugin_names.sort();
+        }
+    }
+    
+    log::debug!("Version endpoint returning: {}, editor_protocol: {}, force: {}, plugins: {:?}", current_version, editor_protocol, force, plugin_names);
     HttpResponse::Ok().json(serde_json::json!({
         "version": current_version,
         "editor_protocol": editor_protocol,
         "latest_version": version_info.latest,
         "update_available": version_info.update_available,
-        "last_checked": version_info.last_checked
+        "last_checked": version_info.last_checked,
+        "plugins": plugin_names
     }))
 }
 

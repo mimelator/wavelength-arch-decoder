@@ -19,6 +19,7 @@ use crate::api::progress::get_analysis_progress;
 use crate::api::reports::generate_report;
 use crate::api::documentation::{get_documentation, get_documentation_by_type, search_documentation};
 use crate::api::tests::{get_tests, get_tests_by_framework};
+use crate::api::plugins::get_plugins;
 use crate::crawler::webhooks::{handle_github_webhook, handle_gitlab_webhook};
 use crate::config::Config;
 use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository, DocumentationRepository, TestRepository};
@@ -115,6 +116,8 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                 web::scope("/api/v1")
                     // Health and version endpoints
                     .route("/version", web::get().to(version))
+                    // Plugin endpoints
+                    .route("/plugins", web::get().to(get_plugins))
                     // Repository endpoints
                     .route("/repositories", web::post().to(create_repository))
                     .route("/repositories", web::get().to(list_repositories))

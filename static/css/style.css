@@ -845,7 +845,6 @@ body {
 .modal-close-btn:hover {
     color: var(--text-primary);
     background: var(--bg-color);
-    transform: rotate(90deg);
 }
 
 .modal-close-btn svg {
