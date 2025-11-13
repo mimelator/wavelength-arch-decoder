@@ -1067,6 +1067,8 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
         'test_tests_code': 'tests',
         'RelatedTo': '',  // Hide generic relationships
         'related_to': '',
+        'HasChild': '',  // Hide parent-child relationships
+        'has_child': '',
     };
     
     // Helper function to check if a node type should be shown
@@ -1083,29 +1085,147 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
     };
     
     // Filter nodes based on enabled types
-    const filteredNodes = graphData.nodes.filter(node => {
+    let filteredNodes = graphData.nodes.filter(node => {
         const nodeType = (node.node_type || node.type || 'unknown').toLowerCase();
         return isNodeTypeEnabled(nodeType);
     });
     
-    // Get IDs of filtered nodes for edge filtering
+    // Separate code elements from other nodes
+    const codeElementNodes = filteredNodes.filter(node => {
+        const nodeType = (node.node_type || node.type || '').toLowerCase();
+        return nodeType === 'codeelement' || nodeType === 'code_element';
+    });
+    
+    const nonCodeNodes = filteredNodes.filter(node => {
+        const nodeType = (node.node_type || node.type || '').toLowerCase();
+        return nodeType !== 'codeelement' && nodeType !== 'code_element';
+    });
+    
+    // Group code elements by element_type
+    const codeElementsByType = {};
+    codeElementNodes.forEach(node => {
+        const elementType = node.properties?.element_type || 
+                           node.properties?.elementType ||
+                           'Unknown';
+        if (!codeElementsByType[elementType]) {
+            codeElementsByType[elementType] = [];
+        }
+        codeElementsByType[elementType].push(node);
+    });
+    
+    // Create parent nodes for each code element type
+    const parentNodes = [];
+    const parentNodeIds = {};
+    
+    // Check if there's an existing network with expansion state, otherwise start with all collapsed
+    let expandedTypes = new Set();
+    const existingNetwork = container._networkInstance;
+    if (existingNetwork && existingNetwork.expandedTypes) {
+        expandedTypes = existingNetwork.expandedTypes;
+    } else {
+        // Start with all collapsed for cleaner initial view
+        expandedTypes = new Set();
+    }
+    
+    Object.keys(codeElementsByType).forEach(elementType => {
+        const parentId = `parent:${elementType}`;
+        parentNodeIds[elementType] = parentId;
+        const isExpanded = expandedTypes.has(elementType);
+        const expandIcon = isExpanded ? '▼' : '▶';
+        parentNodes.push({
+            id: parentId,
+            node_type: 'code_element_parent',
+            name: `${expandIcon} ${elementType}s (${codeElementsByType[elementType].length})`,
+            properties: {
+                element_type: elementType,
+                count: codeElementsByType[elementType].length.toString(),
+                expanded: isExpanded ? 'true' : 'false'
+            },
+            repository_id: repoId
+        });
+    });
+    
+    // Add parent nodes to filtered nodes
+    filteredNodes = [...nonCodeNodes, ...parentNodes];
+    
+    // Get IDs of filtered nodes for edge filtering (including parent nodes)
     const enabledNodeIds = new Set(filteredNodes.map(n => n.id));
     
+    // Add code element IDs conditionally based on expansion state
+    Object.keys(codeElementsByType).forEach(elementType => {
+        if (expandedTypes.has(elementType)) {
+            codeElementsByType[elementType].forEach(node => {
+                enabledNodeIds.add(node.id);
+            });
+        }
+    });
+    
+    // Create a map of code element IDs to their element types for quick lookup
+    const codeElementTypeMap = new Map();
+    codeElementNodes.forEach(node => {
+        const elementType = node.properties?.element_type || 
+                           node.properties?.elementType ||
+                           'Unknown';
+        codeElementTypeMap.set(node.id, elementType);
+    });
+    
     // Filter edges to only include those connecting enabled nodes
-    const filteredEdges = graphData.edges.filter(edge => {
+    // Keep edges that don't involve code elements, or that connect to expanded code elements
+    let filteredEdges = graphData.edges.filter(edge => {
         const sourceId = edge.source_node_id || edge.source;
         const targetId = edge.target_node_id || edge.target;
+        
+        // Check if source or target is a code element
+        const sourceElementType = codeElementTypeMap.get(sourceId);
+        const targetElementType = codeElementTypeMap.get(targetId);
+        
+        // If source is a code element, check if it's expanded
+        if (sourceElementType && !expandedTypes.has(sourceElementType)) {
+            return false; // Source is collapsed, filter out
+        }
+        
+        // If target is a code element, check if it's expanded
+        if (targetElementType && !expandedTypes.has(targetElementType)) {
+            return false; // Target is collapsed, filter out
+        }
+        
+        // Both nodes are either non-code or expanded code elements
         return enabledNodeIds.has(sourceId) && enabledNodeIds.has(targetId);
+    });
+    
+    // Create edges from parent nodes to their children (only if expanded)
+    Object.keys(codeElementsByType).forEach(elementType => {
+        if (expandedTypes.has(elementType)) {
+            const parentId = parentNodeIds[elementType];
+            codeElementsByType[elementType].forEach(childNode => {
+                filteredEdges.push({
+                    id: `parent-edge:${parentId}:${childNode.id}`,
+                    source_node_id: parentId,
+                    target_node_id: childNode.id,
+                    edge_type: 'HasChild',
+                    properties: {}
+                });
+            });
+        }
     });
     
     // Prepare nodes with enhanced information
     const nodes = filteredNodes.map(node => {
         // Handle both node_type (from enum) and type (from GraphQL)
         let nodeType = (node.node_type || node.type || 'unknown').toLowerCase();
-        // Normalize enum serialization (e.g., "Repository" -> "repository")
-        if (nodeTypeLabels[node.node_type || node.type]) {
-            nodeType = (node.node_type || node.type).toLowerCase();
+        
+        // Check if this is a parent node
+        const isParentNode = nodeType === 'code_element_parent' || node.id?.startsWith('parent:');
+        
+        if (isParentNode) {
+            nodeType = 'code_element_parent';
+        } else {
+            // Normalize enum serialization (e.g., "Repository" -> "repository")
+            if (nodeTypeLabels[node.node_type || node.type]) {
+                nodeType = (node.node_type || node.type).toLowerCase();
+            }
         }
+        
         const nodeTypeLabel = nodeTypeLabels[node.node_type || node.type] || nodeTypeLabels[nodeType] || nodeType;
         
         // Build label - remove redundant type indicator for cleaner display
@@ -1116,33 +1236,84 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
         const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
         const textColor = isDarkMode ? '#e2e8f0' : '#1e293b';
         
-        return {
+        // Parent nodes get different styling
+        const nodeConfig = {
             id: node.id,
             label: label,
-            color: getNodeColor(nodeType),
+            color: isParentNode ? getNodeColor('code') : getNodeColor(nodeType),
             font: {
-                size: 18,
+                size: isParentNode ? 20 : 18,
                 face: 'Arial',
                 color: textColor,
-                multi: false,  // Don't use HTML for labels, just plain text
+                multi: false,
+                bold: isParentNode
             },
-            shape: getNodeShape(nodeType),
-            borderWidth: 2,
-            size: 25,
+            shape: isParentNode ? 'box' : getNodeShape(nodeType),
+            borderWidth: isParentNode ? 3 : 2,
+            size: isParentNode ? 30 : 25,
             chosen: {
                 node: function(values, id, selected, hovering) {
                     if (hovering || selected) {
                         if (values) {
                             values.borderWidth = 4;
-                            values.size = 35;
+                            values.size = isParentNode ? 40 : 35;
                             if (values.font) {
-                                values.font.size = 20;
+                                values.font.size = isParentNode ? 22 : 20;
                             }
                         }
                     }
                 }
             }
         };
+        
+        // Store metadata for parent nodes
+        if (isParentNode) {
+            nodeConfig.group = 'parent';
+            nodeConfig.title = `Click to expand/collapse ${label}`;
+        }
+        
+        return nodeConfig;
+    });
+    
+    // Add code element nodes if their type is expanded
+    codeElementNodes.forEach(node => {
+        const elementType = node.properties?.element_type || 
+                           node.properties?.elementType ||
+                           'Unknown';
+        if (expandedTypes.has(elementType)) {
+            const nodeType = 'codeelement';
+            const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
+            const textColor = isDarkMode ? '#e2e8f0' : '#1e293b';
+            
+            nodes.push({
+                id: node.id,
+                label: node.name,
+                color: getNodeColor('code'),
+                font: {
+                    size: 16,
+                    face: 'Arial',
+                    color: textColor,
+                    multi: false,
+                },
+                shape: getNodeShape('code'),
+                borderWidth: 1,
+                size: 20,
+                group: 'child',
+                chosen: {
+                    node: function(values, id, selected, hovering) {
+                        if (hovering || selected) {
+                            if (values) {
+                                values.borderWidth = 3;
+                                values.size = 25;
+                                if (values.font) {
+                                    values.font.size = 18;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
     });
     
     // Prepare edges with relationship labels (using filtered edges)
@@ -1268,17 +1439,43 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
         },
     };
     
+    // Store network instance on container for state persistence
     const network = new vis.Network(container, data, options);
+    container._networkInstance = network;
     
     // Store graph data and repo ID for navigation (use filtered data for node lookup)
     network.graphData = filteredGraphData;
-    // Determine repo ID: use provided repoId, or check if we're in repository detail view
+    // Store code element grouping data for expand/collapse
+    network.codeElementsByType = codeElementsByType;
+    network.parentNodeIds = parentNodeIds;
+    network.expandedTypes = expandedTypes;
+    network.originalGraphData = graphData; // Store original for re-rendering
+    network.container = container;
     network.repoId = repoId || (container.closest('.page')?.id === 'repository-detail' ? currentRepoId : null);
     
-    // Add click handler to show node details
+    // Add click handler to show node details or expand/collapse parent nodes
     network.on('click', function(params) {
         if (params.nodes.length > 0) {
             const nodeId = params.nodes[0];
+            
+            // Check if this is a parent node
+            if (nodeId.startsWith('parent:')) {
+                const elementType = nodeId.replace('parent:', '');
+                const isExpanded = network.expandedTypes.has(elementType);
+                
+                // Toggle expansion state
+                if (isExpanded) {
+                    network.expandedTypes.delete(elementType);
+                } else {
+                    network.expandedTypes.add(elementType);
+                }
+                
+                // Re-render the graph with updated expansion state
+                renderEnhancedGraph(network.originalGraphData, network.container, network.repoId);
+                return;
+            }
+            
+            // Otherwise, show node details
             const node = filteredGraphData.nodes.find(n => n.id === nodeId);
             if (node) {
                 showNodeDetails(node, filteredGraphData, network.repoId);
