@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Mark Imel"]
 description = "A self-contained hosted server for understanding repository architecture through knowledge graphs"
 license = "MIT"
-repository = "https://github.com/your-org/wavelength-arch-decoder"
+repository = "https://github.com/mimelator/wavelength-arch-decoder"
 
 [lib]
 name = "wavelength_arch_decoder"

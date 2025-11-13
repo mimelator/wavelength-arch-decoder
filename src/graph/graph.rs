@@ -459,11 +459,39 @@ impl GraphBuilder {
             // Track code element nodes we create
             let mut code_element_nodes: HashMap<String, String> = HashMap::new();
             
-            // For each code element with relationships, create edges
+            // First pass: Create nodes for Module-type code elements that should always be shown
+            // Modules (packages, namespaces, etc.) are organizational units and should appear
+            // even if they don't have relationships, as they provide context for other elements
+            for code_element in &code_elements {
+                let should_always_show = matches!(code_element.element_type, crate::analysis::CodeElementType::Module);
+                
+                if should_always_show {
+                    let code_node_id = format!("code:{}", code_element.id);
+                    if !code_element_nodes.contains_key(&code_element.id) {
+                        nodes.push(GraphNode {
+                            id: code_node_id.clone(),
+                            node_type: NodeType::CodeElement,
+                            name: code_element.name.clone(),
+                            properties: {
+                                let mut props = HashMap::new();
+                                props.insert("file_path".to_string(), code_element.file_path.clone());
+                                props.insert("line_number".to_string(), code_element.line_number.to_string());
+                                props.insert("element_type".to_string(), format!("{:?}", code_element.element_type));
+                                props.insert("language".to_string(), code_element.language.clone());
+                                props
+                            },
+                            repository_id: Some(repository_id.to_string()),
+                        });
+                        code_element_nodes.insert(code_element.id.clone(), code_node_id.clone());
+                    }
+                }
+            }
+            
+            // Second pass: For each code element with relationships, create edges
             for code_element in &code_elements {
                 if let Ok(relationships) = self.code_relationship_repo.get_by_code_element(repository_id, &code_element.id) {
                     if relationships.is_empty() {
-                        continue; // Skip elements without relationships
+                        continue; // Skip elements without relationships (unless they were added above)
                     }
                     
                     // Create code element node if it has relationships

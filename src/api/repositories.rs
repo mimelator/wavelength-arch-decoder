@@ -28,6 +28,42 @@ pub struct AnalyzeRepositoryRequest {
     pub repository_id: String,
 }
 
+// Helper function to get repository local path
+fn get_repo_local_path(url: &str) -> Option<String> {
+    let config = Config::from_env().unwrap_or_else(|_| {
+        // Use default config if env loading fails
+        Config {
+            server: crate::config::ServerConfig {
+                host: "0.0.0.0".to_string(),
+                port: 8080,
+                environment: "development".to_string(),
+                editor_protocol: "vscode".to_string(),
+            },
+            database: crate::config::DatabaseConfig {
+                database_path: "./data/wavelength.db".to_string(),
+                graph_db_path: "./data/graph.db".to_string(),
+            },
+            security: crate::config::SecurityConfig {},
+            storage: crate::config::StorageConfig {
+                repository_cache_path: "./cache/repos".to_string(),
+                max_cache_size: "10GB".to_string(),
+            },
+            logging: crate::config::LoggingConfig {
+                log_level: "info".to_string(),
+                log_format: "json".to_string(),
+            },
+        }
+    });
+    
+    let crawler = match RepositoryCrawler::new(&config.storage) {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
+    
+    let local_path = crawler.get_repo_path(url);
+    Some(local_path.to_string_lossy().to_string())
+}
+
 // Repository endpoints
 pub async fn create_repository(
     state: web::Data<ApiState>,
@@ -55,7 +91,22 @@ pub async fn list_repositories(
 ) -> impl Responder {
     // API key validation removed for local tool simplicity
     match state.repo_repo.list_all() {
-        Ok(repos) => HttpResponse::Ok().json(repos),
+        Ok(repos) => {
+            // Add local_path to each repository
+            let repos_with_paths: Vec<serde_json::Value> = repos.iter()
+                .map(|repo| {
+                    let mut repo_json = serde_json::to_value(repo).unwrap_or(serde_json::json!({}));
+                    if let Some(obj) = repo_json.as_object_mut() {
+                        if let Some(local_path) = get_repo_local_path(&repo.url) {
+                            obj.insert("local_path".to_string(), serde_json::Value::String(local_path));
+                        }
+                    }
+                    repo_json
+                })
+                .collect();
+            
+            HttpResponse::Ok().json(repos_with_paths)
+        },
         Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
             error: e.to_string(),
         }),
@@ -69,7 +120,17 @@ pub async fn get_repository(
 ) -> impl Responder {
     // API key validation removed for local tool simplicity
     match state.repo_repo.find_by_id(&path.into_inner()) {
-        Ok(Some(repo)) => HttpResponse::Ok().json(repo),
+        Ok(Some(repo)) => {
+            // Add local_path to the response
+            let mut repo_json = serde_json::to_value(&repo).unwrap_or(serde_json::json!({}));
+            if let Some(obj) = repo_json.as_object_mut() {
+                if let Some(local_path) = get_repo_local_path(&repo.url) {
+                    obj.insert("local_path".to_string(), serde_json::Value::String(local_path));
+                }
+            }
+            
+            HttpResponse::Ok().json(repo_json)
+        },
         Ok(None) => HttpResponse::NotFound().json(ErrorResponse {
             error: "Repository not found".to_string(),
         }),
@@ -387,30 +448,43 @@ fn perform_analysis(
         }
     }
 
-    /// Extract webMethods assets and relationships via Python plugin
+    /// Extract plugin assets and relationships via Python plugin (generic)
     /// Plugin outputs decoder-compatible format, so we can deserialize generically
+    /// Currently calls the webMethods plugin, but this is generic and can be extended
     fn extract_webmethods_assets_and_relationships(repo_path: &Path) -> Result<(Vec<CodeElement>, Vec<crate::analysis::CodeRelationship>), anyhow::Error> {
         // Call plugin and get decoder-compatible JSON output
-        let (elements, relationships) = call_plugin_for_decoder_format(repo_path)?;
+        // Note: Function name kept for backward compatibility, but implementation is generic
+        // Pass webMethods-specific plugin parameters
+        let (elements, relationships) = call_plugin_for_decoder_format(
+            repo_path,
+            "webm_asset_plugin",
+            "WebMethodsAssetDetector",
+        )?;
         Ok((elements, relationships))
     }
     
     /// Generic plugin caller - calls Python plugin and deserializes decoder format
-    fn call_plugin_for_decoder_format(repo_path: &Path) -> Result<(Vec<CodeElement>, Vec<crate::analysis::CodeRelationship>), anyhow::Error> {
-        // Try to find the plugin directory
+    /// Works with any plugin that follows the standard pattern
+    fn call_plugin_for_decoder_format(
+        repo_path: &Path,
+        plugin_module: &str,
+        detector_class: &str,
+    ) -> Result<(Vec<CodeElement>, Vec<crate::analysis::CodeRelationship>), anyhow::Error> {
+        // Generic plugin discovery - try common locations
         let current_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+        let plugin_name = plugin_module.replace("_", "-");
         let plugin_paths = vec![
-            current_dir.join("../wavelength-arch-decoder-webm-asset-plugin"),
-            current_dir.join("../../wavelength-arch-decoder-webm-asset-plugin"),
-            current_dir.join("wavelength-arch-decoder-webm-asset-plugin"),
-            Path::new("../wavelength-arch-decoder-webm-asset-plugin").to_path_buf(),
-            Path::new("../../wavelength-arch-decoder-webm-asset-plugin").to_path_buf(),
-            Path::new("wavelength-arch-decoder-webm-asset-plugin").to_path_buf(),
+            current_dir.join(format!("../wavelength-arch-decoder-{}-plugin", plugin_name)),
+            current_dir.join(format!("../../wavelength-arch-decoder-{}-plugin", plugin_name)),
+            current_dir.join(format!("wavelength-arch-decoder-{}-plugin", plugin_name)),
+            Path::new(&format!("../wavelength-arch-decoder-{}-plugin", plugin_name)).to_path_buf(),
+            Path::new(&format!("../../wavelength-arch-decoder-{}-plugin", plugin_name)).to_path_buf(),
+            Path::new(&format!("wavelength-arch-decoder-{}-plugin", plugin_name)).to_path_buf(),
         ];
         
         let mut plugin_dir: Option<std::path::PathBuf> = None;
         for path in &plugin_paths {
-            if path.exists() && path.join("webm_asset_plugin").exists() {
+            if path.exists() && path.join(plugin_module).exists() {
                 plugin_dir = Some(path.clone());
                 break;
             }
@@ -419,34 +493,35 @@ fn perform_analysis(
         let plugin_dir_path = match plugin_dir {
             Some(path) => path,
             None => {
-                log::debug!("webMethods plugin not found");
+                log::debug!("Plugin not found: {}", plugin_module);
                 return Ok((Vec::new(), Vec::new()));
             }
         };
         
         let plugin_dir_absolute = plugin_dir_path.canonicalize()
             .unwrap_or_else(|_| plugin_dir_path.clone());
-        log::info!("Using webMethods plugin at: {}", plugin_dir_absolute.display());
+        log::info!("Using plugin '{}' at: {}", plugin_module, plugin_dir_absolute.display());
         
         let repo_path_str = repo_path.to_string_lossy();
         let plugin_path_str = plugin_dir_absolute.to_string_lossy();
         
+        // Generic Python script that works with any plugin following the pattern
         let python_script = format!(r#"
 import sys
 import json
 from pathlib import Path
 
 plugin_path = Path(r'{}')
-if plugin_path.exists() and (plugin_path / 'webm_asset_plugin').exists():
+if plugin_path.exists() and (plugin_path / '{}').exists():
     sys.path.insert(0, str(plugin_path))
 else:
     print("ERROR: Plugin path not found", file=sys.stderr)
     sys.exit(1)
 
 try:
-    from webm_asset_plugin.detector import WebMethodsAssetDetector
+    from {}.detector import {}
     
-    detector = WebMethodsAssetDetector()
+    detector = {}()
     result = detector.detect_assets(r'{}')
     data = result.to_dict()
     
@@ -458,7 +533,7 @@ except Exception as e:
     print("ERROR: " + str(e), file=sys.stderr)
     traceback.print_exc(file=sys.stderr)
     sys.exit(1)
-"#, plugin_path_str, repo_path_str);
+"#, plugin_path_str, plugin_module, plugin_module, detector_class, detector_class, repo_path_str);
         
         let output = Command::new("python3")
             .arg("-c")
@@ -467,20 +542,20 @@ except Exception as e:
         
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            log::warn!("webMethods plugin execution failed: {}", stderr);
+            log::warn!("Plugin execution failed: {}", stderr);
             return Ok((Vec::new(), Vec::new()));
         }
         
         let json_str = String::from_utf8(output.stdout)?;
         if json_str.trim().is_empty() {
-            log::warn!("webMethods plugin returned empty output");
+            log::warn!("Plugin returned empty output");
             return Ok((Vec::new(), Vec::new()));
         }
         
         let decoder_format: Value = match serde_json::from_str(&json_str) {
             Ok(v) => v,
             Err(e) => {
-                log::warn!("Failed to parse webMethods plugin decoder format: {} (output: {})", e, json_str.chars().take(200).collect::<String>());
+                log::warn!("Failed to parse plugin decoder format: {} (output: {})", e, json_str.chars().take(200).collect::<String>());
                 return Ok((Vec::new(), Vec::new()));
             }
         };
@@ -502,7 +577,8 @@ except Exception as e:
         Ok((elements, relationships))
     }
 
-    /// Extract webMethods assets via Python plugin and convert to code elements (legacy function for compatibility)
+    /// Extract plugin assets via Python plugin and convert to code elements (legacy function for compatibility)
+    /// Note: Function name kept for backward compatibility, but implementation is generic
     fn extract_webmethods_assets_as_code_elements(repo_path: &Path) -> Result<Vec<CodeElement>, anyhow::Error> {
         let (elements, _) = extract_webmethods_assets_and_relationships(repo_path)?;
         Ok(elements)
@@ -542,29 +618,25 @@ except Exception as e:
         }
     };
 
-    // Extract webMethods assets via plugin and merge with code elements
-    log::info!("Extracting webMethods assets (IS packages, MWS assets, adapters)...");
+    // Extract plugin assets and merge with code elements
+    log::info!("Extracting plugin assets...");
     let mut all_code_elements = code_structure.elements.clone();
-    let mut webmethods_relationships = Vec::new();
+    let mut plugin_relationships = Vec::new();
     match extract_webmethods_assets_and_relationships(&repo_path) {
-        Ok((webmethods_elements, rels)) => {
-            webmethods_relationships = rels;
-            if !webmethods_elements.is_empty() {
-                let caf_count = webmethods_elements.iter().filter(|e| e.language == "webmethods-caf").count();
-                let mws_count = webmethods_elements.iter().filter(|e| e.language == "webmethods-mws").count();
-                let is_count = webmethods_elements.iter().filter(|e| e.language == "webmethods-is").count();
-                log::info!("✓ Found {} webMethods assets ({} CAF, {} MWS, {} IS)", 
-                    webmethods_elements.len(), caf_count, mws_count, is_count);
-                if !webmethods_relationships.is_empty() {
-                    log::info!("✓ Found {} webMethods relationships", webmethods_relationships.len());
+        Ok((plugin_elements, rels)) => {
+            plugin_relationships = rels;
+            if !plugin_elements.is_empty() {
+                log::info!("✓ Found {} plugin assets", plugin_elements.len());
+                if !plugin_relationships.is_empty() {
+                    log::info!("✓ Found {} plugin relationships", plugin_relationships.len());
                 }
-                all_code_elements.extend(webmethods_elements);
+                all_code_elements.extend(plugin_elements);
             } else {
-                log::info!("✓ No webMethods assets found");
+                log::info!("✓ No plugin assets found");
             }
         },
         Err(e) => {
-            log::warn!("⚠ Failed to extract webMethods assets (plugin may not be available): {}", e);
+            log::warn!("⚠ Failed to extract plugin assets (plugin may not be available): {}", e);
         }
     }
 
@@ -683,9 +755,9 @@ except Exception as e:
         }
     };
     
-    // Combine regular code relationships with webMethods relationships
+    // Combine regular code relationships with plugin relationships
     let mut all_code_relationships = code_relationships;
-    all_code_relationships.extend(webmethods_relationships);
+    all_code_relationships.extend(plugin_relationships);
     
     // Store code relationships
     if !all_code_relationships.is_empty() {

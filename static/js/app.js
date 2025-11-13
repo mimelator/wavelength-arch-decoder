@@ -2440,6 +2440,11 @@ let currentRepoData = null; // Store full repository data for file path resoluti
 function getRepositoryLocalPath(repo) {
     if (!repo || !repo.url) return null;
     
+    // If backend provides local_path, use it (most reliable)
+    if (repo.local_path) {
+        return repo.local_path;
+    }
+    
     const url = repo.url;
     
     // Handle file:// URLs
@@ -2462,7 +2467,7 @@ function getRepositoryLocalPath(repo) {
         return url;
     }
     
-    // For remote URLs, construct cache path
+    // For remote URLs, construct cache path (fallback if backend doesn't provide local_path)
     // Extract repo name from URL (e.g., github.com/user/repo -> user-repo)
     try {
         const urlObj = new URL(url.replace(/^git@/, 'https://').replace(/\.git$/, ''));
@@ -4394,6 +4399,10 @@ let currentToolsGroupBy = 'category';
 async function loadTools(repoId) {
     // Use unified loader
     await loadEntityList('tool', repoId, (id) => api.getTools(id), 'tools-list', (items, repoData) => {
+        // Set global variable for filtering
+        allTools = items;
+        window.allTools = items;
+        
         // Populate filter dropdowns
         const categoryFilter = document.getElementById('tools-category-filter');
         const typeFilter = document.getElementById('tools-type-filter');
@@ -4435,6 +4444,9 @@ async function loadTools(repoId) {
         if (searchInput) searchInput.oninput = renderFn;
         if (categoryFilter) categoryFilter.onchange = renderFn;
         if (typeFilter) typeFilter.onchange = renderFn;
+        
+        // Initial render
+        renderFn();
     });
 }
 

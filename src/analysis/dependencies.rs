@@ -85,9 +85,9 @@ impl DependencyExtractor {
             manifests.push(manifest);
         }
 
-        // Extract webMethods IS package dependencies
-        if let Some(manifest) = self.extract_webmethods_is(repo_path)? {
-            manifests.push(manifest);
+        // Extract dependencies from plugins (generic)
+        if let Some(plugin_manifests) = self.extract_plugin_dependencies(repo_path)? {
+            manifests.extend(plugin_manifests);
         }
 
         Ok(manifests)
@@ -887,58 +887,96 @@ impl DependencyExtractor {
         }))
     }
 
-    /// Extract webMethods IS package dependencies using the Python plugin
-    fn extract_webmethods_is(&self, repo_path: &Path) -> Result<Option<DependencyManifest>> {
+    /// Extract dependencies from plugins (generic)
+    /// Discovers Python plugins and calls them to extract domain-specific dependencies
+    fn extract_plugin_dependencies(&self, repo_path: &Path) -> Result<Option<Vec<DependencyManifest>>> {
+        let mut manifests = Vec::new();
+        
+        // Try to discover and call plugins for dependency extraction
+        // This is generic - any plugin can provide dependencies
+        if let Some(plugin_manifest) = self.extract_dependencies_from_plugin(repo_path, "webm_asset_plugin", "WebMethodsAssetDetector", PackageManager::WebMethodsIS)? {
+            manifests.push(plugin_manifest);
+        }
+        
+        // Future: Add more plugins here as they're discovered
+        // Example: extract_dependencies_from_plugin(repo_path, "salesforce_plugin", "SalesforceDetector", PackageManager::Salesforce)?
+        
+        if manifests.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(manifests))
+        }
+    }
+    
+    /// Extract dependencies from a specific Python plugin (generic)
+    /// This function is generic and can work with any plugin that follows the pattern
+    fn extract_dependencies_from_plugin(
+        &self,
+        repo_path: &Path,
+        plugin_module: &str,
+        detector_class: &str,
+        package_manager: PackageManager,
+    ) -> Result<Option<DependencyManifest>> {
         use std::process::Command;
         use serde_json::Value;
         
-        // Try to find the plugin directory (could be in parent directory or installed)
+        // Generic plugin discovery - try common locations
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+        let plugin_name = plugin_module.replace("_", "-");
         let plugin_paths = vec![
-            "../wavelength-arch-decoder-webm-asset-plugin",
-            "../../wavelength-arch-decoder-webm-asset-plugin",
-            "wavelength-arch-decoder-webm-asset-plugin",
+            current_dir.join(format!("../wavelength-arch-decoder-{}-plugin", plugin_name)),
+            current_dir.join(format!("../../wavelength-arch-decoder-{}-plugin", plugin_name)),
+            current_dir.join(format!("wavelength-arch-decoder-{}-plugin", plugin_name)),
+            Path::new(&format!("../wavelength-arch-decoder-{}-plugin", plugin_name)).to_path_buf(),
+            Path::new(&format!("../../wavelength-arch-decoder-{}-plugin", plugin_name)).to_path_buf(),
+            Path::new(&format!("wavelength-arch-decoder-{}-plugin", plugin_name)).to_path_buf(),
         ];
         
-        let mut plugin_dir: Option<&Path> = None;
-        for path_str in &plugin_paths {
-            let path = Path::new(path_str);
-            if path.exists() && path.join("webm_asset_plugin").exists() {
-                plugin_dir = Some(path);
+        let mut plugin_dir: Option<std::path::PathBuf> = None;
+        for path in &plugin_paths {
+            if path.exists() && path.join(plugin_module).exists() {
+                plugin_dir = Some(path.clone());
                 break;
             }
         }
         
-        // Call Python directly to import and use the detector
-        // This avoids needing click and other CLI dependencies
-        let repo_path_str = repo_path.to_string_lossy();
-        let plugin_paths_str: Vec<String> = plugin_paths.iter()
-            .map(|p| format!("'{}'", p))
-            .collect();
-        let plugin_paths_python = format!("[{}]", plugin_paths_str.join(", "));
+        let plugin_dir_path = match plugin_dir {
+            Some(path) => path,
+            None => {
+                // Plugin not found, silently skip
+                return Ok(None);
+            }
+        };
         
+        let plugin_dir_absolute = plugin_dir_path.canonicalize()
+            .unwrap_or_else(|_| plugin_dir_path.clone());
+        
+        // Call Python plugin generically
+        let repo_path_str = repo_path.to_string_lossy();
+        let plugin_path_str = plugin_dir_absolute.to_string_lossy();
+        
+        // Generic Python script that works with any plugin following the pattern
         let python_script = format!(r#"
 import sys
 import json
 from pathlib import Path
 
-# Add plugin path to sys.path if needed
-plugin_paths = {}
-for path in plugin_paths:
-    path_obj = Path(path)
-    if path_obj.exists() and (path_obj / 'webm_asset_plugin').exists():
-        sys.path.insert(0, str(path_obj))
-        break
+plugin_path = Path(r'{}')
+if plugin_path.exists() and (plugin_path / '{}').exists():
+    sys.path.insert(0, str(plugin_path))
+else:
+    sys.exit(1)
 
 try:
-    from webm_asset_plugin.detector import WebMethodsAssetDetector
+    from {}.detector import {}
     
-    detector = WebMethodsAssetDetector()
-    result = detector.detect_assets('{}')
+    detector = {}()
+    result = detector.detect_assets(r'{}')
     data = result.to_dict()
     print(json.dumps(data))
 except Exception as e:
     sys.exit(1)
-"#, plugin_paths_python, repo_path_str);
+"#, plugin_path_str, plugin_module, plugin_module, detector_class, detector_class, repo_path_str);
         
         let output = Command::new("python3")
             .arg("-c")
@@ -947,16 +985,14 @@ except Exception as e:
         
         let output = match output {
             Ok(o) => o,
-            Err(e) => {
+            Err(_) => {
                 // Plugin not available, silently skip
-                log::debug!("webMethods plugin not available: {}", e);
                 return Ok(None);
             }
         };
         
         if !output.status.success() {
             // Plugin failed or not available, silently skip
-            log::debug!("webMethods plugin execution failed or no IS packages found");
             return Ok(None);
         }
         
@@ -968,18 +1004,26 @@ except Exception as e:
         
         let json: Value = match serde_json::from_str(&json_str) {
             Ok(v) => v,
-            Err(e) => {
-                log::debug!("Failed to parse webMethods plugin output: {}", e);
-                return Ok(None);
-            }
+            Err(_) => return Ok(None),
         };
         
-        // Extract IS packages and their dependencies
+        // Generic extraction: look for packages with dependencies
+        // Plugins should output packages in a standard format:
+        // { "packages": [{ "name": "...", "requires": [...], "manifest": "..." }] }
+        // or { "is_packages": [...] } for backward compatibility
+        let packages_key = if json.get("packages").is_some() {
+            "packages"
+        } else if json.get("is_packages").is_some() {
+            "is_packages"  // Backward compatibility with webMethods plugin
+        } else {
+            return Ok(None);
+        };
+        
         let mut all_dependencies = Vec::new();
         let mut manifest_files = Vec::new();
         
-        if let Some(is_packages) = json.get("is_packages").and_then(|v| v.as_array()) {
-            for pkg in is_packages {
+        if let Some(packages) = json.get(packages_key).and_then(|v| v.as_array()) {
+            for pkg in packages {
                 if pkg.get("name").and_then(|v| v.as_str()).is_some() {
                     if let Some(requires) = pkg.get("requires").and_then(|v| v.as_array()) {
                         for req in requires {
@@ -987,8 +1031,8 @@ except Exception as e:
                                 if !dep_name.trim().is_empty() {
                                     all_dependencies.push(PackageDependency {
                                         name: dep_name.to_string(),
-                                        version: "unknown".to_string(), // IS doesn't specify versions in requires
-                                        package_manager: PackageManager::WebMethodsIS,
+                                        version: "unknown".to_string(), // Plugins may not specify versions
+                                        package_manager: package_manager.clone(),
                                         is_dev: false,
                                         is_optional: false,
                                     });
@@ -1013,13 +1057,13 @@ except Exception as e:
         let file_path = if manifest_files.len() == 1 {
             manifest_files[0].clone()
         } else if !manifest_files.is_empty() {
-            format!("{} manifest.v3 files", manifest_files.len())
+            format!("{} manifest files", manifest_files.len())
         } else {
-            "manifest.v3".to_string()
+            "manifest".to_string()
         };
         
         Ok(Some(DependencyManifest {
-            package_manager: PackageManager::WebMethodsIS,
+            package_manager,
             dependencies: all_dependencies,
             file_path,
         }))
