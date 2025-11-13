@@ -1299,6 +1299,10 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
                 borderWidth: 1,
                 size: 20,
                 group: 'child',
+                node_type: 'code_element', // Add node_type for click handler
+                type: 'code_element', // Also add type for compatibility
+                properties: node.properties || {}, // Preserve original properties
+                name: node.name, // Ensure name is available
                 chosen: {
                     node: function(values, id, selected, hovering) {
                         if (hovering || selected) {
@@ -1476,9 +1480,17 @@ function renderEnhancedGraph(graphData, container, repoId = null) {
             }
             
             // Otherwise, show node details
-            const node = filteredGraphData.nodes.find(n => n.id === nodeId);
+            // Try to find node in filtered data first, then in original data
+            let node = filteredGraphData.nodes.find(n => n.id === nodeId);
+            if (!node) {
+                // If not found in filtered, check original graph data (for code elements)
+                node = graphData.nodes.find(n => n.id === nodeId);
+            }
             if (node) {
-                showNodeDetails(node, filteredGraphData, network.repoId);
+                console.log('[GRAPH] Showing details for node:', node.name, 'type:', node.node_type || node.type);
+                showNodeDetails(node, graphData, network.repoId);
+            } else {
+                console.warn('[GRAPH] Node not found:', nodeId);
             }
         }
     });
@@ -1502,6 +1514,14 @@ function showNodeDetails(node, graphData, repoId = null) {
     // Determine which tab this node type belongs to
     // Normalize node type - handle both enum serialization formats
     let nodeType = (node.node_type || node.type || 'unknown').toLowerCase();
+    
+    // If node has properties with element_type, use that to determine type
+    if (node.properties) {
+        const props = typeof node.properties === 'string' ? JSON.parse(node.properties) : node.properties;
+        if (props.element_type || props.elementType) {
+            nodeType = 'code_element';
+        }
+    }
     
     // Handle variations: "serviceprovider" -> "service_provider", "packagemanager" -> "package_manager"
     // Check for variations without underscores first
@@ -1544,8 +1564,13 @@ function showNodeDetails(node, graphData, repoId = null) {
     
     // Build details HTML
     let details = `<div class="node-details">`;
-    details += `<h3>${escapeHtml(node.name)}</h3>`;
+    details += `<h3>${escapeHtml(node.name || node.label || 'Unnamed Node')}</h3>`;
     details += `<p><strong>Type:</strong> ${escapeHtml(node.node_type || node.type || 'unknown')}</p>`;
+    
+    // Add node ID for reference
+    if (node.id) {
+        details += `<p><strong>ID:</strong> <code style="font-size: 0.85em;">${escapeHtml(node.id)}</code></p>`;
+    }
     
     if (node.properties) {
         // Handle both object and JSON string properties
@@ -1561,7 +1586,12 @@ function showNodeDetails(node, graphData, repoId = null) {
         if (propEntries.length > 0) {
             details += `<h4>Properties:</h4><ul>`;
             propEntries.forEach(([key, value]) => {
-                details += `<li><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value))}</li>`;
+                // Format file paths nicely
+                if (key === 'file_path' && value) {
+                    details += `<li><strong>${escapeHtml(key)}:</strong> <code>${escapeHtml(String(value))}</code></li>`;
+                } else {
+                    details += `<li><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value))}</li>`;
+                }
             });
             details += `</ul>`;
         }
@@ -1583,25 +1613,42 @@ function showNodeDetails(node, graphData, repoId = null) {
     
     // Add navigation link if we're in repository detail view and have a matching tab
     let actionButtons = '<div style="margin-top: 1rem; display: flex; gap: 0.5rem;">';
-    actionButtons += '<button onclick="this.closest(\'.node-details-modal\').remove()">Close</button>';
+    const closeModal = `document.querySelectorAll('.node-details-modal, .node-details-backdrop').forEach(el => el.remove());`;
+    actionButtons += `<button onclick="${closeModal}">Close</button>`;
     
     if (repoId && targetTab) {
         console.log('[NODE] Creating button for:', { repoId, targetTab, nodeName: node.name });
-        actionButtons += `<button onclick="navigateToNodeInDetail('${repoId}', '${targetTab}', '${escapeHtml(node.name)}'); this.closest('.node-details-modal').remove();" style="background: var(--primary-color); color: white;">View in Repository Details</button>`;
+        actionButtons += `<button onclick="navigateToNodeInDetail('${repoId}', '${targetTab}', '${escapeHtml(node.name)}'); ${closeModal}" style="background: var(--primary-color); color: white;">View in Repository Details</button>`;
     } else if (repoId) {
         // If we have a repo ID but no specific tab, just go to overview
         console.log('[NODE] Creating button for overview:', { repoId, nodeName: node.name });
-        actionButtons += `<button onclick="navigateToNodeInDetail('${repoId}', 'overview', '${escapeHtml(node.name)}'); this.closest('.node-details-modal').remove();" style="background: var(--primary-color); color: white;">View Repository Details</button>`;
+        actionButtons += `<button onclick="navigateToNodeInDetail('${repoId}', 'overview', '${escapeHtml(node.name)}'); ${closeModal}" style="background: var(--primary-color); color: white;">View Repository Details</button>`;
     }
     actionButtons += '</div>';
     
     details += actionButtons;
     details += `</div>`;
     
-    // Show in a modal
+    // Show in a modal with backdrop
+    // Remove any existing modals first
+    const existingModals = document.querySelectorAll('.node-details-modal, .node-details-backdrop');
+    existingModals.forEach(el => el.remove());
+    
+    // Create backdrop
+    const backdrop = document.createElement('div');
+    backdrop.className = 'node-details-backdrop';
+    backdrop.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999;';
+    backdrop.onclick = function() {
+        backdrop.remove();
+        detailsDiv.remove();
+    };
+    
+    // Create modal
     const detailsDiv = document.createElement('div');
     detailsDiv.className = 'node-details-modal';
     detailsDiv.innerHTML = details;
+    
+    document.body.appendChild(backdrop);
     document.body.appendChild(detailsDiv);
 }
 
@@ -2741,8 +2788,20 @@ let allDependencies = [];
 let currentDependenciesGroupBy = 'package_manager';
 
 async function loadDependencies(repoId) {
+    console.log('[DEPS] loadDependencies called for repo:', repoId);
     // Use unified loader
-    await loadEntityList('dependency', repoId, (id) => api.getDependencies(id), 'dependencies-list', (items, repoData) => {
+    await loadEntityList('dependency', repoId, async (id) => {
+        console.log('[DEPS] Calling API for dependencies:', id);
+        try {
+            const deps = await api.getDependencies(id);
+            console.log('[DEPS] API returned', deps?.length || 0, 'dependencies');
+            return deps;
+        } catch (error) {
+            console.error('[DEPS] API call failed:', error);
+            throw error;
+        }
+    }, 'dependencies-list', (items, repoData) => {
+        console.log('[DEPS] Filter setup callback called with', items?.length || 0, 'items');
         // Populate filter dropdowns
         const packageManagerSelect = document.getElementById('dependencies-filter-package-manager');
         if (packageManagerSelect) {
@@ -2763,13 +2822,24 @@ async function loadDependencies(repoId) {
         const typeFilter = document.getElementById('dependencies-filter-type');
         
         const renderFn = () => {
-            renderEntityListUnified('dependency', allDependencies, 'dependencies-list', repoData || currentRepoData);
+            // Use allDependencies (which should be set by loadEntityList) or fallback to items
+            const depsToRender = window.allDependencies || allDependencies || items;
+            console.log('[DEPS] renderFn called, rendering', depsToRender.length, 'dependencies');
+            renderEntityListUnified('dependency', depsToRender, 'dependencies-list', repoData || currentRepoData);
         };
         
         if (searchInput) searchInput.oninput = renderFn;
         if (packageManagerFilter) packageManagerFilter.onchange = renderFn;
         if (typeFilter) typeFilter.onchange = renderFn;
-        if (groupBySelect) groupBySelect.onchange = renderFn;
+        if (groupBySelect) {
+            groupBySelect.onchange = () => {
+                currentDependenciesGroupBy = groupBySelect.value;
+                renderFn();
+            };
+        }
+        
+        // Render initial list
+        renderFn();
     });
 }
 
@@ -4242,6 +4312,23 @@ function renderRelationships(entityType, details) {
         details.related_elements.forEach(el => {
             html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'code_element', '${el.id}')">
                 <strong>${escapeHtml(el.name)}</strong> (${escapeHtml(el.element_type)})
+            </div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    // Code-to-code relationships (e.g., IS Package contains IS Service)
+    if (details.related_code_elements && details.related_code_elements.length > 0) {
+        html += '<div class="detail-section"><h3>Code Relationships</h3><div class="related-items">';
+        details.related_code_elements.forEach(el => {
+            const confidence = el.confidence ? ` (${(el.confidence * 100).toFixed(0)}% confidence)` : '';
+            const evidence = el.evidence ? `<br><small class="text-muted">${escapeHtml(el.evidence)}</small>` : '';
+            const direction = el.direction === 'incoming' ? ' ← ' : ' → ';
+            const relType = el.relationship_type ? `<span class="detail-badge">${escapeHtml(el.relationship_type)}</span>` : '';
+            html += `<div class="related-item clickable" onclick="showEntityDetail('${currentRepoId}', 'code_element', '${el.id}')">
+                ${el.direction === 'incoming' ? '<strong>' + escapeHtml(el.name) + '</strong>' + direction + '<em>this element</em>' : '<em>this element</em>' + direction + '<strong>' + escapeHtml(el.name) + '</strong>'}
+                ${relType}${confidence}
+                <br><small><code>${escapeHtml(el.file_path || '')}</code> (${escapeHtml(el.element_type || '')})</small>${evidence}
             </div>`;
         });
         html += '</div></div>';

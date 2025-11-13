@@ -134,14 +134,16 @@ pub async fn get_entity_details(
                         .collect();
                     details.insert("related_elements".to_string(), serde_json::json!(related));
                     
-                    // Get code relationships (services and dependencies used by this element)
+                    // Get code relationships (services, dependencies, and other code elements)
                     if let Ok(relationships) = state.code_relationship_repo.get_by_code_element(&repo_id, &entity_id) {
                         let mut related_services = Vec::new();
                         let mut related_dependencies = Vec::new();
+                        let mut related_code_elements = Vec::new();
                         
                         for rel in &relationships {
                             match rel.target_type {
                                 crate::analysis::RelationshipTargetType::Service => {
+                                    // Check if target is a service
                                     if let Ok(services) = state.service_repo.get_by_repository(&repo_id) {
                                         if let Some(service) = services.iter().find(|s| s.id == rel.target_id) {
                                             related_services.push(serde_json::json!({
@@ -153,7 +155,21 @@ pub async fn get_entity_details(
                                                 "confidence": rel.confidence,
                                                 "evidence": rel.evidence
                                             }));
+                                            continue;
                                         }
+                                    }
+                                    // If not found as service, check if it's a code element (for webMethods IS services)
+                                    if let Some(target_element) = elements.iter().find(|e| e.id == rel.target_id) {
+                                        related_code_elements.push(serde_json::json!({
+                                            "id": target_element.id,
+                                            "name": target_element.name,
+                                            "element_type": target_element.element_type,
+                                            "file_path": target_element.file_path,
+                                            "language": target_element.language,
+                                            "relationship_type": rel.relationship_type,
+                                            "confidence": rel.confidence,
+                                            "evidence": rel.evidence
+                                        }));
                                     }
                                 },
                                 crate::analysis::RelationshipTargetType::Dependency => {
@@ -174,8 +190,32 @@ pub async fn get_entity_details(
                             }
                         }
                         
+                        // Also check for relationships where this element is the target
+                        if let Ok(all_relationships) = state.code_relationship_repo.get_by_repository(&repo_id) {
+                            for rel in all_relationships {
+                                if rel.target_id == entity_id {
+                                    if let Some(source_element) = elements.iter().find(|e| e.id == rel.code_element_id) {
+                                        related_code_elements.push(serde_json::json!({
+                                            "id": source_element.id,
+                                            "name": source_element.name,
+                                            "element_type": source_element.element_type,
+                                            "file_path": source_element.file_path,
+                                            "language": source_element.language,
+                                            "relationship_type": rel.relationship_type,
+                                            "confidence": rel.confidence,
+                                            "evidence": rel.evidence,
+                                            "direction": "incoming"
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+                        
                         details.insert("related_services".to_string(), serde_json::json!(related_services));
                         details.insert("related_dependencies".to_string(), serde_json::json!(related_dependencies));
+                        if !related_code_elements.is_empty() {
+                            details.insert("related_code_elements".to_string(), serde_json::json!(related_code_elements));
+                        }
                     }
                 }
             }

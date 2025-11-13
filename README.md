@@ -25,9 +25,12 @@ A self-contained, powerful tool that automatically discovers and visualizes the 
 - **What tools and scripts** are configured (build tools, test frameworks, linters)
 - **What tests exist** and which frameworks are used (Jest, Mocha, Pytest, JUnit, XCTest, etc.)
 - **What documentation** is available (README files, API docs, guides)
+- **What domain-specific assets** exist (via plugins: webMethods IS packages, Salesforce objects, SAP modules, etc.)
 - **How everything connects** through an interactive knowledge graph
 
-Perfect for **onboarding new developers**, **understanding legacy codebases**, **security audits**, and **AI assistant integration**.
+Perfect for **onboarding new developers**, **understanding legacy codebases**, **security audits**, **enterprise platform analysis**, and **AI assistant integration**.
+
+**🔌 Plugin System**: Extend detection to any domain (webMethods, Salesforce, SAP, etc.) without modifying the decoder. Plugins adapt to the decoder's generic data model, keeping the core tool clean and maintainable.
 
 ---
 
@@ -54,7 +57,7 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **Databases**: PostgreSQL, MongoDB, Redis, Firebase Firestore
 - **APIs & SDKs**: Stripe, Twilio, SendGrid, and 50+ more services
 - **Configurable Patterns**: Extend detection via JSON configuration files
-- **Plugin System**: Add custom service detection rules
+- **Plugin System**: Domain-specific asset detection without decoder modifications (see [Plugin System](#-plugin-system))
 - **Comment Filtering**: Ignores service mentions in comments to reduce false positives
 
 ### 🛠️ **Tool Discovery**
@@ -132,6 +135,7 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 - **Dark/Light Theme**: Beautiful visualization in both themes
 - **Entity Color Coding**: Visual distinction between entity types
 - **Legend**: Interactive legend with checkboxes to filter node types
+- **Plugin Assets**: Domain-specific assets from plugins (webMethods IS packages, MWS assets, etc.) appear seamlessly in the graph with full relationship support
 
 ### 🎨 **Modern Web UI**
 - **Dashboard**: Overview of all repositories and statistics
@@ -799,32 +803,215 @@ Add custom service detection patterns in `config/service_patterns.json`:
 }
 ```
 
-### Plugin System
+### 🔌 **Plugin System**
 
-Create custom plugins in `config/plugins/`:
+**Domain-Specific Asset Detection Without Compromising Genericity**
 
-```json
+The Architecture Decoder features a powerful plugin system that enables **domain-specific asset detection** while keeping the core decoder completely generic. This allows you to detect specialized assets (webMethods, Salesforce, SAP, etc.) without polluting the generic decoder codebase.
+
+#### How It Works
+
+**Plugin Adapts to Decoder, Not Vice Versa**
+
+The plugin architecture follows a **"plugin adapts to decoder"** pattern:
+
+1. **Plugins Output Generic Format**: Plugins detect domain-specific assets (e.g., webMethods IS packages, MWS assets) but **convert them to the decoder's generic data model** (`CodeElement`, `CodeRelationship`)
+
+2. **Decoder Remains Generic**: The decoder has **zero knowledge** of plugin internals. It simply:
+   - Calls the plugin via subprocess (Python, Node.js, or any language)
+   - Deserializes generic JSON (`code_elements`, `code_relationships`)
+   - Stores entities in the database
+
+3. **No Plugin-Specific Code in Decoder**: The decoder never needs to know about webMethods, Salesforce, or any specific domain. It just works with generic code elements and relationships.
+
+#### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              Plugin (Domain-Specific)                   │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │  Detects: webMethods IS packages, MWS assets   │  │
+│  │  Detects: Salesforce objects, Apex classes       │  │
+│  │  Detects: SAP modules, ABAP programs             │  │
+│  └─────────────────────────────────────────────────┘  │
+│                        ↓                                │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │  Converts to Decoder Format                    │  │
+│  │  - CodeElement (id, name, type, file_path)     │  │
+│  │  - CodeRelationship (source, target, type)      │  │
+│  └─────────────────────────────────────────────────┘  │
+│                        ↓                                │
+│              JSON Output (decoder_format)              │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│         Architecture Decoder (Generic)                  │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │  Generic Deserialization                       │  │
+│  │  - No plugin-specific code                    │  │
+│  │  - Just: serde_json::from_value()             │  │
+│  └─────────────────────────────────────────────────┘  │
+│                        ↓                                │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │  Store in Database                             │  │
+│  │  - code_elements table                         │  │
+│  │  - code_relationships table                    │  │
+│  └─────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### What Plugins Enable
+
+**1. Domain-Specific Asset Detection**
+- **webMethods**: IS packages, services, adapters, MWS assets, CAF configurations
+- **Salesforce**: Apex classes, Lightning components, Custom objects
+- **SAP**: ABAP programs, Function modules, BAPIs
+- **Any Domain**: Your custom enterprise platform
+
+**2. Extensibility Without Modification**
+- Add new domain support **without touching decoder code**
+- Plugins are **completely independent** repositories
+- Decoder remains **generic and maintainable**
+
+**3. Language Flexibility**
+- Plugins can be written in **any language** (Python, Node.js, Rust, Go)
+- As long as they output JSON in decoder format
+- No compilation needed - decoder calls via subprocess
+
+**4. Relationship Detection**
+- Plugins can detect **domain-specific relationships**:
+  - IS Package → IS Services (contains)
+  - IS Service → IS Service (calls)
+  - MWS Folder → MWS Assets (contains)
+- Relationships are stored in the knowledge graph
+
+#### Example: webMethods Plugin
+
+The **[webMethods Asset Detection Plugin](https://github.com/mimelator/wavelength-arch-decoder-webm-asset-plugin)** demonstrates the plugin architecture:
+
+**What It Detects:**
+- Integration Server (IS) packages and services
+- My Webmethods Server (MWS) assets (13 types)
+- CAF/OpenUI configurations
+- IS adapters and connectors
+- Code files within IS packages
+- Package dependencies (`requires`)
+
+**How It Works:**
+1. Plugin scans repository for webMethods-specific files (`manifest.v3`, `xmlImport.xml`, etc.)
+2. Converts detected assets to `CodeElement` format:
+   ```python
+   CodeElement {
+       name: "IS Package: SKYProfiler",
+       element_type: "Module",
+       language: "webmethods-is",
+       file_path: "ns/SKYProfiler/",
+       ...
+   }
+   ```
+3. Detects relationships (package → services, service → service calls)
+4. Outputs JSON with `decoder_format` section
+5. Decoder generically deserializes and stores
+
+**Integration:**
+```bash
+# Plugin stays in its own repo - no copying needed
+# Decoder automatically finds it at:
+#   ../wavelength-arch-decoder-webm-asset-plugin
+
+# Just ensure Python 3.9+ is installed
+# Decoder calls: python3 -c "from webm_asset_plugin.detector import ..."
+```
+
+#### Creating Your Own Plugin
+
+**Step 1: Create Plugin Repository**
+```bash
+mkdir my-domain-plugin
+cd my-domain-plugin
+# Create your detection logic (Python, Node.js, etc.)
+```
+
+**Step 2: Implement Detection**
+```python
+# my_plugin/detector.py
+def detect_assets(repo_path):
+    # Your domain-specific detection logic
+    assets = scan_for_domain_assets(repo_path)
+    
+    # Convert to decoder format
+    converter = DecoderFormatConverter()
+    return converter.convert_to_decoder_format(assets)
+```
+
+**Step 3: Output Decoder Format**
+```python
+# Must output JSON with this structure:
 {
-  "name": "My Custom Service",
-  "version": "1.0",
-  "sdk_patterns": [
-    {
-      "pattern": "my-service",
-      "provider": "MyService",
-      "service_type": "API",
-      "confidence": 0.8
+    "decoder_format": {
+        "code_elements": [
+            {
+                "id": "uuid",
+                "name": "Asset Name",
+                "element_type": "Module",  # Function, Class, Module, etc.
+                "file_path": "path/to/asset",
+                "line_number": 1,
+                "language": "your-domain",
+                "signature": None,
+                "doc_comment": None,
+                "visibility": None,
+                "parameters": [],
+                "return_type": None
+            }
+        ],
+        "code_relationships": [
+            {
+                "id": "uuid",
+                "code_element_id": "source-uuid",
+                "target_type": "Service",  # or "Dependency"
+                "target_id": "target-uuid",
+                "relationship_type": "contains",  # or "calls", "depends_on", etc.
+                "confidence": 1.0,
+                "evidence": "Why this relationship exists"
+            }
+        ]
     }
-  ],
-  "api_endpoints": [
-    {
-      "pattern": "api.myservice.com",
-      "provider": "MyService",
-      "service_type": "API",
-      "confidence": 0.9
-    }
-  ]
 }
 ```
+
+**Step 4: Decoder Integration**
+- Decoder automatically calls plugin if found in standard locations
+- No decoder code changes needed
+- Plugin output is generically deserialized
+
+#### Plugin Types
+
+**1. Service Pattern Plugins** (JSON config files)
+- Add service detection patterns (env vars, SDK patterns, API endpoints)
+- Stored in `config/plugins/*.json`
+- Automatically loaded at startup
+- Example: `webmethods.json` for webMethods service patterns
+
+**2. Asset Detection Plugins** (Executable scripts)
+- Detect domain-specific code assets and relationships
+- Written in any language (Python recommended)
+- Output decoder-compatible JSON
+- Example: `wavelength-arch-decoder-webm-asset-plugin`
+
+#### Benefits
+
+✅ **Separation of Concerns**: Generic decoder vs. domain-specific plugins  
+✅ **Maintainability**: Core decoder stays clean and generic  
+✅ **Extensibility**: Add new domains without modifying decoder  
+✅ **Language Flexibility**: Plugins in any language  
+✅ **Independent Development**: Plugins can be separate repos/projects  
+✅ **Zero Coupling**: Decoder has no knowledge of plugin internals  
+
+#### Available Plugins
+
+- **[webMethods Asset Detection Plugin](https://github.com/mimelator/wavelength-arch-decoder-webm-asset-plugin)** - Detects IS packages, MWS assets, CAF configurations, and relationships
+
+**Want to create a plugin?** See the [webMethods plugin](https://github.com/mimelator/wavelength-arch-decoder-webm-asset-plugin) as a reference implementation.
 
 ---
 
