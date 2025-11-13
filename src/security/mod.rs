@@ -15,8 +15,5 @@ pub mod pattern_config;
 pub mod generic_provider;
 
 pub use service_detector::{ServiceDetector, DetectedService, ServiceProvider, ServiceType};
-pub use analyzer::SecurityAnalyzer;
-pub use types::SecurityAnalysis;
 pub use types::{SecurityEntity, SecurityEntityType, SecurityRelationship, SecurityVulnerability, VulnerabilitySeverity};
-pub use api_key_detector::ApiKeyDetector;
 

@@ -19,9 +19,9 @@ pub use service_repo::{ServiceRepository, StoredService};
 pub use code_repo::CodeElementRepository;
 pub use code_relationship_repo::CodeRelationshipRepository;
 pub use security_repo::SecurityRepository;
-pub use tool_repo::{ToolRepository, StoredTool, StoredToolScript};
-pub use documentation_repo::{DocumentationRepository, StoredDocumentation};
-pub use test_repo::{TestRepository, StoredTest};
+pub use tool_repo::ToolRepository;
+pub use documentation_repo::DocumentationRepository;
+pub use test_repo::TestRepository;
 
 #[derive(Clone)]
 pub struct Database {

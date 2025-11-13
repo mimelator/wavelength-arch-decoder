@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, ToolRepository, CodeRelationshipRepository, TestRepository};
-use crate::storage::{Repository, StoredDependency, StoredService, StoredTool, StoredTest};
 use crate::analysis::RelationshipTargetType;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -222,7 +221,7 @@ impl GraphBuilder {
 
         // Create service provider nodes
         for provider in &service_providers {
-            let provider_node_id = if let Some(id) = node_map.get(provider) {
+            let _provider_node_id = if let Some(id) = node_map.get(provider) {
                 id.clone()
             } else {
                 let id = Uuid::new_v4().to_string();
@@ -243,7 +242,7 @@ impl GraphBuilder {
 
         // Track service and dependency node IDs for code relationships
         let mut service_node_ids: HashMap<String, String> = HashMap::new();
-        let mut dep_node_ids: HashMap<String, String> = HashMap::new();
+        let _dep_node_ids: HashMap<String, String> = HashMap::new();
         
         // Create service nodes
         for service in &services {
@@ -487,7 +486,7 @@ impl GraphBuilder {
                         code_element_nodes.insert(code_element.id.clone(), code_node_id.clone());
                     } else {
                         // Get existing node ID
-                        let code_node_id = code_element_nodes.get(&code_element.id).unwrap().clone();
+                        let _code_node_id = code_element_nodes.get(&code_element.id).unwrap().clone();
                     }
                     
                     let code_node_id = code_element_nodes.get(&code_element.id).unwrap().clone();

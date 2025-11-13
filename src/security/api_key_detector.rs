@@ -38,7 +38,7 @@ impl ApiKeyDetector {
     ) -> Result<(Vec<SecurityEntity>, Vec<SecurityRelationship>, Vec<SecurityVulnerability>)> {
         log::info!("Starting API key detection in repository: {}", repo_path.display());
         let mut entities = Vec::new();
-        let mut relationships = Vec::new();
+        let relationships = Vec::new();
         let mut vulnerabilities = Vec::new();
         let mut detected_keys: Vec<DetectedApiKey> = Vec::new();
 
@@ -330,7 +330,7 @@ impl ApiKeyDetector {
     fn scan_file_for_keys(
         &self, 
         content: &str, 
-        path: &Path,
+        _path: &Path,
         file_elements: Option<&Vec<&CodeElement>>,
         normalized_path: &str,
     ) -> Result<Vec<DetectedApiKey>> {
@@ -555,7 +555,7 @@ impl ApiKeyDetector {
     }
 
     /// Check if a match is likely a false positive
-    fn is_false_positive(&self, line: &str, key_name: &str, value: Option<&str>) -> bool {
+    fn is_false_positive(&self, line: &str, key_name: &str, _value: Option<&str>) -> bool {
         let line_lower = line.to_lowercase();
         let key_lower = key_name.to_lowercase();
         

@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use base64::{Engine as _, engine::general_purpose};
 use crate::api::{ApiState, ErrorResponse};
-use crate::storage::{RepositoryRepository, DependencyRepository, ToolRepository};
 use crate::ingestion::{RepositoryCrawler, RepositoryCredentials, AuthType};
 use crate::analysis::{DependencyExtractor, ToolDetector, TestDetector};
 use crate::security::ServiceDetector;

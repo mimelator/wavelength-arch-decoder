@@ -8,7 +8,7 @@ use crate::security::cloudformation;
 /// Analyze Serverless Framework files
 pub fn analyze_serverless(
     content: &str,
-    path: &Path,
+    _path: &Path,
     normalized_path: &str,
     entity_map: &mut HashMap<String, String>,
 ) -> Result<(Vec<SecurityEntity>, Vec<SecurityRelationship>, Vec<SecurityVulnerability>)> {

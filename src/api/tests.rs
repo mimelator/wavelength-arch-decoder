@@ -1,5 +1,4 @@
 use actix_web::{web, HttpResponse, Responder};
-use serde::{Deserialize, Serialize};
 use crate::api::{ApiState, ErrorResponse};
 
 /// Get all tests for a repository

@@ -1,6 +1,5 @@
 use anyhow::Result;
 use chrono::Utc;
-use uuid::Uuid;
 use crate::storage::Database;
 use rusqlite::params;
 use crate::analysis::{DetectedTest, TestFramework};

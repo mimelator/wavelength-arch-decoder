@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::fs;
 use uuid::Uuid;
@@ -96,7 +96,7 @@ impl CodeRelationshipDetector {
         services: &[StoredService],
     ) -> Result<Vec<CodeRelationship>> {
         let mut relationships = Vec::new();
-        let content_lower = file_content.to_lowercase();
+        let _content_lower = file_content.to_lowercase();
         
         // Get the function/class body (approximate by looking around the element's line)
         let element_body = self.extract_element_body(file_content, element.line_number);

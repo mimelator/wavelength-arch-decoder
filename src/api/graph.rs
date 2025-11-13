@@ -1,6 +1,6 @@
 use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use crate::api::{ApiState, ErrorResponse};
-use crate::graph::{GraphBuilder, KnowledgeGraph};
+use crate::graph::GraphBuilder;
 
 /// Get knowledge graph for a repository
 pub async fn get_graph(

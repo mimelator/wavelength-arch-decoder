@@ -3280,7 +3280,7 @@ dependencies = [
 
 [[package]]
 name = "wavelength-arch-decoder"
-version = "0.7.6"
+version = "0.7.8"
 dependencies = [
  "actix-cors",
  "actix-files",

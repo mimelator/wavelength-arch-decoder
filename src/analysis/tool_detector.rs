@@ -716,7 +716,7 @@ impl ToolDetector {
     }
 
     /// Deduplicate tools (same name, category, type)
-    fn deduplicate_tools(&self, mut tools: Vec<DetectedTool>) -> Vec<DetectedTool> {
+    fn deduplicate_tools(&self, tools: Vec<DetectedTool>) -> Vec<DetectedTool> {
         let mut seen: std::collections::HashMap<(String, ToolCategory, ToolType), usize> = 
             std::collections::HashMap::new();
         let mut deduplicated: Vec<DetectedTool> = Vec::new();

@@ -14,6 +14,7 @@ pub struct VersionInfo {
 #[derive(Debug, Deserialize)]
 struct GitHubRelease {
     tag_name: String,
+    #[allow(dead_code)]
     published_at: String,
 }
 

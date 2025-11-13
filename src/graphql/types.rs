@@ -1,5 +1,4 @@
 use async_graphql::{SimpleObject, InputObject};
-use serde::{Deserialize, Serialize};
 use crate::storage::{Repository, StoredDependency, StoredService};
 use crate::analysis::{CodeElement, CodeCall};
 use crate::security::{SecurityEntity, SecurityVulnerability, SecurityRelationship};

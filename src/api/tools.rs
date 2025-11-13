@@ -43,7 +43,7 @@ pub struct ToolSearchQuery {
 
 // Search tools across repositories
 pub async fn search_tools(
-    state: web::Data<ApiState>,
+    _state: web::Data<ApiState>,
     query: web::Query<ToolSearchQuery>,
 ) -> impl Responder {
     // API key validation removed for local tool simplicity

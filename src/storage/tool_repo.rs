@@ -3,7 +3,7 @@ use chrono::Utc;
 use uuid::Uuid;
 use crate::storage::Database;
 use rusqlite::params;
-use crate::analysis::{DetectedTool, ToolType, ToolCategory, ToolScript};
+use crate::analysis::{DetectedTool, ToolType, ToolCategory};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StoredTool {

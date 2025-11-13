@@ -1,28 +1,36 @@
 use actix_web::{web, HttpResponse, Responder, HttpRequest};
-use serde::{Deserialize, Serialize};
-use crate::api::{ApiState, ErrorResponse};
+use serde::Deserialize;
+use crate::api::ApiState;
 use log::info;
 
 #[derive(Debug, Deserialize)]
 pub struct GitHubWebhookPayload {
     pub action: Option<String>,
     pub repository: Option<GitHubRepository>,
+    #[allow(dead_code)]
     pub pusher: Option<GitHubPusher>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct GitHubRepository {
+    #[allow(dead_code)]
     pub id: u64,
+    #[allow(dead_code)]
     pub name: String,
     pub full_name: String,
+    #[allow(dead_code)]
     pub html_url: String,
+    #[allow(dead_code)]
     pub clone_url: String,
+    #[allow(dead_code)]
     pub default_branch: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct GitHubPusher {
+    #[allow(dead_code)]
     pub name: String,
+    #[allow(dead_code)]
     pub email: String,
 }
 
@@ -30,16 +38,22 @@ pub struct GitHubPusher {
 pub struct GitLabWebhookPayload {
     pub object_kind: String,
     pub project: Option<GitLabProject>,
+    #[allow(dead_code)]
     pub user_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct GitLabProject {
+    #[allow(dead_code)]
     pub id: u64,
+    #[allow(dead_code)]
     pub name: String,
     pub path_with_namespace: String,
+    #[allow(dead_code)]
     pub web_url: String,
+    #[allow(dead_code)]
     pub git_http_url: String,
+    #[allow(dead_code)]
     pub default_branch: String,
 }
 

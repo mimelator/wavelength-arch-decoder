@@ -1,7 +1,6 @@
 use async_graphql::{Context, Object, Result as GraphQLResult, Schema, EmptySubscription};
 use crate::api::ApiState;
 use crate::graphql::types::*;
-use crate::storage::{RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, SecurityRepository};
 use crate::graph::GraphBuilder;
 
 pub type GraphQLSchema = Schema<QueryRoot, MutationRoot, EmptySubscription>;
@@ -279,8 +278,8 @@ impl MutationRoot {
     /// Analyze a repository
     async fn analyze_repository(
         &self,
-        ctx: &Context<'_>,
-        repository_id: String,
+        _ctx: &Context<'_>,
+        _repository_id: String,
     ) -> GraphQLResult<AnalysisResultType> {
         // This would trigger the same analysis as the REST endpoint
         // For now, return a placeholder

@@ -144,7 +144,7 @@ impl CodeAnalyzer {
     /// Analyze JavaScript/TypeScript files
     fn analyze_js_ts(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
         let mut elements = Vec::new();
-        let mut calls = Vec::new();
+        let calls = Vec::new();
         let mut element_map: HashMap<String, String> = HashMap::new(); // name -> id
 
         let lines: Vec<&str> = content.lines().collect();
@@ -229,7 +229,7 @@ impl CodeAnalyzer {
     /// Analyze Python files
     fn analyze_python(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
         let mut elements = Vec::new();
-        let mut calls = Vec::new();
+        let calls = Vec::new();
         let mut element_map: HashMap<String, String> = HashMap::new();
 
         let lines: Vec<&str> = content.lines().collect();
@@ -312,7 +312,7 @@ impl CodeAnalyzer {
     /// Analyze Rust files
     fn analyze_rust(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
         let mut elements = Vec::new();
-        let mut calls = Vec::new();
+        let calls = Vec::new();
         let mut element_map: HashMap<String, String> = HashMap::new();
 
         let lines: Vec<&str> = content.lines().collect();
@@ -417,7 +417,7 @@ impl CodeAnalyzer {
     /// Analyze Go files
     fn analyze_go(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
         let mut elements = Vec::new();
-        let mut calls = Vec::new();
+        let calls = Vec::new();
         let mut element_map: HashMap<String, String> = HashMap::new();
 
         let lines: Vec<&str> = content.lines().collect();
@@ -773,7 +773,7 @@ impl CodeAnalyzer {
     /// Analyze Swift files
     fn analyze_swift(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
         let mut elements = Vec::new();
-        let mut calls = Vec::new();
+        let calls = Vec::new();
         let mut element_map: HashMap<String, String> = HashMap::new();
 
         let lines: Vec<&str> = content.lines().collect();
@@ -900,7 +900,7 @@ impl CodeAnalyzer {
     /// Analyze Objective-C files
     fn analyze_objective_c(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
         let mut elements = Vec::new();
-        let mut calls = Vec::new();
+        let calls = Vec::new();
         let mut element_map: HashMap<String, String> = HashMap::new();
 
         let lines: Vec<&str> = content.lines().collect();
@@ -1195,7 +1195,7 @@ impl CodeAnalyzer {
     /// Analyze Java files
     fn analyze_java(&self, content: &str, normalized_path: &str) -> Result<(Vec<CodeElement>, Vec<CodeCall>)> {
         let mut elements = Vec::new();
-        let mut calls = Vec::new();
+        let calls = Vec::new();
         let mut element_map: HashMap<String, String> = HashMap::new();
 
         let lines: Vec<&str> = content.lines().collect();

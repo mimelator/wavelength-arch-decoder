@@ -7,11 +7,10 @@ pub mod documentation;
 pub mod test_detector;
 pub mod utils;
 
-pub use dependencies::{DependencyExtractor, PackageDependency, PackageManager, DependencyManifest};
-pub use graph::{DependencyGraph, DependencyNode, VersionConflict, DependencyStatistics};
+pub use dependencies::{DependencyExtractor, PackageDependency, PackageManager};
 pub use code_structure::{CodeAnalyzer, CodeStructure, CodeElement, CodeElementType, CodeCall};
 pub use code_relationships::{CodeRelationshipDetector, CodeRelationship, RelationshipTargetType};
-pub use tool_detector::{ToolDetector, DetectedTool, ToolType, ToolCategory, ToolScript};
-pub use documentation::{DocumentationIndexer, DocumentationFile, DocumentationType};
+pub use tool_detector::{ToolDetector, DetectedTool, ToolType, ToolCategory};
+pub use documentation::DocumentationIndexer;
 pub use test_detector::{TestDetector, DetectedTest, TestFramework};
 
