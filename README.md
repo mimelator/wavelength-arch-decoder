@@ -6,7 +6,7 @@
 
 A self-contained, powerful tool that automatically discovers and visualizes the complete architecture of your repositories—from dependencies and services to security configurations and code relationships.
 
-[![Version](https://img.shields.io/badge/version-0.7.3-blue)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.7.7-blue)](VERSION)
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -196,6 +196,10 @@ Perfect for **onboarding new developers**, **understanding legacy codebases**, *
 git clone https://github.com/mimelator/wavelength-arch-decoder.git
 cd wavelength-arch-decoder
 
+# Optional: Configure environment variables
+cp .env.example .env
+# Edit .env if you want to customize settings (defaults work out of the box)
+
 # Build the project
 cargo build --release
 
@@ -203,7 +207,7 @@ cargo build --release
 cargo run --release
 ```
 
-The server will start on `http://localhost:8080` by default.
+The server will start on `http://localhost:8080` by default. See the [Configuration](#-configuration) section for all available environment variables.
 
 ### First Analysis
 
@@ -726,29 +730,57 @@ query {
 
 ### Environment Variables
 
-Create a `.env.local` file (optional):
+The Architecture Decoder uses environment variables for configuration. You can set these via:
+
+1. **`.env` file** (recommended) - Copy `.env.example` to `.env` and customize
+2. **`.env.local` file** - Local overrides (takes precedence over `.env`)
+3. **System environment variables** - Set directly in your shell
+
+**Quick Setup:**
+
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit .env with your preferences (optional - defaults work out of the box)
+# The file will be automatically loaded when you run the server
+```
+
+**Available Configuration Options:**
+
+Create a `.env` file (or copy from `.env.example`):
 
 ```bash
 # Server Configuration
-PORT=8080
-HOST=0.0.0.0
-
-# Database
-DATABASE_PATH=./data/wavelength.db
-
-# Repository Access (Optional)
-GITHUB_TOKEN=ghp_your_token_here
-GITLAB_TOKEN=your_gitlab_token
-
-# Storage
-REPOSITORY_CACHE_PATH=./cache/repos
+PORT=8080                    # Port for the web server (default: 8080)
+HOST=0.0.0.0                 # Host to bind to (default: 0.0.0.0 = all interfaces)
+ENVIRONMENT=development       # Environment: development, production, etc. (default: development)
 
 # Editor Configuration (for file linking)
-EDITOR_PROTOCOL=vscode  # Options: vscode, cursor, sublime, atom, or custom protocol
+EDITOR_PROTOCOL=vscode       # Options: vscode, cursor, sublime, atom, vim, etc. (default: vscode)
+
+# Database Configuration (optional - defaults shown)
+DATABASE_PATH=./data/wavelength.db      # Main SQLite database (default: ./data/wavelength.db)
+GRAPH_DB_PATH=./data/graph.db           # Knowledge graph database (default: ./data/graph.db)
+
+# Storage Configuration (optional - defaults shown)
+REPOSITORY_CACHE_PATH=./cache/repos     # Where cloned repos are cached (default: ./cache/repos)
+MAX_CACHE_SIZE=10GB                     # Maximum cache size (default: 10GB)
+
+# Logging Configuration (optional - defaults shown)
+LOG_LEVEL=info              # Log level: trace, debug, info, warn, error (default: info)
+LOG_FORMAT=json             # Log format: json, text (default: json)
+
+# Optional: Repository Access (for cloning remote repositories)
+# GITHUB_TOKEN=your_github_token_here
+# GITLAB_TOKEN=your_gitlab_token_here
+# SSH_KEY_PATH=/path/to/ssh/key
 
 # Version Update Checking (optional)
 CHECK_VERSION_UPDATES=true  # Set to false to disable automatic update checking
 ```
+
+**Note:** All configuration options have sensible defaults. You only need to set values if you want to override the defaults. The `.env` file is optional - the server will work with defaults if no `.env` file exists. Paths are relative to where you run the binary from.
 
 ### Service Pattern Configuration
 
