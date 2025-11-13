@@ -19,6 +19,61 @@ impl SecurityAnalyzer {
         SecurityAnalyzer
     }
 
+    /// Check if a file path should be skipped during analysis
+    /// 
+    /// Skips common build artifacts, dependencies, and virtual environments
+    fn should_skip_path(path: &Path, file_name: &str) -> bool {
+        // Skip hidden files
+        if file_name.starts_with('.') {
+            return true;
+        }
+        
+        let path_str = path.to_string_lossy().to_lowercase();
+        
+        // Skip common dependency and build directories
+        if path_str.contains("node_modules") ||
+           path_str.contains("target") ||
+           path_str.contains(".git") ||
+           path_str.contains("/dist/") ||
+           path_str.contains("/build/") ||
+           path_str.contains("/.next/") ||
+           path_str.contains("\\.next\\") ||  // Windows path separator
+           path_str.contains("/out/") ||
+           path_str.contains("/.nuxt/") ||
+           path_str.contains("/.cache/") ||
+           path_str.contains("/coverage/") ||
+           path_str.contains("/.next/static/") ||  // Next.js build artifacts
+           path_str.contains("/.next/server/") {    // Next.js server chunks
+            return true;
+        }
+        
+        // Skip Python virtual environments
+        if path_str.contains("venv/") ||
+           path_str.contains("venv\\") ||
+           path_str.contains("/venv/") ||
+           path_str.contains("\\venv\\") ||
+           path_str.contains("site-packages") ||
+           path_str.contains(".venv/") ||
+           path_str.contains(".venv\\") {
+            return true;
+        }
+        
+        // Skip compiled/binary files
+        file_name.ends_with(".min.js") ||
+        file_name.ends_with(".min.css") ||
+        file_name.ends_with(".bundle.js") ||
+        file_name.ends_with(".chunk.js") ||
+        file_name.ends_with(".class") ||
+        file_name.ends_with(".pyc") ||
+        file_name.ends_with(".pyo") ||
+        file_name.ends_with(".so") ||
+        file_name.ends_with(".dll") ||
+        file_name.ends_with(".dylib") ||
+        file_name.ends_with(".a") ||
+        file_name.ends_with(".o") ||
+        file_name.ends_with(".rlib")
+    }
+
     /// Analyze security configuration in a repository
     pub fn analyze_repository(
         &self, 
@@ -45,34 +100,7 @@ impl SecurityAnalyzer {
                 .to_lowercase();
 
             // Skip hidden files and common ignore patterns
-            let path_str = path.to_string_lossy().to_lowercase();
-            if file_name.starts_with('.') || 
-               path_str.contains("node_modules") ||
-               path_str.contains("target") ||
-               path_str.contains(".git") ||
-               path_str.contains("/dist/") ||
-               path_str.contains("/build/") ||
-               path_str.contains("/.next/") ||
-               path_str.contains("\\.next\\") ||  // Windows path separator
-               path_str.contains("/out/") ||
-               path_str.contains("/.nuxt/") ||
-               path_str.contains("/.cache/") ||
-               path_str.contains("/coverage/") ||
-               path_str.contains("/.next/static/") ||  // Next.js build artifacts
-               path_str.contains("/.next/server/") ||  // Next.js server chunks
-               file_name.ends_with(".min.js") ||
-               file_name.ends_with(".min.css") ||
-               file_name.ends_with(".bundle.js") ||
-               file_name.ends_with(".chunk.js") ||
-               file_name.ends_with(".class") ||
-               file_name.ends_with(".pyc") ||
-               file_name.ends_with(".pyo") ||
-               file_name.ends_with(".so") ||
-               file_name.ends_with(".dll") ||
-               file_name.ends_with(".dylib") ||
-               file_name.ends_with(".a") ||
-               file_name.ends_with(".o") ||
-               file_name.ends_with(".rlib") {
+            if Self::should_skip_path(path, &file_name) {
                 continue;
             }
 

@@ -57,6 +57,35 @@
                 <h3>Recent Repositories</h3>
                 <div id="recent-repos" class="repo-list"></div>
             </div>
+            <div class="dashboard-section">
+                <h3>AI Assistant</h3>
+                <div class="info-card" style="background: linear-gradient(135deg, var(--primary-color) 0%, #1e40af 100%); color: white; padding: 1.5rem; border-radius: 0.5rem; margin-bottom: 1.5rem;">
+                    <div style="display: flex; align-items: start; gap: 1rem;">
+                        <div style="font-size: 2rem;">🤖</div>
+                        <div style="flex: 1;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: white;">Interactive AI Assistant</h4>
+                            <p style="margin: 0 0 1rem 0; opacity: 0.95;">Ask natural language questions about your codebase architecture, dependencies, services, and code relationships.</p>
+                            <div style="background: rgba(255, 255, 255, 0.15); padding: 1rem; border-radius: 0.375rem; margin-bottom: 1rem;">
+                                <strong style="display: block; margin-bottom: 0.5rem;">To launch the AI Assistant:</strong>
+                                <ol style="margin: 0; padding-left: 1.5rem; opacity: 0.95;">
+                                    <li style="margin-bottom: 0.5rem;">Open a terminal in the project root</li>
+                                    <li style="margin-bottom: 0.5rem;">Navigate to the AI assistant directory: <code style="background: rgba(0,0,0,0.2); padding: 0.125rem 0.375rem; border-radius: 0.25rem;">cd ai-assistant</code></li>
+                                    <li style="margin-bottom: 0.5rem;">Start the assistant: <code style="background: rgba(0,0,0,0.2); padding: 0.125rem 0.375rem; border-radius: 0.25rem;">./start.sh</code> (or <code style="background: rgba(0,0,0,0.2); padding: 0.125rem 0.375rem; border-radius: 0.25rem;">uvicorn src.main:app --reload --port 8000</code>)</li>
+                                    <li>Open <a href="http://localhost:8000" target="_blank" style="color: white; text-decoration: underline; font-weight: 600;">http://localhost:8000</a> in your browser</li>
+                                </ol>
+                            </div>
+                            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                                <a href="http://localhost:8000" target="_blank" class="btn" style="background: white; color: var(--primary-color); border: none; font-weight: 600;">
+                                    🚀 Open AI Assistant
+                                </a>
+                                <a href="https://github.com/mimelator/wavelength-arch-decoder/blob/main/ai-assistant/README.md" target="_blank" class="btn" style="background: rgba(255, 255, 255, 0.2); color: white; border: 1px solid rgba(255, 255, 255, 0.3);">
+                                    📖 View Documentation
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Repositories Page -->

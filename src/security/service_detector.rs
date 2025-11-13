@@ -187,10 +187,7 @@ impl ServiceDetector {
                 .to_lowercase();
             
             // Skip hidden files and common ignore patterns
-            if file_name.starts_with('.') || 
-               path.to_string_lossy().contains("node_modules") ||
-               path.to_string_lossy().contains("target") ||
-               path.to_string_lossy().contains(".git") {
+            if Self::should_skip_path(path, &file_name) {
                 continue;
             }
             
@@ -1117,6 +1114,31 @@ impl ServiceDetector {
         false
     }
     
+    /// Check if a file path should be skipped during analysis
+    /// 
+    /// Skips common build artifacts, dependencies, and virtual environments
+    fn should_skip_path(path: &Path, file_name: &str) -> bool {
+        // Skip hidden files
+        if file_name.starts_with('.') {
+            return true;
+        }
+        
+        let path_str = path.to_string_lossy().to_lowercase();
+        
+        // Skip common dependency and build directories
+        path_str.contains("node_modules") ||
+        path_str.contains("target") ||
+        path_str.contains(".git") ||
+        // Skip Python virtual environments
+        path_str.contains("venv/") ||
+        path_str.contains("venv\\") ||
+        path_str.contains("/venv/") ||
+        path_str.contains("\\venv\\") ||
+        path_str.contains("site-packages") ||
+        path_str.contains(".venv/") ||
+        path_str.contains(".venv\\")
+    }
+
     /// Check if a pattern at a specific position is at a word boundary
     fn is_position_at_word_boundary(&self, content: &str, pos: usize, pattern_len: usize) -> bool {
         let before = if pos > 0 {
@@ -1134,8 +1156,9 @@ impl ServiceDetector {
         // Check if it's at a word boundary (preceded/followed by non-alphanumeric or start/end)
         // This prevents "together" from matching inside "turbopack"
         match (before, after) {
-            (None, _) => true, // Start of content
-            (_, None) => true,  // End of content
+            (None, None) => true, // Single word (start and end)
+            (None, Some(a)) => !a.is_alphanumeric(), // Start of content - check after char
+            (Some(b), None) => !b.is_alphanumeric(), // End of content - check before char
             (Some(b), Some(a)) => {
                 // Word boundary if before/after are non-alphanumeric
                 // This ensures "together" doesn't match inside "turbopack" (where b='r', a='p' are alphanumeric)
@@ -1143,8 +1166,6 @@ impl ServiceDetector {
                 let after_is_boundary = !a.is_alphanumeric();
                 before_is_boundary && after_is_boundary
             }
-            (Some(b), None) => !b.is_alphanumeric(),
-            (None, Some(a)) => !a.is_alphanumeric(),
         }
     }
 }
@@ -1270,6 +1291,198 @@ async function fetchPrintifyProducts() {
                 println!("  - {} (confidence: {})", service.name, service.confidence);
             }
         }
+    }
+
+    #[test]
+    fn test_venv_directory_filtering() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create venv directory structure
+        let venv_dir = temp_dir.path().join("venv");
+        fs::create_dir_all(&venv_dir).unwrap();
+        let site_packages = venv_dir.join("lib").join("python3.13").join("site-packages");
+        fs::create_dir_all(&site_packages).unwrap();
+        
+        // Create a file in venv that would trigger false positive (charset_normalizer with "coherence")
+        let charset_file = site_packages.join("charset_normalizer").join("models.py");
+        fs::create_dir_all(charset_file.parent().unwrap()).unwrap();
+        fs::write(&charset_file, r#"
+class CharsetMatch:
+    def __init__(self, languages: CoherenceMatches):
+        self._languages: CoherenceMatches = languages
+        self._mean_coherence_ratio: float = 0.0
+        "#).unwrap();
+        
+        // Create a real code file outside venv
+        let real_code = temp_dir.path().join("src").join("app.py");
+        fs::create_dir_all(real_code.parent().unwrap()).unwrap();
+        fs::write(&real_code, r#"
+import cohere
+client = cohere.Client(api_key="sk_test_12345678901234567890")
+        "#).unwrap();
+
+        let detector = ServiceDetector::new();
+        let services = detector.detect_services(temp_dir.path()).unwrap();
+        
+        // Should NOT detect Cohere from venv file
+        let venv_cohere: Vec<_> = services.iter()
+            .filter(|s| s.provider == ServiceProvider::Cohere && 
+                   (s.file_path.contains("venv") || s.file_path.contains("site-packages")))
+            .collect();
+        
+        assert_eq!(venv_cohere.len(), 0, "Should not detect Cohere from venv directory");
+        
+        // Should detect Cohere from real code file
+        let real_cohere: Vec<_> = services.iter()
+            .filter(|s| s.provider == ServiceProvider::Cohere && 
+                   s.file_path.contains("app.py"))
+            .collect();
+        
+        assert!(real_cohere.len() > 0, "Should detect Cohere from real code file");
+    }
+
+    #[test]
+    fn test_site_packages_filtering() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create .venv directory structure
+        let venv_dir = temp_dir.path().join(".venv");
+        fs::create_dir_all(&venv_dir).unwrap();
+        let site_packages = venv_dir.join("lib").join("python3.13").join("site-packages");
+        fs::create_dir_all(&site_packages).unwrap();
+        
+        // Create a file that contains "cohere" but is in site-packages
+        let test_file = site_packages.join("test_module.py");
+        fs::write(&test_file, r#"
+# This file contains coherence which should not trigger Cohere detection
+def calculate_coherence(text):
+    return 0.5
+        "#).unwrap();
+
+        let detector = ServiceDetector::new();
+        let services = detector.detect_services(temp_dir.path()).unwrap();
+        
+        // Should NOT detect Cohere from site-packages
+        let false_positives: Vec<_> = services.iter()
+            .filter(|s| s.provider == ServiceProvider::Cohere && 
+                   (s.file_path.contains("site-packages") || s.file_path.contains(".venv")))
+            .collect();
+        
+        assert_eq!(false_positives.len(), 0, "Should not detect Cohere from site-packages");
+    }
+
+    #[test]
+    fn test_word_boundary_prevents_substring_matches() {
+        let detector = ServiceDetector::new();
+        
+        // Test word boundary at start of content
+        assert!(detector.is_position_at_word_boundary("cohere", 0, 6));
+        
+        // Test word boundary at end of content
+        let content_end = "cohere";
+        assert!(detector.is_position_at_word_boundary(content_end, 0, 6));
+        
+        // Test word boundary with spaces
+        assert!(detector.is_position_at_word_boundary(" import cohere ", 8, 6));
+        
+        // Test NO word boundary (substring match)
+        // "cohere" inside "coherence" - char after is 'n' (alphanumeric)
+        let coherence_content = "coherence";
+        let cohere_pos = coherence_content.find("cohere").unwrap();
+        // After "cohere" (6 chars) at position 0, we're at position 6, which is 'n'
+        // 'n' is alphanumeric, so NOT a word boundary
+        assert!(!detector.is_position_at_word_boundary(coherence_content, cohere_pos, 6));
+        
+        // Test that "together" doesn't match inside "turbopack" (should not find it)
+        let content = "turbopack";
+        let together_pos = content.find("together");
+        assert!(together_pos.is_none(), "turbopack should not contain 'together'");
+    }
+
+    #[test]
+    fn test_word_boundary_edge_cases() {
+        let detector = ServiceDetector::new();
+        
+        // Start of content (no char before, so boundary)
+        assert!(detector.is_position_at_word_boundary("cohere", 0, 6));
+        
+        // End of content (no char after, so boundary)
+        assert!(detector.is_position_at_word_boundary("cohere", 0, 6));
+        
+        // With punctuation before (non-alphanumeric before = boundary)
+        assert!(detector.is_position_at_word_boundary("(cohere)", 1, 6));
+        
+        // With punctuation after (non-alphanumeric after = boundary)
+        assert!(detector.is_position_at_word_boundary("cohere,", 0, 6));
+        
+        // With spaces (space before and after = boundary)
+        assert!(detector.is_position_at_word_boundary(" cohere ", 1, 6));
+        
+        // NO boundary - alphanumeric before AND after
+        // "cohere" inside "xcoherex" - 'x' before and 'x' after (both alphanumeric)
+        assert!(!detector.is_position_at_word_boundary("xcoherex", 1, 6));
+        
+        // NO boundary - alphanumeric before, even at end
+        // "cohere" at end of "xcohere" - 'x' before (alphanumeric) = no boundary
+        // We check the before char even at the end
+        assert!(!detector.is_position_at_word_boundary("xcohere", 1, 6));
+        
+        // NO boundary - alphanumeric after (even at start)
+        // "cohere" at start but 'x' after = no boundary (we check the after char)
+        assert!(!detector.is_position_at_word_boundary("coherex", 0, 6));
+    }
+
+    #[test]
+    fn test_service_detection_skips_venv_in_real_scenario() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create realistic Python project structure
+        let src_dir = temp_dir.path().join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        
+        // Real application code
+        let app_file = src_dir.join("app.py");
+        fs::write(&app_file, r#"
+import cohere
+client = cohere.Client(api_key="sk_test_12345678901234567890")
+        "#).unwrap();
+        
+        // Create venv with dependency that has "coherence" in it
+        let venv_dir = temp_dir.path().join("venv");
+        fs::create_dir_all(&venv_dir).unwrap();
+        let site_packages = venv_dir.join("lib").join("python3.13").join("site-packages");
+        fs::create_dir_all(&site_packages).unwrap();
+        
+        let charset_file = site_packages.join("charset_normalizer").join("models.py");
+        fs::create_dir_all(charset_file.parent().unwrap()).unwrap();
+        fs::write(&charset_file, r#"
+class CharsetMatch:
+    def __init__(self, languages: CoherenceMatches):
+        self._languages: CoherenceMatches = languages
+        self.coherence: float = 0.0
+        "#).unwrap();
+
+        let detector = ServiceDetector::new();
+        let services = detector.detect_services(temp_dir.path()).unwrap();
+        
+        // Count Cohere detections
+        let cohere_services: Vec<_> = services.iter()
+            .filter(|s| s.provider == ServiceProvider::Cohere)
+            .collect();
+        
+        // Should only detect from real code, not venv
+        let venv_detections = cohere_services.iter()
+            .filter(|s| s.file_path.contains("venv") || s.file_path.contains("site-packages"))
+            .count();
+        
+        assert_eq!(venv_detections, 0, "Should not detect Cohere from venv files");
+        
+        // Should detect from real code
+        let real_detections = cohere_services.iter()
+            .filter(|s| s.file_path.contains("app.py"))
+            .count();
+        
+        assert!(real_detections > 0, "Should detect Cohere from real application code");
     }
 }
 

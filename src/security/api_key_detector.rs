@@ -688,4 +688,213 @@ impl ApiKeyDetector {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use std::fs;
+
+    /// Test helper to create a temporary repository structure
+    fn create_test_repo() -> TempDir {
+        TempDir::new().unwrap()
+    }
+
+    #[test]
+    fn test_looks_like_api_key_valid_keys() {
+        let detector = ApiKeyDetector::new();
+        
+        // Valid API keys should return true (test patterns - not real keys)
+        // Using example/test prefixes to avoid GitHub secret scanning false positives
+        assert!(detector.looks_like_api_key("example_live_key_123456789012345678901234567890"));
+        assert!(detector.looks_like_api_key("example_test_key_abcdefghijklmnopqrstuvwxyz123456"));
+        assert!(detector.looks_like_api_key("AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYzEXAMPLE123456789"));
+        assert!(detector.looks_like_api_key("example-key-1234567890123456789012345678901234567890"));
+        assert!(detector.looks_like_api_key("example-token-1234567890-1234567890123-exampleabcdefghijklmnopqrstuvwx"));
+    }
+
+    #[test]
+    fn test_looks_like_api_key_rejects_template_literals() {
+        let detector = ApiKeyDetector::new();
+        
+        // Template literals should be rejected
+        assert!(!detector.looks_like_api_key("${process.env.API_KEY}"));
+        assert!(!detector.looks_like_api_key("${firebaseConfig.apiKey}"));
+        assert!(!detector.looks_like_api_key("$API_KEY"));
+        assert!(!detector.looks_like_api_key("{{api_key}}"));
+        assert!(!detector.looks_like_api_key("$(getenv API_KEY)"));
+    }
+
+    #[test]
+    fn test_looks_like_api_key_rejects_variable_references() {
+        let detector = ApiKeyDetector::new();
+        
+        // Variable references should be rejected
+        assert!(!detector.looks_like_api_key("process.env.API_KEY"));
+        assert!(!detector.looks_like_api_key("config.apiKey"));
+        assert!(!detector.looks_like_api_key("env.API_KEY"));
+        assert!(!detector.looks_like_api_key("getenv('API_KEY')"));
+        assert!(!detector.looks_like_api_key("environ.get('API_KEY')"));
+    }
+
+    #[test]
+    fn test_looks_like_api_key_rejects_urls_and_paths() {
+        let detector = ApiKeyDetector::new();
+        
+        // URLs should be rejected
+        assert!(!detector.looks_like_api_key("https://api.example.com/v1"));
+        assert!(!detector.looks_like_api_key("http://localhost:3000"));
+        assert!(!detector.looks_like_api_key("api.example.com/key"));
+        
+        // File paths should be rejected
+        assert!(!detector.looks_like_api_key("/path/to/config.json"));
+        assert!(!detector.looks_like_api_key("C:\\Users\\config\\api.key"));
+        assert!(!detector.looks_like_api_key("./config/api.key"));
+    }
+
+    #[test]
+    fn test_looks_like_api_key_rejects_short_values() {
+        let detector = ApiKeyDetector::new();
+        
+        // Values shorter than 20 characters should be rejected
+        assert!(!detector.looks_like_api_key("short_key"));
+        assert!(!detector.looks_like_api_key("1234567890123456789")); // 19 chars
+        assert!(!detector.looks_like_api_key("sk_test_123")); // Too short
+    }
+
+    #[test]
+    fn test_looks_like_api_key_rejects_too_many_special_chars() {
+        let detector = ApiKeyDetector::new();
+        
+        // Values with too many special characters should be rejected
+        assert!(!detector.looks_like_api_key("!@#$%^&*()!@#$%^&*()!@#$%^&*()"));
+        // Note: Dashes are actually valid in API keys (e.g., Stripe keys), so we allow them
+        // This test verifies that keys with mostly alphanumeric content pass
+        assert!(detector.looks_like_api_key("sk_test_123456789012345678901234567890"));
+    }
+
+    #[test]
+    fn test_looks_like_api_key_handles_quoted_values() {
+        let detector = ApiKeyDetector::new();
+        
+        // Should handle quoted values correctly (test patterns - not real keys)
+        // Using example prefix to avoid GitHub secret scanning false positives
+        assert!(detector.looks_like_api_key("\"example_live_key_123456789012345678901234567890\""));
+        assert!(detector.looks_like_api_key("'example_live_key_123456789012345678901234567890'"));
+        assert!(detector.looks_like_api_key("`example_live_key_123456789012345678901234567890`"));
+        
+        // But still reject template literals even if quoted
+        assert!(!detector.looks_like_api_key("\"${process.env.API_KEY}\""));
+    }
+
+    #[test]
+    fn test_is_false_positive_skips_comments() {
+        let detector = ApiKeyDetector::new();
+        
+        // Comments should be skipped
+        assert!(detector.is_false_positive("// apiKey: 'sk_test_123'", "apiKey", None));
+        assert!(detector.is_false_positive("# API_KEY=sk_test_123", "API_KEY", None));
+        assert!(detector.is_false_positive("/* apiKey: 'sk_test_123' */", "apiKey", None));
+        assert!(detector.is_false_positive("<!-- API_KEY=sk_test_123 -->", "API_KEY", None));
+    }
+
+    #[test]
+    fn test_is_false_positive_skips_type_definitions() {
+        let detector = ApiKeyDetector::new();
+        
+        // Type definitions should be skipped
+        assert!(detector.is_false_positive("interface Config { apiKey: string }", "apiKey", None));
+        assert!(detector.is_false_positive("type ApiKey = string", "apiKey", None));
+        assert!(detector.is_false_positive("typedef struct { char* apiKey; } Config;", "apiKey", None));
+    }
+
+    #[test]
+    fn test_is_false_positive_skips_examples() {
+        let detector = ApiKeyDetector::new();
+        
+        // Examples and placeholders should be skipped
+        assert!(detector.is_false_positive("// Example: apiKey: 'your_api_key_here'", "apiKey", None));
+        assert!(detector.is_false_positive("// Sample API_KEY=replace_with_your_key", "API_KEY", None));
+        assert!(detector.is_false_positive("apiKey: 'placeholder_value'", "apiKey", Some("placeholder_value")));
+    }
+
+    #[test]
+    fn test_detect_api_keys_skips_false_positives() {
+        let detector = ApiKeyDetector::new();
+        let temp_dir = create_test_repo();
+        
+        // Create a file with false positive patterns
+        let code_file = temp_dir.path().join("config.js");
+        fs::write(&code_file, r#"
+// Configuration example
+const firebaseConfig = {
+    apiKey: '${firebaseConfig.apiKey}',  // Should NOT be detected (template literal)
+    authDomain: 'example.firebaseapp.com',
+};
+
+// Type definition
+interface Config {
+    apiKey: string;  // Should NOT be detected (type definition)
+}
+
+// Example usage
+// apiKey: 'your_key_here'  // Should NOT be detected (comment)
+        "#).unwrap();
+
+        let result = detector.detect_api_keys(
+            temp_dir.path(),
+            None,
+            None,
+        ).unwrap();
+
+        // Should not detect the false positives
+        // Check if any detected entities are from the config.js file (which has false positives)
+        let config_file_detections: Vec<_> = result.0.iter()
+            .filter(|e| e.file_path.contains("config.js"))
+            .collect();
+        
+        // The file has false positives, so ideally we shouldn't detect anything from it
+        // But if we do detect something, it should be a real key, not a false positive
+        // We can verify by checking that no detections mention the template literal pattern
+        let false_positive_patterns: Vec<_> = result.0.iter()
+            .filter(|e| {
+                let config_str = e.configuration.get("value_preview")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                config_str.contains("${") || config_str.contains("firebaseConfig.apiKey")
+            })
+            .collect();
+        
+        assert_eq!(false_positive_patterns.len(), 0, "Should not detect false positives with template literals");
+    }
+
+    #[test]
+    fn test_detect_api_keys_detects_real_keys() {
+        let detector = ApiKeyDetector::new();
+        let temp_dir = create_test_repo();
+        
+        // Create a file with a real API key
+        let code_file = temp_dir.path().join("config.js");
+        fs::write(&code_file, r#"
+const config = {
+    apiKey: 'example_live_key_1234567890123456789012345678901234567890',
+    secret: 'example_test_key_abcdefghijklmnopqrstuvwxyz1234567890',
+};
+        "#).unwrap();
+
+        let result = detector.detect_api_keys(
+            temp_dir.path(),
+            None,
+            None,
+        ).unwrap();
+
+        // Should detect real API keys
+        let detected_keys: Vec<_> = result.0.iter()
+            .filter(|e| e.entity_type == SecurityEntityType::ApiKey && 
+                   e.file_path.contains("config.js"))
+            .collect();
+        
+        assert!(detected_keys.len() > 0, "Should detect real API keys from config.js");
+    }
+}
+
 

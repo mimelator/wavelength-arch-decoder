@@ -5,6 +5,639 @@ function getShortId(fullId) {
     return fullId.substring(0, 8);
 }
 
+// ============================================================================
+// UNIFIED ENTITY LIST SYSTEM
+// ============================================================================
+// This system provides a consistent UI/UX across all entity types (dependencies,
+// services, code elements, security entities, tools, tests, documentation)
+
+/**
+ * Entity type configuration - defines how each entity type should be rendered
+ */
+const ENTITY_CONFIGS = {
+    dependency: {
+        entityType: 'dependency',
+        detailEntityType: 'dependency',
+        nameField: 'name',
+        idField: 'id',
+        searchFields: ['name', 'version', 'file_path'],
+        badgeFields: ['version', 'package_manager'],
+        metaFields: ['package_manager', 'is_dev'],
+        fileField: 'file_path',
+        lineNumberField: null,
+        groupByOptions: {
+            'package_manager': (item) => item.package_manager || 'unknown',
+            'type': (item) => item.is_dev ? 'Dev Dependencies' : 'Production Dependencies',
+            'file': (item) => item.file_path || 'unknown',
+            'none': null
+        },
+        filterFields: {
+            'package_manager': (item, value) => !value || item.package_manager === value,
+            'type': (item, value) => {
+                if (!value) return true;
+                if (value === 'dev') return item.is_dev === true;
+                if (value === 'prod') return item.is_dev === false;
+                return true;
+            }
+        },
+        renderBadges: (item) => {
+            const badges = [];
+            if (item.version) badges.push(`<span class="detail-badge">${escapeHtml(item.version)}</span>`);
+            if (item.is_dev) badges.push('<span class="badge badge-secondary">dev</span>');
+            return badges.join('');
+        },
+        renderMeta: (item, repoData) => {
+            let html = '';
+            if (item.package_manager) {
+                html += `<div class="detail-meta"><span>${escapeHtml(item.package_manager)}</span></div>`;
+            }
+            if (item.file_path) {
+                html += `<p class="detail-meta">Found in: <code>${escapeHtml(item.file_path)}</code>${createFileLink(item.file_path, null, repoData)}</p>`;
+            }
+            return html;
+        }
+    },
+    service: {
+        entityType: 'service',
+        detailEntityType: 'service',
+        nameField: 'name',
+        idField: 'id',
+        searchFields: ['name', 'provider', 'service_type', 'file_path'],
+        badgeFields: ['service_type', 'provider'],
+        metaFields: ['provider'],
+        fileField: 'file_path',
+        lineNumberField: 'line_number',
+        groupByOptions: {
+            'provider': (item) => item.provider || 'unknown',
+            'type': (item) => item.service_type || 'unknown',
+            'file': (item) => item.file_path || 'unknown',
+            'none': null
+        },
+        filterFields: {
+            'provider': (item, value) => !value || item.provider === value,
+            'type': (item, value) => !value || item.service_type === value
+        },
+        renderBadges: (item) => {
+            return `<span class="detail-badge">${escapeHtml(item.service_type || 'service')}</span>`;
+        },
+        renderMeta: (item, repoData) => {
+            let html = '';
+            if (item.provider) {
+                html += `<div class="detail-meta"><span>${escapeHtml(item.provider)}</span></div>`;
+            }
+            if (item.file_path) {
+                html += `<p class="detail-meta">Found in: <code>${escapeHtml(item.file_path)}</code>${item.line_number ? `:${item.line_number}` : ''}${createFileLink(item.file_path, item.line_number, repoData)}</p>`;
+            }
+            return html;
+        }
+    },
+    code_element: {
+        entityType: 'code_element',
+        detailEntityType: 'code_element',
+        nameField: 'name',
+        idField: 'id',
+        searchFields: ['name', 'element_type', 'language', 'file_path'],
+        badgeFields: ['language', 'element_type'],
+        metaFields: ['element_type', 'language'],
+        fileField: 'file_path',
+        lineNumberField: 'line_number',
+        groupByOptions: {
+            'type': (item) => item.element_type || 'unknown',
+            'language': (item) => item.language || 'unknown',
+            'file': (item) => {
+                const path = item.file_path || '';
+                if (!path) return 'unknown';
+                const parts = path.split('/');
+                return parts.length > 1 ? parts.slice(0, -1).join('/') : 'root';
+            },
+            'none': null
+        },
+        filterFields: {
+            'type': (item, value) => !value || item.element_type === value,
+            'language': (item, value) => !value || item.language === value
+        },
+        renderBadges: (item) => {
+            const badges = [];
+            badges.push(`<span class="detail-badge">${escapeHtml(item.language || 'unknown')}</span>`);
+            if (isBuildArtifact(item.file_path)) {
+                badges.push('<span class="detail-badge" style="background: var(--warning-color, #f59e0b); color: white;">Build Artifact</span>');
+            }
+            return badges.join('');
+        },
+        renderMeta: (item, repoData) => {
+            let html = '';
+            if (item.file_path) {
+                html += `<p class="detail-meta">File: <code>${escapeHtml(item.file_path)}</code>${item.line_number ? ` (line ${item.line_number})` : ''}${createFileLink(item.file_path, item.line_number, repoData)}</p>`;
+            }
+            html += getSourceMappingHint(item.file_path);
+            if (item.element_type) {
+                html += `<p class="detail-meta" style="font-size: 0.75rem; color: var(--text-secondary);">Type: ${escapeHtml(item.element_type)}</p>`;
+            }
+            return html;
+        }
+    },
+    security_entity: {
+        entityType: 'security_entity',
+        detailEntityType: 'security_entity',
+        nameField: 'name',
+        idField: 'id',
+        searchFields: ['name', 'entity_type', 'provider', 'file_path'],
+        badgeFields: ['entity_type', 'provider'],
+        metaFields: ['provider', 'entity_type'],
+        fileField: 'file_path',
+        lineNumberField: 'line_number',
+        groupByOptions: {
+            'type': (item) => item.entity_type || 'unknown',
+            'provider': (item) => item.provider || 'unknown',
+            'file': (item) => {
+                const path = item.file_path || '';
+                if (!path) return 'unknown';
+                const parts = path.split('/');
+                return parts.length > 1 ? parts.slice(0, -1).join('/') : 'root';
+            },
+            'severity': (item) => {
+                const vulns = securityVulnMap[item.id] || [];
+                if (vulns.length === 0) return 'none';
+                const severities = vulns.map(v => v.severity.toLowerCase());
+                if (severities.includes('critical')) return 'critical';
+                if (severities.includes('high')) return 'high';
+                if (severities.includes('medium')) return 'medium';
+                return 'low';
+            },
+            'none': null
+        },
+        filterFields: {
+            'type': (item, value) => !value || item.entity_type === value,
+            'provider': (item, value) => !value || item.provider === value,
+            'severity': (item, value) => {
+                if (!value) return true;
+                const vulns = securityVulnMap[item.id] || [];
+                if (value === 'none') return vulns.length === 0;
+                return vulns.some(v => v.severity.toLowerCase() === value);
+            }
+        },
+        renderBadges: (item) => {
+            const badges = [];
+            const config = typeof item.configuration === 'string' ? JSON.parse(item.configuration || '{}') : (item.configuration || {});
+            const keyType = config.key_type || 'unknown';
+            const provider = config.provider || item.provider || 'generic';
+            const entityVulns = securityVulnMap[item.id] || [];
+            const hasVulns = entityVulns.length > 0;
+            
+            if (item.entity_type === 'ApiKey') {
+                badges.push(`<span class="detail-badge ${keyType === 'hardcoded' ? 'badge-critical' : 'badge-info'}">${escapeHtml(keyType)}</span>`);
+                badges.push(`<span class="detail-badge">${escapeHtml(provider)}</span>`);
+            } else if (item.provider) {
+                badges.push(`<span class="detail-badge">${escapeHtml(item.provider)}</span>`);
+            }
+            if (hasVulns) {
+                badges.push('<span class="detail-badge badge-warning">⚠ Vulnerable</span>');
+            }
+            return badges.join('');
+        },
+        renderMeta: (item, repoData) => {
+            let html = '';
+            const config = typeof item.configuration === 'string' ? JSON.parse(item.configuration || '{}') : (item.configuration || {});
+            if (item.file_path) {
+                html += `<p class="detail-meta"><strong>File:</strong> <code>${escapeHtml(item.file_path)}</code>${item.line_number ? `:${item.line_number}` : ''}${createFileLink(item.file_path, item.line_number, repoData)}</p>`;
+            }
+            if (item.entity_type === 'ApiKey' && config.value_preview) {
+                html += `<p class="detail-meta"><strong>Value Preview:</strong> <code>${escapeHtml(config.value_preview)}</code></p>`;
+            }
+            return html;
+        },
+        renderSpecialContent: (item) => {
+            const entityVulns = securityVulnMap[item.id] || [];
+            const hasVulns = entityVulns.length > 0;
+            if (!hasVulns) return '';
+            
+            return `
+                <div class="vulnerability-list">
+                    ${entityVulns.map(v => `
+                        <div class="vulnerability-item severity-${v.severity.toLowerCase()}">
+                            <strong>${escapeHtml(v.vulnerability_type)}</strong>
+                            <p>${escapeHtml(v.description)}</p>
+                            <p class="vulnerability-recommendation">💡 ${escapeHtml(v.recommendation)}</p>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+    },
+    tool: {
+        entityType: 'tool',
+        detailEntityType: null, // Tools use showToolDetail instead
+        nameField: 'name',
+        idField: 'id',
+        searchFields: ['name', 'tool_type', 'category', 'file_path'],
+        badgeFields: ['tool_type', 'category'],
+        metaFields: ['category', 'tool_type'],
+        fileField: 'file_path',
+        lineNumberField: 'line_number',
+        groupByOptions: {
+            'category': (item) => item.category || 'other',
+            'type': (item) => item.tool_type || 'unknown',
+            'none': null
+        },
+        filterFields: {
+            'category': (item, value) => !value || item.category === value,
+            'type': (item, value) => !value || item.tool_type === value
+        },
+        renderBadges: (item) => {
+            const badges = [];
+            badges.push(`<span class="detail-badge">${escapeHtml(item.tool_type || 'unknown')}</span>`);
+            badges.push(`<span class="detail-badge">${escapeHtml(item.category || 'other')}</span>`);
+            if (item.version) {
+                badges.push(`<span class="detail-badge badge-info">v${escapeHtml(item.version)}</span>`);
+            }
+            return badges.join('');
+        },
+        renderMeta: (item, repoData) => {
+            let html = '';
+            const filePath = item.file_path ? item.file_path.replace(/^\.\/cache\/repos\/[^\/]+\//, '') : '';
+            if (filePath) {
+                html += `<p class="detail-meta"><strong>File:</strong> <code>${escapeHtml(filePath)}</code>${item.line_number ? `:${item.line_number}` : ''} ${createFileLink(item.file_path, item.line_number, repoData)}</p>`;
+            }
+            html += `<p class="detail-meta"><strong>Detection Method:</strong> ${escapeHtml(item.detection_method || 'unknown')}</p>`;
+            if (item.confidence) {
+                html += `<p class="detail-meta"><strong>Confidence:</strong> ${(item.confidence * 100).toFixed(0)}%</p>`;
+            }
+            return html;
+        },
+        onClickHandler: (item) => `showToolDetail('${currentRepoId || ''}', '${item.id}')`
+    },
+    test: {
+        entityType: 'test',
+        detailEntityType: null, // Tests don't have detail modal yet
+        nameField: 'name',
+        idField: 'id',
+        searchFields: ['name', 'test_framework', 'file_path', 'suite_name'],
+        badgeFields: ['test_framework', 'language'],
+        metaFields: ['test_framework', 'language'],
+        fileField: 'file_path',
+        lineNumberField: 'line_number',
+        groupByOptions: {
+            'framework': (item) => item.test_framework || 'unknown',
+            'language': (item) => item.language || 'unknown',
+            'none': null
+        },
+        filterFields: {
+            'framework': (item, value) => !value || item.test_framework === value,
+            'language': (item, value) => !value || item.language === value
+        },
+        renderBadges: (item) => {
+            const badges = [];
+            badges.push(`<span class="detail-badge">${escapeHtml(item.test_framework)}</span>`);
+            if (item.test_type) {
+                badges.push(`<span class="detail-badge">${escapeHtml(item.test_type)}</span>`);
+            }
+            badges.push(`<span class="detail-badge">${escapeHtml(item.language)}</span>`);
+            return badges.join('');
+        },
+        renderMeta: (item, repoData) => {
+            let html = '';
+            if (item.suite_name) {
+                html += `<div class="detail-meta"><strong>Suite:</strong> ${escapeHtml(item.suite_name)}</div>`;
+            }
+            if (item.file_path) {
+                html += `<div class="detail-meta"><strong>File:</strong> ${createFileLink(item.file_path, item.line_number, repoData)}${item.line_number ? ` <span class="text-muted">(line ${item.line_number})</span>` : ''}</div>`;
+            }
+            if (item.signature) {
+                html += `<div class="detail-meta"><strong>Signature:</strong> <code>${escapeHtml(item.signature)}</code></div>`;
+            }
+            return html;
+        }
+    },
+    documentation: {
+        entityType: 'documentation',
+        detailEntityType: null, // Documentation doesn't have detail modal yet
+        nameField: 'file_name',
+        idField: 'id',
+        searchFields: ['file_name', 'title', 'description', 'content_preview'],
+        badgeFields: ['doc_type'],
+        metaFields: ['doc_type'],
+        fileField: 'file_path',
+        lineNumberField: null,
+        groupByOptions: {
+            'type': (item) => item.doc_type || 'Other',
+            'none': null
+        },
+        filterFields: {
+            'type': (item, value) => !value || item.doc_type === value
+        },
+        renderBadges: (item) => {
+            return `<span class="detail-badge">${escapeHtml(item.doc_type || 'Other')}</span>`;
+        },
+        renderMeta: (item, repoData) => {
+            let html = '';
+            if (item.title) {
+                html += `<div class="detail-meta"><strong>Title:</strong> ${escapeHtml(item.title)}</div>`;
+            }
+            if (item.description) {
+                html += `<div class="detail-meta">${escapeHtml(item.description)}</div>`;
+            }
+            if (item.file_path) {
+                html += `<p class="detail-meta"><strong>File:</strong> <code>${escapeHtml(item.file_path)}</code>${createFileLink(item.file_path, null, repoData)}</p>`;
+            }
+            if (item.content_preview) {
+                const preview = item.content_preview.length > 200 
+                    ? item.content_preview.substring(0, 200) + '...' 
+                    : item.content_preview;
+                html += `<div class="detail-meta" style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem;"><em>${escapeHtml(preview)}</em></div>`;
+            }
+            return html;
+        }
+    }
+};
+
+/**
+ * Unified entity list renderer
+ * @param {string} entityType - One of: dependency, service, code_element, security_entity, tool, test, documentation
+ * @param {Array} items - Array of entity items
+ * @param {Object} options - Rendering options
+ */
+function renderEntityList(entityType, items, options = {}) {
+    const config = ENTITY_CONFIGS[entityType];
+    if (!config) {
+        console.error(`Unknown entity type: ${entityType}`);
+        return '';
+    }
+    
+    const {
+        groupBy = 'none',
+        repoData = null,
+        showAll = false,
+        maxInitial = 50
+    } = options;
+    
+    // Filter items if needed
+    let filtered = items;
+    if (options.filters) {
+        filtered = items.filter(item => {
+            return Object.entries(options.filters).every(([field, value]) => {
+                const filterFn = config.filterFields?.[field];
+                return filterFn ? filterFn(item, value) : true;
+            });
+        });
+    }
+    
+    // Search filter
+    if (options.searchTerm) {
+        const searchLower = options.searchTerm.toLowerCase();
+        filtered = filtered.filter(item => {
+            return config.searchFields.some(field => {
+                const value = item[field];
+                return value && String(value).toLowerCase().includes(searchLower);
+            });
+        });
+    }
+    
+    // Sort
+    const sorted = [...filtered].sort((a, b) => {
+        const nameA = a[config.nameField] || '';
+        const nameB = b[config.nameField] || '';
+        return nameA.localeCompare(nameB);
+    });
+    
+    // Pagination
+    const shouldPaginate = !showAll && sorted.length > maxInitial;
+    const displayItems = shouldPaginate ? sorted.slice(0, maxInitial) : sorted;
+    
+    // Group items
+    if (groupBy !== 'none' && config.groupByOptions[groupBy]) {
+        const groupFn = config.groupByOptions[groupBy];
+        const grouped = {};
+        displayItems.forEach(item => {
+            const key = groupFn(item);
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(item);
+        });
+        
+        // Render grouped
+        return Object.entries(grouped).map(([groupKey, groupItems]) => {
+            const groupTitle = groupKey === 'root' ? 'Root Directory' : groupKey;
+            const count = groupItems.length;
+            const collapsible = entityType === 'code_element' || entityType === 'security_entity';
+            
+            if (collapsible) {
+                return `
+                    <div class="detail-section collapsible-section">
+                        <h4 class="section-header" onclick="toggleSection(this)">
+                            <span class="section-toggle">▼</span>
+                            ${escapeHtml(groupTitle)} <span class="section-count">(${count})</span>
+                        </h4>
+                        <div class="section-content">
+                            ${groupItems.map(item => renderEntityItem(entityType, item, config, repoData)).join('')}
+                        </div>
+                    </div>
+                `;
+            } else {
+                return `
+                    <div class="detail-group">
+                        <h4 class="detail-group-header">${escapeHtml(groupTitle)} <span class="detail-group-count">${count}</span></h4>
+                        <div class="detail-group-content">
+                            ${groupItems.map(item => renderEntityItem(entityType, item, config, repoData)).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+        }).join('');
+    }
+    
+    // Render ungrouped list
+    let html = '<div class="detail-items">';
+    html += displayItems.map(item => renderEntityItem(entityType, item, config, repoData)).join('');
+    html += '</div>';
+    
+    if (shouldPaginate) {
+        html += `<div style="text-align: center; margin-top: 1rem;">
+            <p style="color: var(--text-secondary);">Showing ${maxInitial} of ${sorted.length} items</p>
+        </div>`;
+    }
+    
+    return html;
+}
+
+/**
+ * Render a single entity item
+ */
+function renderEntityItem(entityType, item, config, repoData) {
+    const name = item[config.nameField] || 'Unnamed';
+    const id = item[config.idField];
+    const badges = config.renderBadges(item);
+    const meta = config.renderMeta(item, repoData);
+    const specialContent = config.renderSpecialContent ? config.renderSpecialContent(item) : '';
+    
+    // Determine click handler
+    let onClick = '';
+    if (config.onClickHandler) {
+        onClick = `onclick="${config.onClickHandler(item)}"`;
+    } else if (config.detailEntityType) {
+        onClick = `onclick="event.stopPropagation(); showEntityDetail('${currentRepoId || ''}', '${config.detailEntityType}', '${id}')"`;
+    }
+    
+    // Determine if item has special classes
+    let itemClasses = 'detail-item';
+    if (entityType === 'security_entity') {
+        const entityVulns = securityVulnMap[id] || [];
+        if (entityVulns.length > 0) {
+            itemClasses += ' has-vulnerability';
+        }
+    }
+    if (config.onClickHandler) {
+        itemClasses += ' clickable';
+    }
+    
+    return `
+        <div class="${itemClasses}" ${onClick}>
+            <div class="detail-item-header">
+                <strong>${escapeHtml(name)}</strong>
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <span class="entity-id-badge" title="Entity ID: ${id}">ID: ${getShortId(id)}</span>
+                    ${badges}
+                    ${config.detailEntityType ? `
+                        <button class="btn-icon" onclick="event.stopPropagation(); showEntityDetail('${currentRepoId || ''}', '${config.detailEntityType}', '${id}')" title="View Details">
+                            <span style="font-size: 1rem;">👁️</span>
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+            ${meta}
+            ${specialContent}
+        </div>
+    `;
+}
+
+/**
+ * Unified entity list loader helper
+ * Handles the common pattern: load data, setup filters, render
+ */
+async function loadEntityList(entityType, repoId, apiLoader, containerId, filterSetupFn = null) {
+    const config = ENTITY_CONFIGS[entityType];
+    if (!config) {
+        console.error(`Unknown entity type: ${entityType}`);
+        return;
+    }
+    
+    currentRepoId = repoId;
+    const container = document.getElementById(containerId);
+    if (!container) {
+        console.error(`Container not found: ${containerId}`);
+        return;
+    }
+    
+    container.innerHTML = '<p class="loading-text">Loading...</p>';
+    
+    try {
+        // Load entities
+        const items = await apiLoader(repoId);
+        
+        if (!items || items.length === 0) {
+            container.innerHTML = '<p>No items found. Run analysis first.</p>';
+            return;
+        }
+        
+        // Get repo data for file linking
+        let repoData = null;
+        try {
+            repoData = await api.getRepository(repoId).catch(() => null);
+        } catch (e) {
+            // Ignore - will use null repoData
+        }
+        
+        // Store items globally for filtering (maintain backward compatibility)
+        const storageVarName = entityType === 'dependency' ? 'allDependencies' :
+                               entityType === 'service' ? 'allServices' :
+                               entityType === 'code_element' ? 'allCodeElements' :
+                               entityType === 'security_entity' ? 'allSecurityEntities' :
+                               entityType === 'tool' ? 'allTools' :
+                               entityType === 'test' ? 'allTests' :
+                               entityType === 'documentation' ? 'allDocumentation' :
+                               `all${entityType.charAt(0).toUpperCase() + entityType.slice(1).replace('_', '')}`;
+        window[storageVarName] = items;
+        
+        // Setup filters if provided
+        if (filterSetupFn) {
+            filterSetupFn(items, repoData);
+        }
+        
+        // Initial render
+        renderEntityListUnified(entityType, items, containerId, repoData);
+    } catch (error) {
+        container.innerHTML = `<p class="error-text">Failed to load ${entityType}: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+/**
+ * Unified renderer that reads filter values from DOM and renders
+ */
+function renderEntityListUnified(entityType, items, containerId, repoData = null) {
+    const config = ENTITY_CONFIGS[entityType];
+    if (!config) return;
+    
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    // Get filter values from DOM
+    const searchInput = document.getElementById(`${entityType}-search`);
+    const groupBySelect = document.getElementById(`${entityType}-group-by`);
+    const searchTerm = searchInput?.value.toLowerCase() || '';
+    const groupBy = groupBySelect?.value || 'none';
+    
+    // Build filters object from DOM
+    const filters = {};
+    Object.keys(config.filterFields || {}).forEach(filterField => {
+        const filterInput = document.getElementById(`${entityType}-filter-${filterField}`);
+        if (filterInput) {
+            filters[filterField] = filterInput.value || '';
+        }
+    });
+    
+    // Render
+    const html = renderEntityList(entityType, items, {
+        searchTerm,
+        groupBy,
+        filters,
+        repoData,
+        showAll: false,
+        maxInitial: 50
+    });
+    
+    if (!html || html.trim() === '') {
+        container.innerHTML = '<p>No items match the current filters.</p>';
+        return;
+    }
+    
+    container.innerHTML = html;
+    
+    // Update filter info
+    const filterInfo = document.getElementById(`${entityType}-filter-info`);
+    if (filterInfo) {
+        const activeFilters = [];
+        if (searchTerm) activeFilters.push(`search: "${searchTerm}"`);
+        Object.entries(filters).forEach(([field, value]) => {
+            if (value) activeFilters.push(`${field}: ${value}`);
+        });
+        const total = items.length;
+        const filtered = items.filter(item => {
+            if (searchTerm) {
+                const matchesSearch = config.searchFields.some(field => {
+                    const value = item[field];
+                    return value && String(value).toLowerCase().includes(searchTerm);
+                });
+                if (!matchesSearch) return false;
+            }
+            return Object.entries(filters).every(([field, value]) => {
+                const filterFn = config.filterFields?.[field];
+                return filterFn ? filterFn(item, value) : true;
+            });
+        });
+        filterInfo.textContent = activeFilters.length > 0 
+            ? `Showing ${filtered.length} of ${total} items (${activeFilters.join(', ')})`
+            : `Showing ${filtered.length} items`;
+    }
+}
+
 // Main Application
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
@@ -1253,7 +1886,7 @@ window.analyzeRepository = async function(repoId) {
             
             if (analyzeBtn) {
                 analyzeBtn.disabled = false;
-                analyzeBtn.textContent = 'Re-analyze';
+                analyzeBtn.textContent = 'Re-Analyze';
                 
                 // Hide the info text when analysis completes
                 const infoText = analyzeBtn.parentElement?.querySelector('.analyze-info-text');
@@ -1308,7 +1941,12 @@ window.analyzeRepository = async function(repoId) {
         
         if (analyzeBtn) {
             analyzeBtn.disabled = false;
-            analyzeBtn.textContent = 'Analyze';
+            // Keep "Re-Analyze" text if on detail page, otherwise "Analyze"
+            if (document.getElementById('btn-analyze-detail') === analyzeBtn) {
+                analyzeBtn.textContent = 'Re-Analyze';
+            } else {
+                analyzeBtn.textContent = 'Analyze';
+            }
             
             // Hide the info text when analysis fails
             const infoText = analyzeBtn.parentElement?.querySelector('.analyze-info-text');
@@ -1610,6 +2248,12 @@ async function loadRepositoryDetail(repoId, initialTab = null) {
         
         // Setup analyze button
         const analyzeBtn = document.getElementById('btn-analyze-detail');
+        // Set button text based on whether repo has been analyzed
+        if (repo.last_analyzed_at) {
+            analyzeBtn.textContent = 'Re-Analyze';
+        } else {
+            analyzeBtn.textContent = 'Analyze';
+        }
         analyzeBtn.onclick = () => {
             window.analyzeRepository(repoId);
             // Don't auto-reload - let the analyzeRepository function handle completion
@@ -1754,30 +2398,36 @@ let allDependencies = [];
 let currentDependenciesGroupBy = 'package_manager';
 
 async function loadDependencies(repoId) {
-    currentRepoId = repoId;
-    const container = document.getElementById('dependencies-list');
-    container.innerHTML = '<p class="loading-text">Loading dependencies...</p>';
-    
-    try {
-        const deps = await api.getDependencies(repoId);
-        allDependencies = deps;
-        
-        if (deps.length === 0) {
-            container.innerHTML = '<p>No dependencies found. Run analysis first.</p>';
-            return;
+    // Use unified loader
+    await loadEntityList('dependency', repoId, (id) => api.getDependencies(id), 'dependencies-list', (items, repoData) => {
+        // Populate filter dropdowns
+        const packageManagerSelect = document.getElementById('dependencies-filter-package-manager');
+        if (packageManagerSelect) {
+            const packageManagers = [...new Set(items.map(d => d.package_manager).filter(Boolean))].sort();
+            packageManagerSelect.innerHTML = '<option value="">All Package Managers</option>';
+            packageManagers.forEach(pm => {
+                const option = document.createElement('option');
+                option.value = pm;
+                option.textContent = pm;
+                packageManagerSelect.appendChild(option);
+            });
         }
         
-        // Populate filter dropdowns
-        populateDependencyFilters(deps);
-        
-        // Initial render
-        filterAndRenderDependencies();
-        
         // Setup filter event listeners
-        setupDependencyFilters();
-    } catch (error) {
-        container.innerHTML = `<p class="error-text">Failed to load dependencies: ${escapeHtml(error.message)}</p>`;
-    }
+        const searchInput = document.getElementById('dependencies-search');
+        const groupBySelect = document.getElementById('dependencies-group-by');
+        const packageManagerFilter = document.getElementById('dependencies-filter-package-manager');
+        const typeFilter = document.getElementById('dependencies-filter-type');
+        
+        const renderFn = () => {
+            renderEntityListUnified('dependency', allDependencies, 'dependencies-list', repoData || currentRepoData);
+        };
+        
+        if (searchInput) searchInput.oninput = renderFn;
+        if (packageManagerFilter) packageManagerFilter.onchange = renderFn;
+        if (typeFilter) typeFilter.onchange = renderFn;
+        if (groupBySelect) groupBySelect.onchange = renderFn;
+    });
 }
 
 function populateDependencyFilters(deps) {
@@ -1849,12 +2499,15 @@ function filterAndRenderDependencies() {
     if (currentDependenciesGroupBy === 'none') {
         html = '<div class="detail-items">';
         html += filtered.map(dep => `
-            <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'dependency', '${dep.id}')">
+            <div class="detail-item">
                 <div class="detail-item-header">
                     <strong>${escapeHtml(dep.name)}</strong>
                     <div style="display: flex; gap: 0.5rem; align-items: center;">
                         <span class="entity-id-badge" title="Entity ID: ${dep.id}">ID: ${getShortId(dep.id)}</span>
                         <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
+                        <button class="btn-icon" onclick="event.stopPropagation(); showEntityDetail('${currentRepoId}', 'dependency', '${dep.id}')" title="View Details">
+                            <span style="font-size: 1rem;">👁️</span>
+                        </button>
                     </div>
                 </div>
                 <div class="detail-meta">
@@ -1885,12 +2538,15 @@ function filterAndRenderDependencies() {
                 <h4>${escapeHtml(key)}</h4>
                 <div class="detail-items">
                     ${depsList.map(dep => `
-                        <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'dependency', '${dep.id}')">
+                        <div class="detail-item">
                             <div class="detail-item-header">
                                 <strong>${escapeHtml(dep.name)}</strong>
                                 <div style="display: flex; gap: 0.5rem; align-items: center;">
                                     <span class="entity-id-badge" title="Entity ID: ${dep.id}">ID: ${getShortId(dep.id)}</span>
                                     <span class="detail-badge">${escapeHtml(dep.version || 'unknown')}</span>
+                                    <button class="btn-icon" onclick="event.stopPropagation(); showEntityDetail('${currentRepoId}', 'dependency', '${dep.id}')" title="View Details">
+                                        <span style="font-size: 1rem;">👁️</span>
+                                    </button>
                                 </div>
                             </div>
                             ${dep.file_path && currentDependenciesGroupBy !== 'file' ? `<p class="detail-meta">Found in: <code>${escapeHtml(dep.file_path)}</code>${createFileLink(dep.file_path, null, currentRepoData)}</p>` : ''}
@@ -1909,30 +2565,47 @@ let allServices = [];
 let currentServicesGroupBy = 'provider';
 
 async function loadServices(repoId) {
-    currentRepoId = repoId;
-    const container = document.getElementById('services-list');
-    container.innerHTML = '<p class="loading-text">Loading services...</p>';
-    
-    try {
-        const services = await api.getServices(repoId);
-        allServices = services;
+    // Use unified loader
+    await loadEntityList('service', repoId, (id) => api.getServices(id), 'services-list', (items, repoData) => {
+        // Populate filter dropdowns
+        const providerFilter = document.getElementById('services-filter-provider');
+        const typeFilter = document.getElementById('services-filter-type');
         
-        if (services.length === 0) {
-            container.innerHTML = '<p>No services found. Run analysis first.</p>';
-            return;
+        if (providerFilter) {
+            const providers = [...new Set(items.map(s => s.provider).filter(Boolean))].sort();
+            providerFilter.innerHTML = '<option value="">All Providers</option>';
+            providers.forEach(provider => {
+                const option = document.createElement('option');
+                option.value = provider;
+                option.textContent = provider;
+                providerFilter.appendChild(option);
+            });
         }
         
-        // Populate filter dropdowns
-        populateServiceFilters(services);
-        
-        // Initial render
-        filterAndRenderServices();
+        if (typeFilter) {
+            const types = [...new Set(items.map(s => s.service_type).filter(Boolean))].sort();
+            typeFilter.innerHTML = '<option value="">All Types</option>';
+            types.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                typeFilter.appendChild(option);
+            });
+        }
         
         // Setup filter event listeners
-        setupServiceFilters();
-    } catch (error) {
-        container.innerHTML = `<p class="error-text">Failed to load services: ${escapeHtml(error.message)}</p>`;
-    }
+        const searchInput = document.getElementById('services-search');
+        const groupBySelect = document.getElementById('services-group-by');
+        
+        const renderFn = () => {
+            renderEntityListUnified('service', allServices, 'services-list', repoData || currentRepoData);
+        };
+        
+        if (searchInput) searchInput.oninput = renderFn;
+        if (providerFilter) providerFilter.onchange = renderFn;
+        if (typeFilter) typeFilter.onchange = renderFn;
+        if (groupBySelect) groupBySelect.onchange = renderFn;
+    });
 }
 
 function populateServiceFilters(services) {
@@ -2014,12 +2687,15 @@ function filterAndRenderServices() {
     if (currentServicesGroupBy === 'none') {
         html = '<div class="detail-items">';
         html += filtered.map(svc => `
-            <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'service', '${svc.id}')">
+            <div class="detail-item">
                 <div class="detail-item-header">
                     <strong>${escapeHtml(svc.name)}</strong>
                     <div style="display: flex; gap: 0.5rem; align-items: center;">
                         <span class="entity-id-badge" title="Entity ID: ${svc.id}">ID: ${getShortId(svc.id)}</span>
                         <span class="detail-badge">${escapeHtml(svc.service_type || 'service')}</span>
+                        <button class="btn-icon" onclick="event.stopPropagation(); showEntityDetail('${currentRepoId}', 'service', '${svc.id}')" title="View Details">
+                            <span style="font-size: 1rem;">👁️</span>
+                        </button>
                     </div>
                 </div>
                 <div class="detail-meta">
@@ -2049,12 +2725,15 @@ function filterAndRenderServices() {
                 <h4>${escapeHtml(key)}</h4>
                 <div class="detail-items">
                     ${svcList.map(svc => `
-                        <div class="detail-item clickable" onclick="showEntityDetail('${currentRepoId}', 'service', '${svc.id}')">
+                        <div class="detail-item">
                             <div class="detail-item-header">
                                 <strong>${escapeHtml(svc.name)}</strong>
                                 <div style="display: flex; gap: 0.5rem; align-items: center;">
                                     <span class="entity-id-badge" title="Entity ID: ${svc.id}">ID: ${getShortId(svc.id)}</span>
                                     <span class="detail-badge">${escapeHtml(svc.service_type || 'service')}</span>
+                                    <button class="btn-icon" onclick="event.stopPropagation(); showEntityDetail('${currentRepoId}', 'service', '${svc.id}')" title="View Details">
+                                        <span style="font-size: 1rem;">👁️</span>
+                                    </button>
                                 </div>
                             </div>
                             ${svc.provider && currentServicesGroupBy !== 'provider' ? `<p class="detail-meta">Provider: ${escapeHtml(svc.provider)}</p>` : ''}
@@ -2074,27 +2753,47 @@ let allCodeElements = [];
 let currentCodeGroupBy = 'type';
 
 async function loadCodeElements(repoId) {
-    currentRepoId = repoId;
-    const container = document.getElementById('code-list');
-    container.innerHTML = '<p class="loading-text">Loading code structure...</p>';
-    
-    try {
-        const elements = await api.getCodeElements(repoId);
-        allCodeElements = elements;
+    // Use unified loader
+    await loadEntityList('code_element', repoId, (id) => api.getCodeElements(id), 'code-list', (items, repoData) => {
+        // Populate filter dropdowns
+        const typeFilter = document.getElementById('code-filter-type');
+        const languageFilter = document.getElementById('code-filter-language');
         
-        if (elements.length === 0) {
-            container.innerHTML = '<p>No code elements found. Run analysis first.</p>';
-            return;
+        if (typeFilter) {
+            const types = [...new Set(items.map(el => el.element_type || 'unknown'))].sort();
+            typeFilter.innerHTML = '<option value="">All Types</option>';
+            types.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                typeFilter.appendChild(option);
+            });
         }
         
-        // Setup filters
-        setupCodeFilters(elements);
+        if (languageFilter) {
+            const languages = [...new Set(items.map(el => el.language || 'unknown'))].sort();
+            languageFilter.innerHTML = '<option value="">All Languages</option>';
+            languages.forEach(lang => {
+                const option = document.createElement('option');
+                option.value = lang;
+                option.textContent = lang;
+                languageFilter.appendChild(option);
+            });
+        }
         
-        // Render code elements
-        renderCodeElements(elements);
-    } catch (error) {
-        container.innerHTML = `<p class="error-text">Failed to load code elements: ${escapeHtml(error.message)}</p>`;
-    }
+        // Setup filter event listeners
+        const searchInput = document.getElementById('code-search');
+        const groupBySelect = document.getElementById('code-group-by');
+        
+        const renderFn = () => {
+            renderEntityListUnified('code_element', allCodeElements, 'code-list', repoData || currentRepoData);
+        };
+        
+        if (searchInput) searchInput.oninput = renderFn;
+        if (typeFilter) typeFilter.onchange = renderFn;
+        if (languageFilter) languageFilter.onchange = renderFn;
+        if (groupBySelect) groupBySelect.onchange = renderFn;
+    });
 }
 
 function setupCodeFilters(elements) {
@@ -2255,13 +2954,16 @@ function renderCodeElementsList(elements, showAll = false) {
         const isArtifact = isBuildArtifact(el.file_path);
         const sourceHint = getSourceMappingHint(el.file_path);
         return `
-        <div class="detail-item clickable" data-code-name="${escapeHtml(el.name.toLowerCase())}" onclick="showEntityDetail('${currentRepoId || ''}', 'code_element', '${el.id}')">
+        <div class="detail-item" data-code-name="${escapeHtml(el.name.toLowerCase())}">
             <div class="detail-item-header">
                 <strong>${escapeHtml(el.name)}</strong>
                 <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
                     <span class="entity-id-badge" title="Entity ID: ${el.id}">ID: ${getShortId(el.id)}</span>
                     <span class="detail-badge">${escapeHtml(el.language || 'unknown')}</span>
                     ${isArtifact ? '<span class="detail-badge" style="background: var(--warning-color, #f59e0b); color: white;">Build Artifact</span>' : ''}
+                    <button class="btn-icon" onclick="event.stopPropagation(); showEntityDetail('${currentRepoId || ''}', 'code_element', '${el.id}')" title="View Details">
+                        <span style="font-size: 1rem;">👁️</span>
+                    </button>
                 </div>
             </div>
             ${el.file_path ? `<p class="detail-meta">File: <code>${escapeHtml(el.file_path)}</code>${el.line_number ? ` (line ${el.line_number})` : ''}${createFileLink(el.file_path, el.line_number, currentRepoData)}</p>` : ''}
@@ -2320,8 +3022,11 @@ async function loadSecurity(repoId) {
     container.innerHTML = '<p class="loading-text">Loading security information...</p>';
     
     try {
-        const entities = await api.getSecurityEntities(repoId);
-        const vulnerabilities = await api.getSecurityVulnerabilities(repoId);
+        // Load both entities and vulnerabilities
+        const [entities, vulnerabilities] = await Promise.all([
+            api.getSecurityEntities(repoId),
+            api.getSecurityVulnerabilities(repoId).catch(() => [])
+        ]);
         
         allSecurityEntities = entities;
         allSecurityVulnerabilities = vulnerabilities;
@@ -2338,11 +3043,57 @@ async function loadSecurity(repoId) {
             return;
         }
         
-        // Setup filters
-        setupSecurityFilters(entities, vulnerabilities);
+        // Get repo data for file linking
+        let repoData = null;
+        try {
+            repoData = await api.getRepository(repoId).catch(() => null);
+        } catch (e) {
+            // Ignore
+        }
         
-        // Render security entities
-        renderSecurityEntities(entities);
+        // Populate filter dropdowns
+        const typeFilter = document.getElementById('security-filter-type');
+        const providerFilter = document.getElementById('security-filter-provider');
+        
+        if (typeFilter) {
+            const types = [...new Set(entities.map(e => e.entity_type || 'unknown'))].sort();
+            typeFilter.innerHTML = '<option value="">All Types</option>';
+            types.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                typeFilter.appendChild(option);
+            });
+        }
+        
+        if (providerFilter) {
+            const providers = [...new Set(entities.map(e => e.provider).filter(Boolean))].sort();
+            providerFilter.innerHTML = '<option value="">All Providers</option>';
+            providers.forEach(provider => {
+                const option = document.createElement('option');
+                option.value = provider;
+                option.textContent = provider;
+                providerFilter.appendChild(option);
+            });
+        }
+        
+        // Setup filter event listeners
+        const searchInput = document.getElementById('security-search');
+        const groupBySelect = document.getElementById('security-group-by');
+        const severityFilter = document.getElementById('security-filter-severity');
+        
+        const renderFn = () => {
+            renderEntityListUnified('security_entity', allSecurityEntities, 'security-list', repoData || currentRepoData);
+        };
+        
+        if (searchInput) searchInput.oninput = renderFn;
+        if (typeFilter) typeFilter.onchange = renderFn;
+        if (providerFilter) providerFilter.onchange = renderFn;
+        if (severityFilter) severityFilter.onchange = renderFn;
+        if (groupBySelect) groupBySelect.onchange = renderFn;
+        
+        // Initial render
+        renderFn();
     } catch (error) {
         container.innerHTML = `<p class="error-text">Failed to load security entities: ${escapeHtml(error.message)}</p>`;
     }
@@ -2537,7 +3288,7 @@ function renderSecurityEntitiesList(entities, showAll = false) {
             const valuePreview = config.value_preview;
             
             return `
-            <div class="detail-item clickable ${hasVulns ? 'has-vulnerability' : ''}" onclick="showEntityDetail('${currentRepoId || ''}', 'security_entity', '${entity.id}')">
+            <div class="detail-item ${hasVulns ? 'has-vulnerability' : ''}">
                 <div class="detail-item-header">
                     <strong>${escapeHtml(keyName)}</strong>
                     <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
@@ -2545,6 +3296,9 @@ function renderSecurityEntitiesList(entities, showAll = false) {
                         <span class="detail-badge ${keyType === 'hardcoded' ? 'badge-critical' : 'badge-info'}">${escapeHtml(keyType)}</span>
                         <span class="detail-badge">${escapeHtml(provider)}</span>
                         ${hasVulns ? '<span class="detail-badge badge-warning">⚠ Vulnerable</span>' : ''}
+                        <button class="btn-icon" onclick="event.stopPropagation(); showEntityDetail('${currentRepoId || ''}', 'security_entity', '${entity.id}')" title="View Details">
+                            <span style="font-size: 1rem;">👁️</span>
+                        </button>
                     </div>
                 </div>
                 <div class="detail-meta">
@@ -2572,13 +3326,16 @@ function renderSecurityEntitiesList(entities, showAll = false) {
         
         // Default rendering for other entity types
         return `
-        <div class="detail-item clickable ${hasVulns ? 'has-vulnerability' : ''}" onclick="showEntityDetail('${currentRepoId || ''}', 'security_entity', '${entity.id}')">
+        <div class="detail-item ${hasVulns ? 'has-vulnerability' : ''}">
             <div class="detail-item-header">
                 <strong>${escapeHtml(entity.name)}</strong>
                 <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
                     <span class="entity-id-badge" title="Entity ID: ${entity.id}">ID: ${getShortId(entity.id)}</span>
                     ${entity.provider ? `<span class="detail-badge">${escapeHtml(entity.provider)}</span>` : ''}
                     ${hasVulns ? '<span class="detail-badge badge-warning">⚠ Vulnerable</span>' : ''}
+                    <button class="btn-icon" onclick="event.stopPropagation(); showEntityDetail('${currentRepoId || ''}', 'security_entity', '${entity.id}')" title="View Details">
+                        <span style="font-size: 1rem;">👁️</span>
+                    </button>
                 </div>
             </div>
             ${entity.arn ? `<p class="detail-meta"><strong>ARN:</strong> <code>${escapeHtml(entity.arn)}</code></p>` : ''}
@@ -2740,11 +3497,52 @@ function getEntityTitle(entityType, entity) {
     }
 }
 
+// Helper function to copy text to clipboard
+function copyToClipboard(text, label = 'Text') {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+            // Show temporary success message
+            const toast = document.createElement('div');
+            toast.textContent = `${label} copied to clipboard!`;
+            toast.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--success-color); color: white; padding: 0.75rem 1rem; border-radius: 0.375rem; box-shadow: var(--shadow-lg); z-index: 10000; font-size: 0.875rem;';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }).catch(() => {
+            // Fallback
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                alert(`${label} copied to clipboard!`);
+            } catch (e) {
+                alert(`Failed to copy. Please select and copy manually:\n\n${text}`);
+            }
+            document.body.removeChild(textarea);
+        });
+    } else {
+        alert(`Please select and copy manually:\n\n${text}`);
+    }
+}
+
 function renderEntityDetails(entityType, details) {
     const entity = details.entity;
     if (!entity) return '<p>Entity not found</p>';
     
     let html = '<div class="entity-detail-content">';
+    
+    // Add copy button for entire entity details
+    const entityJson = JSON.stringify(entity, null, 2);
+    // Escape single quotes and backticks for use in onclick
+    const safeEntityJson = entityJson.replace(/'/g, "\\'").replace(/`/g, "\\`").replace(/\n/g, "\\n");
+    html += `<div style="text-align: right; margin-bottom: 0.5rem;">
+        <button class="btn btn-secondary btn-sm" onclick="copyToClipboard(decodeURIComponent('${encodeURIComponent(entityJson)}'), 'Entity Details')" title="Copy all details">
+            📋 Copy All Details
+        </button>
+    </div>`;
     
     // Render entity metadata
     html += '<div class="detail-section">';
@@ -2777,22 +3575,37 @@ function renderEntityDetails(entityType, details) {
 
 function renderDependencyDetails(entity, details) {
     let html = '';
-    html += `<div class="detail-item"><strong>Name:</strong> ${escapeHtml(entity.name)}</div>`;
-    html += `<div class="detail-item"><strong>Version:</strong> <code>${escapeHtml(entity.version)}</code></div>`;
+    html += `<div class="detail-item">
+        <strong>Name:</strong> ${escapeHtml(entity.name)}
+        <button class="btn-copy-inline" onclick="copyToClipboard('${escapeHtml(entity.name)}', 'Name')" title="Copy name">📋</button>
+    </div>`;
+    html += `<div class="detail-item">
+        <strong>Version:</strong> <code>${escapeHtml(entity.version)}</code>
+        <button class="btn-copy-inline" onclick="copyToClipboard('${escapeHtml(entity.version)}', 'Version')" title="Copy version">📋</button>
+    </div>`;
     html += `<div class="detail-item"><strong>Package Manager:</strong> ${escapeHtml(entity.package_manager)}</div>`;
     html += `<div class="detail-item"><strong>Dev Dependency:</strong> ${entity.is_dev ? 'Yes' : 'No'}</div>`;
     html += `<div class="detail-item"><strong>Optional:</strong> ${entity.is_optional ? 'Yes' : 'No'}</div>`;
-    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${createFileLink(entity.file_path, null, currentRepoData)}</div>`;
+    html += `<div class="detail-item">
+        <strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${createFileLink(entity.file_path, null, currentRepoData)}
+        <button class="btn-copy-inline" onclick="copyToClipboard('${escapeHtml(entity.file_path)}', 'File Path')" title="Copy file path">📋</button>
+    </div>`;
     return html;
 }
 
 function renderServiceDetails(entity, details) {
     let html = '';
-    html += `<div class="detail-item"><strong>Name:</strong> ${escapeHtml(entity.name)}</div>`;
+    html += `<div class="detail-item">
+        <strong>Name:</strong> ${escapeHtml(entity.name)}
+        <button class="btn-copy-inline" onclick="copyToClipboard('${escapeHtml(entity.name)}', 'Name')" title="Copy name">📋</button>
+    </div>`;
     html += `<div class="detail-item"><strong>Provider:</strong> ${escapeHtml(entity.provider)}</div>`;
     html += `<div class="detail-item"><strong>Type:</strong> ${escapeHtml(entity.service_type)}</div>`;
     html += `<div class="detail-item"><strong>Confidence:</strong> ${(entity.confidence * 100).toFixed(1)}%</div>`;
-    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}${createFileLink(entity.file_path, entity.line_number, currentRepoData)}</div>`;
+    html += `<div class="detail-item">
+        <strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}${createFileLink(entity.file_path, entity.line_number, currentRepoData)}
+        <button class="btn-copy-inline" onclick="copyToClipboard('${escapeHtml(entity.file_path)}${entity.line_number ? `:${entity.line_number}` : ''}', 'File Path')" title="Copy file path">📋</button>
+    </div>`;
     if (entity.configuration) {
         try {
             const config = typeof entity.configuration === 'string' ? JSON.parse(entity.configuration) : entity.configuration;
@@ -2806,10 +3619,16 @@ function renderServiceDetails(entity, details) {
 
 function renderCodeElementDetails(entity, details) {
     let html = '';
-    html += `<div class="detail-item"><strong>Name:</strong> ${escapeHtml(entity.name)}</div>`;
+    html += `<div class="detail-item">
+        <strong>Name:</strong> ${escapeHtml(entity.name)}
+        <button class="btn-copy-inline" onclick="copyToClipboard('${escapeHtml(entity.name)}', 'Name')" title="Copy name">📋</button>
+    </div>`;
     html += `<div class="detail-item"><strong>Type:</strong> ${escapeHtml(entity.element_type)}</div>`;
     html += `<div class="detail-item"><strong>Language:</strong> ${escapeHtml(entity.language)}</div>`;
-    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>:${entity.line_number}${createFileLink(entity.file_path, entity.line_number, currentRepoData)}</div>`;
+    html += `<div class="detail-item">
+        <strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>:${entity.line_number}${createFileLink(entity.file_path, entity.line_number, currentRepoData)}
+        <button class="btn-copy-inline" onclick="copyToClipboard('${escapeHtml(entity.file_path)}:${entity.line_number}', 'File Path')" title="Copy file path">📋</button>
+    </div>`;
     
     // Add build artifact warning if applicable
     const sourceHint = getSourceMappingHint(entity.file_path);
@@ -2829,12 +3648,21 @@ function renderCodeElementDetails(entity, details) {
 
 function renderSecurityEntityDetails(entity, details) {
     let html = '';
-    html += `<div class="detail-item"><strong>Name:</strong> ${escapeHtml(entity.name)}</div>`;
+    html += `<div class="detail-item">
+        <strong>Name:</strong> ${escapeHtml(entity.name)}
+        <button class="btn-copy-inline" onclick="copyToClipboard('${escapeHtml(entity.name)}', 'Name')" title="Copy name">📋</button>
+    </div>`;
     html += `<div class="detail-item"><strong>Type:</strong> ${escapeHtml(entity.entity_type)}</div>`;
     html += `<div class="detail-item"><strong>Provider:</strong> ${escapeHtml(entity.provider)}</div>`;
-    if (entity.arn) html += `<div class="detail-item"><strong>ARN:</strong> <code>${escapeHtml(entity.arn)}</code></div>`;
+    if (entity.arn) html += `<div class="detail-item">
+        <strong>ARN:</strong> <code>${escapeHtml(entity.arn)}</code>
+        <button class="btn-copy-inline" onclick="copyToClipboard('${escapeHtml(entity.arn)}', 'ARN')" title="Copy ARN">📋</button>
+    </div>`;
     if (entity.region) html += `<div class="detail-item"><strong>Region:</strong> ${escapeHtml(entity.region)}</div>`;
-    html += `<div class="detail-item"><strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}${createFileLink(entity.file_path, entity.line_number, currentRepoData)}</div>`;
+    html += `<div class="detail-item">
+        <strong>File:</strong> <code>${escapeHtml(entity.file_path)}</code>${entity.line_number ? `:${entity.line_number}` : ''}${createFileLink(entity.file_path, entity.line_number, currentRepoData)}
+        <button class="btn-copy-inline" onclick="copyToClipboard('${escapeHtml(entity.file_path)}${entity.line_number ? `:${entity.line_number}` : ''}', 'File Path')" title="Copy file path">📋</button>
+    </div>`;
     if (entity.configuration) {
         try {
             const config = typeof entity.configuration === 'string' ? JSON.parse(entity.configuration) : entity.configuration;
@@ -2976,6 +3804,7 @@ function renderRelationships(entityType, details) {
 // Make functions globally available
 window.showEntityDetail = showEntityDetail;
 window.closeEntityDetailModal = closeEntityDetailModal;
+window.copyToClipboard = copyToClipboard;
 window.showToolDetail = showToolDetail;
 
 // Store tools for filtering
@@ -2983,35 +3812,50 @@ let allTools = [];
 let currentToolsGroupBy = 'category';
 
 async function loadTools(repoId) {
-    currentRepoId = repoId;
-    const container = document.getElementById('tools-list');
-    container.innerHTML = '<p class="loading-text">Loading tools...</p>';
-    
-    try {
-        const tools = await api.getTools(repoId);
-        allTools = tools;
+    // Use unified loader
+    await loadEntityList('tool', repoId, (id) => api.getTools(id), 'tools-list', (items, repoData) => {
+        // Populate filter dropdowns
+        const categoryFilter = document.getElementById('tools-category-filter');
+        const typeFilter = document.getElementById('tools-type-filter');
         
-        if (tools.length === 0) {
-            container.innerHTML = '<p>No tools found. Run analysis first.</p>';
-            return;
+        if (categoryFilter) {
+            const categories = [...new Set(items.map(t => t.category).filter(Boolean))].sort();
+            // Keep existing options and add new ones
+            const existingCategories = Array.from(categoryFilter.options).map(opt => opt.value);
+            categories.forEach(category => {
+                if (!existingCategories.includes(category)) {
+                    const option = document.createElement('option');
+                    option.value = category;
+                    option.textContent = category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    categoryFilter.appendChild(option);
+                }
+            });
         }
         
-        // Get repo data for file linking
-        let repoData = null;
-        try {
-            repoData = await api.getRepository(repoId).catch(() => null);
-        } catch (e) {
-            // Ignore - will use null repoData
+        if (typeFilter) {
+            const types = [...new Set(items.map(t => t.tool_type).filter(Boolean))].sort();
+            const existingTypes = Array.from(typeFilter.options).map(opt => opt.value);
+            types.forEach(type => {
+                if (!existingTypes.includes(type)) {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    typeFilter.appendChild(option);
+                }
+            });
         }
         
-        // Setup filters
-        setupToolFilters(tools, repoData);
+        // Setup filter event listeners
+        const searchInput = document.getElementById('tools-search');
         
-        // Initial render
-        filterAndRenderTools(repoData);
-    } catch (error) {
-        container.innerHTML = `<p class="error-text">Failed to load tools: ${escapeHtml(error.message)}</p>`;
-    }
+        const renderFn = () => {
+            renderEntityListUnified('tool', allTools, 'tools-list', repoData || currentRepoData);
+        };
+        
+        if (searchInput) searchInput.oninput = renderFn;
+        if (categoryFilter) categoryFilter.onchange = renderFn;
+        if (typeFilter) typeFilter.onchange = renderFn;
+    });
 }
 
 function setupToolFilters(tools, repoData = null) {
@@ -3390,6 +4234,7 @@ let allDocumentation = [];
 let allTests = [];
 
 async function loadDocumentation(repoId) {
+    // Use unified loader with custom filtering for repository_id
     currentRepoId = repoId;
     const container = document.getElementById('documentation-list');
     container.innerHTML = '<p class="loading-text">Loading documentation...</p>';
@@ -3400,9 +4245,10 @@ async function loadDocumentation(repoId) {
     try {
         const docs = await api.getDocumentation(repoId);
         // Double-check: filter by repository_id as a safety measure
-        allDocumentation = docs.filter(doc => doc.repository_id === repoId);
+        const filteredDocs = docs.filter(doc => doc.repository_id === repoId);
+        allDocumentation = filteredDocs;
         
-        if (allDocumentation.length === 0) {
+        if (filteredDocs.length === 0) {
             container.innerHTML = '<p>No documentation files found. Documentation indexing is experimental and may not be available for all repositories.</p>';
             return;
         }
@@ -3412,26 +4258,37 @@ async function loadDocumentation(repoId) {
         try {
             repoData = await api.getRepository(repoId).catch(() => null);
         } catch (e) {
-            // Ignore - will use null repoData
+            // Ignore
+        }
+        
+        // Populate filter dropdowns
+        const typeFilter = document.getElementById('documentation-type-filter');
+        
+        if (typeFilter) {
+            const types = [...new Set(filteredDocs.map(d => d.doc_type).filter(Boolean))].sort();
+            const existingTypes = Array.from(typeFilter.options).map(opt => opt.value);
+            types.forEach(type => {
+                if (!existingTypes.includes(type)) {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    typeFilter.appendChild(option);
+                }
+            });
         }
         
         // Setup filter event listeners
         const searchInput = document.getElementById('documentation-search');
-        const typeFilter = document.getElementById('documentation-type-filter');
         
-        if (searchInput) {
-            searchInput.oninput = () => {
-                api.getRepository(repoId).then(rd => filterAndRenderDocumentation(repoId, rd)).catch(() => filterAndRenderDocumentation(repoId, repoData));
-            };
-        }
-        if (typeFilter) {
-            typeFilter.onchange = () => {
-                api.getRepository(repoId).then(rd => filterAndRenderDocumentation(repoId, rd)).catch(() => filterAndRenderDocumentation(repoId, repoData));
-            };
-        }
+        const renderFn = () => {
+            renderEntityListUnified('documentation', allDocumentation, 'documentation-list', repoData || currentRepoData);
+        };
+        
+        if (searchInput) searchInput.oninput = renderFn;
+        if (typeFilter) typeFilter.onchange = renderFn;
         
         // Initial render
-        filterAndRenderDocumentation(repoId, repoData);
+        renderFn();
     } catch (error) {
         container.innerHTML = `<p class="error-text">Failed to load documentation: ${escapeHtml(error.message)}</p>`;
     }
@@ -3499,19 +4356,18 @@ function filterAndRenderDocumentation(repoId, repoData = null) {
 }
 
 async function loadTests(repoId) {
+    // Use unified loader with custom filtering for repository_id
     currentRepoId = repoId;
     const container = document.getElementById('tests-list');
     container.innerHTML = '<p class="loading-text">Loading tests...</p>';
     
-    // Clear previous test data
-    allTests = [];
-    
     try {
         const tests = await api.getTests(repoId);
         // Filter by repository_id as a safety measure
-        allTests = tests.filter(test => test.repository_id === repoId);
+        const filteredTests = tests.filter(test => test.repository_id === repoId);
+        allTests = filteredTests;
         
-        if (allTests.length === 0) {
+        if (filteredTests.length === 0) {
             container.innerHTML = '<p>No tests found. Run analysis first.</p>';
             return;
         }
@@ -3521,14 +4377,52 @@ async function loadTests(repoId) {
         try {
             repoData = await api.getRepository(repoId).catch(() => null);
         } catch (e) {
-            // Ignore - will use null repoData
+            // Ignore
         }
         
-        // Setup filters
-        setupTestFilters();
+        // Populate filter dropdowns
+        const frameworkFilter = document.getElementById('tests-framework-filter');
+        const languageFilter = document.getElementById('tests-language-filter');
+        
+        if (frameworkFilter) {
+            const frameworks = [...new Set(filteredTests.map(t => t.test_framework).filter(Boolean))].sort();
+            const existingFrameworks = Array.from(frameworkFilter.options).map(opt => opt.value);
+            frameworks.forEach(framework => {
+                if (!existingFrameworks.includes(framework)) {
+                    const option = document.createElement('option');
+                    option.value = framework;
+                    option.textContent = framework;
+                    frameworkFilter.appendChild(option);
+                }
+            });
+        }
+        
+        if (languageFilter) {
+            const languages = [...new Set(filteredTests.map(t => t.language).filter(Boolean))].sort();
+            const existingLanguages = Array.from(languageFilter.options).map(opt => opt.value);
+            languages.forEach(language => {
+                if (!existingLanguages.includes(language)) {
+                    const option = document.createElement('option');
+                    option.value = language;
+                    option.textContent = language;
+                    languageFilter.appendChild(option);
+                }
+            });
+        }
+        
+        // Setup filter event listeners
+        const searchInput = document.getElementById('tests-search');
+        
+        const renderFn = () => {
+            renderEntityListUnified('test', allTests, 'tests-list', repoData || currentRepoData);
+        };
+        
+        if (searchInput) searchInput.oninput = renderFn;
+        if (frameworkFilter) frameworkFilter.onchange = renderFn;
+        if (languageFilter) languageFilter.onchange = renderFn;
         
         // Initial render
-        filterAndRenderTests(repoData);
+        renderFn();
     } catch (error) {
         container.innerHTML = `<p class="error-text">Failed to load tests: ${escapeHtml(error.message)}</p>`;
     }

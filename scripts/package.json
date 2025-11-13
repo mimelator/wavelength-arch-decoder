@@ -1,0 +1,11 @@
+{
+  "name": "wavelength-arch-decoder-validation",
+  "version": "1.0.0",
+  "description": "Validation scripts for repository tabs",
+  "scripts": {
+    "validate-tabs": "node validate-tabs.js"
+  },
+  "dependencies": {
+    "puppeteer": "^21.11.0"
+  }
+}
