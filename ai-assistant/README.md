@@ -78,6 +78,30 @@ curl -X POST http://localhost:8000/api/v1/ai/refactor-analysis \
 - "What build tools are configured?"
 - "What would break if I rename `getAdminStorage`?"
 
+## Validation Script
+
+A validation script is available to test entity queries across all entity types:
+
+```bash
+# Run validation script
+python3 validate_entity_queries.py
+```
+
+This script tests queries like "what xxx exists for this repo?" for:
+- Functions (`find_functions`)
+- Services (`list_services`)
+- Dependencies (`find_dependencies`)
+- Tools (`tool_discovery`)
+- Tests (`find_tests`)
+- Documentation (`find_documentation`)
+
+The script validates:
+- ✅ Correct intent detection
+- ✅ Non-empty, meaningful responses
+- ✅ Absence of disclaimers/preambles
+- ✅ Proper source type matching
+- ✅ Answer summarizes findings
+
 ## API Endpoints
 
 ### POST `/api/v1/ai/query`

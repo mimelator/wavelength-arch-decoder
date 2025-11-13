@@ -1,6 +1,6 @@
 [package]
 name = "wavelength-arch-decoder"
-version = "0.7.6"
+version = "0.7.7"
 edition = "2021"
 authors = ["Mark Imel"]
 description = "A self-contained hosted server for understanding repository architecture through knowledge graphs"

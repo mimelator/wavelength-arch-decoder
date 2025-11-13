@@ -19,7 +19,17 @@ async function loadRepositories() {
         const response = await fetch(`${API_BASE_URL}/api/v1/repositories`);
         
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            // Try to get error details from response
+            let errorData;
+            try {
+                errorData = await response.json();
+            } catch (e) {
+                errorData = { detail: `HTTP error! status: ${response.status}` };
+            }
+            const error = new Error(errorData.detail?.error || errorData.detail || `HTTP error! status: ${response.status}`);
+            error.response = response;
+            error.errorData = errorData;
+            throw error;
         }
         
         const repos = await response.json();
@@ -95,21 +105,68 @@ async function checkDecoderHealth() {
             statusIndicator.className = 'status-indicator status-unavailable';
             statusDot.textContent = '🔴';
             statusText.textContent = 'Architecture Decoder Offline';
-            statusIndicator.title = `Architecture Decoder unavailable: ${health.decoder_error || health.decoder_status}`;
             
-            // Show warning message in chat if service is unavailable
+            const diagnostics = health.decoder_diagnostics || {};
+            const decoderUrl = health.decoder_url || 'http://localhost:8080';
+            const port = diagnostics.port || '8080';
+            const errorMsg = health.decoder_error || health.decoder_status;
+            
+            statusIndicator.title = `Architecture Decoder unavailable: ${errorMsg}\nTrying to connect to: ${decoderUrl}`;
+            
+            // Show detailed warning message in chat if service is unavailable
             if (!existingWarning) {
                 const warning = document.createElement('div');
                 warning.className = 'decoder-warning system-message';
-                warning.innerHTML = `
-                    <strong>⚠️ Warning:</strong> Architecture Decoder service is unavailable. 
-                    <br>Please ensure the Architecture Decoder is running on ${health.decoder_url || 'http://localhost:8080'}
-                    <br><small>Error: ${health.decoder_error || health.decoder_status}</small>
+                
+                let diagnosticHTML = `
+                    <strong>⚠️ Architecture Decoder Connection Error</strong>
+                    <div style="margin-top: 0.5rem;">
+                        <strong>Error:</strong> ${errorMsg || 'Unknown error'}<br>
+                        <strong>Connection URL:</strong> <code>${decoderUrl}</code><br>
+                        <strong>Port:</strong> ${port}<br>
                 `;
+                
+                if (diagnostics.suggestion) {
+                    diagnosticHTML += `<div style="margin-top: 0.5rem; padding: 0.5rem; background: rgba(255, 193, 7, 0.1); border-left: 3px solid #ffc107; border-radius: 4px;">
+                        <strong>💡 Suggestion:</strong> ${diagnostics.suggestion}
+                    </div>`;
+                }
+                
+                if (diagnostics.troubleshooting && diagnostics.troubleshooting.length > 0) {
+                    diagnosticHTML += `<div style="margin-top: 0.5rem;">
+                        <strong>🔧 Troubleshooting Steps:</strong>
+                        <ul style="margin: 0.25rem 0; padding-left: 1.5rem;">
+                            ${diagnostics.troubleshooting.map(step => `<li style="margin: 0.25rem 0;">${step}</li>`).join('')}
+                        </ul>
+                    </div>`;
+                }
+                
+                if (diagnostics.config_help) {
+                    diagnosticHTML += `<div style="margin-top: 0.5rem; padding: 0.5rem; background: rgba(33, 150, 243, 0.1); border-left: 3px solid #2196f3; border-radius: 4px;">
+                        <strong>⚙️ Configuration:</strong><br>
+                        <div style="margin-top: 0.25rem;">
+                            To change the connection URL, edit the <code>${diagnostics.config_file || '.env'}</code> file in the <code>ai-assistant/</code> directory.
+                        </div>
+                        <div style="margin-top: 0.5rem;">
+                            <strong>Current setting:</strong><br>
+                            <code style="display: block; margin-top: 0.25rem; padding: 0.25rem; background: rgba(0,0,0,0.05); border-radius: 3px;">${diagnostics.config_example || `ARCHITECTURE_DECODER_URL=${decoderUrl}`}</code>
+                        </div>
+                        <small style="display: block; margin-top: 0.5rem; color: #666;">
+                            After updating the file, restart the AI Assistant for changes to take effect.
+                        </small>
+                    </div>`;
+                }
+                
+                diagnosticHTML += `</div>`;
+                
+                warning.innerHTML = diagnosticHTML;
                 chatMessages.insertBefore(warning, chatMessages.firstChild);
             } else {
-                // Update existing warning with latest error
-                existingWarning.querySelector('small').textContent = `Error: ${health.decoder_error || health.decoder_status}`;
+                // Update existing warning with latest error and diagnostics
+                const errorText = existingWarning.querySelector('small') || existingWarning.querySelector('.error-text');
+                if (errorText) {
+                    errorText.textContent = `Error: ${errorMsg}`;
+                }
             }
         }
     } catch (error) {
@@ -185,7 +242,17 @@ async function sendQuery() {
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            // Try to get error details from response
+            let errorData;
+            try {
+                errorData = await response.json();
+            } catch (e) {
+                errorData = { detail: `HTTP error! status: ${response.status}` };
+            }
+            const error = new Error(errorData.detail?.error || errorData.detail || `HTTP error! status: ${response.status}`);
+            error.response = response;
+            error.errorData = errorData;
+            throw error;
         }
 
         const data = await response.json();
@@ -206,7 +273,63 @@ async function sendQuery() {
     } catch (error) {
         console.error('Query failed:', error);
         removeMessage(loadingId);
-        addMessage('assistant', `Error: ${error.message}`, false, true);
+        
+        // Check if it's a connection error with diagnostic info
+        let errorMessage = `Error: ${error.message}`;
+        let diagnosticInfo = null;
+        
+        // Check if we have error data with diagnostics
+        if (error.errorData && error.errorData.detail) {
+            if (typeof error.errorData.detail === 'object' && error.errorData.detail.diagnostics) {
+                diagnosticInfo = error.errorData.detail.diagnostics;
+                errorMessage = error.errorData.detail.error || error.message;
+            } else if (typeof error.errorData.detail === 'object' && error.errorData.detail.error) {
+                errorMessage = error.errorData.detail.error;
+                diagnosticInfo = error.errorData.detail.diagnostics;
+            } else if (typeof error.errorData.detail === 'string') {
+                errorMessage = error.errorData.detail;
+            }
+        }
+        
+        // Show error message with diagnostics if available
+        if (diagnosticInfo) {
+            let diagnosticHTML = `<strong>❌ Connection Error</strong><br>${errorMessage}`;
+            
+            if (diagnosticInfo.suggestion) {
+                diagnosticHTML += `<div style="margin-top: 0.5rem; padding: 0.5rem; background: rgba(255, 193, 7, 0.1); border-left: 3px solid #ffc107; border-radius: 4px;">
+                    <strong>💡 Suggestion:</strong> ${diagnosticInfo.suggestion}
+                </div>`;
+            }
+            
+            if (diagnosticInfo.troubleshooting && diagnosticInfo.troubleshooting.length > 0) {
+                diagnosticHTML += `<div style="margin-top: 0.5rem;">
+                    <strong>🔧 Troubleshooting:</strong>
+                    <ul style="margin: 0.25rem 0; padding-left: 1.5rem;">
+                        ${diagnosticInfo.troubleshooting.map(step => `<li style="margin: 0.25rem 0;">${step}</li>`).join('')}
+                    </ul>
+                </div>`;
+            }
+            
+            if (diagnosticInfo.config_example) {
+                diagnosticHTML += `<div style="margin-top: 0.5rem; padding: 0.5rem; background: rgba(33, 150, 243, 0.1); border-left: 3px solid #2196f3; border-radius: 4px;">
+                    <strong>⚙️ Configuration:</strong><br>
+                    <div style="margin-top: 0.25rem;">
+                        To change the connection URL, edit the <code>${diagnosticInfo.config_file || '.env'}</code> file in the <code>ai-assistant/</code> directory.
+                    </div>
+                    <div style="margin-top: 0.5rem;">
+                        <strong>Example setting:</strong><br>
+                        <code style="display: block; margin-top: 0.25rem; padding: 0.25rem; background: rgba(0,0,0,0.05); border-radius: 3px;">${diagnosticInfo.config_example}</code>
+                    </div>
+                    <small style="display: block; margin-top: 0.5rem; color: #666;">
+                        After updating the file, restart the AI Assistant for changes to take effect.
+                    </small>
+                </div>`;
+            }
+            
+            addMessage('assistant', diagnosticHTML, false, true);
+        } else {
+            addMessage('assistant', errorMessage, false, true);
+        }
     } finally {
         document.getElementById('send-button').disabled = !currentRepositoryId;
     }

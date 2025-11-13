@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import httpx
 
 from src.query_parser import QueryParser
 from src.context_builder import ContextBuilder
@@ -91,7 +92,7 @@ async def ai_query(request: QueryRequest):
                 response = await call_openai(prompt)
             except Exception as e:
                 print(f"Warning: OpenAI call failed: {e}")
-                response = "AI service unavailable. Here's what I found:\n\n" + format_context_summary(context)
+                response = format_context_summary(context)
         else:
             response = format_context_summary(context)
 
@@ -153,6 +154,50 @@ async def ai_query(request: QueryRequest):
             "related_entities": context.get("related", {}),
             "intent": intent.get("intent").value if hasattr(intent.get("intent"), "value") else str(intent.get("intent"))
         }
+    except httpx.ConnectError as e:
+        decoder_url = os.getenv("ARCHITECTURE_DECODER_URL", "http://localhost:8080")
+        from urllib.parse import urlparse
+        parsed = urlparse(decoder_url)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": f"Failed to connect to Architecture Decoder",
+                "message": str(e),
+                "decoder_url": decoder_url,
+                "port": port,
+                "diagnostics": {
+                    "suggestion": f"Cannot connect to Architecture Decoder at {decoder_url}. The server may not be running.",
+                    "troubleshooting": [
+                        f"Start the Architecture Decoder server: cargo run (or ./target/release/wavelength-arch-decoder)",
+                        f"Verify the server is listening on port {port}",
+                        f"Check if port {port} is correct (default is 8080)",
+                        f"If your server uses a different port, update ARCHITECTURE_DECODER_URL in the .env file",
+                        f"Test connection: curl {decoder_url}/health"
+                    ],
+                    "config_file": ".env",
+                    "config_example": f"ARCHITECTURE_DECODER_URL={decoder_url}"
+                }
+            }
+        )
+    except httpx.TimeoutException as e:
+        decoder_url = os.getenv("ARCHITECTURE_DECODER_URL", "http://localhost:8080")
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "error": f"Connection timeout to Architecture Decoder",
+                "message": str(e),
+                "decoder_url": decoder_url,
+                "diagnostics": {
+                    "suggestion": f"The Architecture Decoder server at {decoder_url} did not respond in time.",
+                    "troubleshooting": [
+                        f"Verify the server is running: curl {decoder_url}/health",
+                        f"Check server logs for errors",
+                        f"Ensure the server is not overloaded"
+                    ]
+                }
+            }
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -203,7 +248,7 @@ async def call_openai(prompt: str) -> str:
     response = openai_client.chat.completions.create(
         model=os.getenv("OPENAI_MODEL", "gpt-4"),
         messages=[
-            {"role": "system", "content": "You are an AI assistant helping developers understand their codebase architecture."},
+            {"role": "system", "content": "You are a codebase architecture assistant. Answer questions directly and confidently based on the provided codebase analysis. Do not include disclaimers, preambles, or hedging language. Start with the answer immediately."},
             {"role": "user", "content": prompt}
         ],
         temperature=0.3,
@@ -256,6 +301,7 @@ async def health():
         "decoder_available": decoder_status.get("available", False),
         "decoder_status": decoder_status.get("status", "unknown"),
         "decoder_error": decoder_status.get("error") if not decoder_status.get("available") else None,
+        "decoder_diagnostics": decoder_status.get("diagnostics") if not decoder_status.get("available") else None,
         "openai_configured": openai_client is not None
     }
 
@@ -269,6 +315,31 @@ async def get_repositories():
         )
         repos.raise_for_status()
         return repos.json()
+    except httpx.ConnectError as e:
+        decoder_url = os.getenv("ARCHITECTURE_DECODER_URL", "http://localhost:8080")
+        from urllib.parse import urlparse
+        parsed = urlparse(decoder_url)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": f"Failed to connect to Architecture Decoder",
+                "message": str(e),
+                "decoder_url": decoder_url,
+                "port": port,
+                "diagnostics": {
+                    "suggestion": f"Cannot connect to Architecture Decoder at {decoder_url}",
+                    "troubleshooting": [
+                        f"Verify the server is running: cargo run (or ./target/release/wavelength-arch-decoder)",
+                        f"Check if port {port} is correct (default is 8080)",
+                        f"If your server uses a different port, update ARCHITECTURE_DECODER_URL in the .env file",
+                        f"Test connection: curl {decoder_url}/health"
+                    ],
+                    "config_file": ".env",
+                    "config_example": f"ARCHITECTURE_DECODER_URL={decoder_url}"
+                }
+            }
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch repositories: {str(e)}")
 

@@ -69,6 +69,10 @@ class QueryParser:
         QueryIntent.FIND_DOCUMENTATION: [
             r"what documentation",
             r"which documentation",
+            r"what docs",
+            r"which docs",
+            r"docs exist",
+            r"documentation exist",
             r"readme",
             r"api.*docs",
             r"documentation.*files",

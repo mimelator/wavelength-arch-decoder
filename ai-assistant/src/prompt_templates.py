@@ -17,7 +17,7 @@ Language: {repo.get('language', 'Unknown')}
 
 User Query: {query}
 
-Based on the following codebase analysis, answer the user's question:
+You have direct access to the repository's codebase analysis. Answer the user's question directly and confidently based on the information below. Do NOT include disclaimers like "As an AI, I don't have direct access" or "based on the information provided, it's not clear". If information is available, state it directly. If information is not available in the context, say so briefly without preamble.
 
 """
 
@@ -140,13 +140,19 @@ Based on the following codebase analysis, answer the user's question:
             prompt += "\n"
 
         prompt += """
-Please provide a clear, concise answer to the user's question. Include:
-- Specific function/entity names and locations
-- How elements relate to each other
-- Usage examples if available
-- Any important warnings or considerations
+Answer the user's question directly and confidently. Start with the answer immediately - do not include preambles, disclaimers, or hedging language.
 
-Be thorough but concise."""
+Guidelines:
+- Answer directly based on the codebase analysis provided above
+- ALWAYS summarize what was found, even if it's not exactly what was asked for
+- If the specific type of information requested isn't found, summarize what related information IS available
+- Include specific function/entity names, file paths, and line numbers when available
+- Explain how elements relate to each other
+- Provide concrete examples from the codebase when relevant
+- If NO relevant information is found at all, state it briefly (e.g., "No documentation files were found in the repository")
+- Avoid phrases like "As an AI", "I don't have direct access", "it's not clear", "However", "Remember to", or similar disclaimers
+- Be concise and actionable
+- When sources are provided, summarize them rather than ignoring them"""
 
         return prompt
 
@@ -154,7 +160,7 @@ Be thorough but concise."""
         self, impact: Dict[str, Any], proposed_changes: str
     ) -> str:
         """Build prompt for refactoring analysis"""
-        prompt = f"""You are an AI assistant analyzing refactoring impact.
+        prompt = f"""You are analyzing refactoring impact for a codebase.
 
 Proposed Changes: {proposed_changes}
 
@@ -182,14 +188,14 @@ Proposed Changes: {proposed_changes}
                     prompt += f"- {' → '.join(path)}\n"
 
         prompt += """
-Based on this impact analysis, provide:
+Provide a direct analysis:
 1. Risk assessment (low/medium/high) with reasoning
 2. Step-by-step refactoring recommendations
 3. Testing considerations
 4. Potential breaking changes
 5. Migration strategy
 
-Be specific about what could break and why."""
+Be specific and direct. Do not include preambles or disclaimers."""
 
         return prompt
 
