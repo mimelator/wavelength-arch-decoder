@@ -9,6 +9,9 @@
 secrets/
 config/secrets.json
 
+# Plugin files (transient artifacts from plugin repos for local testing)
+config/plugins/webmethods.json
+
 # Database files
 *.db
 *.db-shm
