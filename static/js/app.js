@@ -577,10 +577,13 @@ async function loadEntityList(entityType, repoId, apiLoader, containerId, filter
                                entityType === 'documentation' ? 'allDocumentation' :
                                `all${entityType.charAt(0).toUpperCase() + entityType.slice(1).replace('_', '')}`;
         window[storageVarName] = items;
-        // Also set the direct variable for code elements
+        // Also set the direct variable for code elements and services
         if (entityType === 'code_element') {
             allCodeElements = items;
             console.log('[CODE] Set allCodeElements to', items.length, 'items');
+        } else if (entityType === 'service') {
+            allServices = items;
+            console.log('[SERVICES] Set allServices to', items.length, 'items');
         }
         
         // Setup filters if provided
@@ -609,12 +612,14 @@ function renderEntityListUnified(entityType, items, containerId, repoData = null
     if (!container) return;
     
     // Get filter values from DOM
-    // Handle naming differences: code_element vs code, security_entity vs security
+    // Handle naming differences: code_element vs code, security_entity vs security, service vs services
     const searchId = entityType === 'code_element' ? 'code-search' :
                      entityType === 'security_entity' ? 'security-search' :
+                     entityType === 'service' ? 'services-search' :
                      `${entityType}-search`;
     const groupById = entityType === 'code_element' ? 'code-group-by' :
                       entityType === 'security_entity' ? 'security-group-by' :
+                      entityType === 'service' ? 'services-group-by' :
                       `${entityType}-group-by`;
     
     const searchInput = document.getElementById(searchId);
@@ -631,6 +636,8 @@ function renderEntityListUnified(entityType, items, containerId, repoData = null
             filterId = `code-filter-${filterField}`;
         } else if (entityType === 'security_entity') {
             filterId = `security-filter-${filterField}`;
+        } else if (entityType === 'service') {
+            filterId = `services-filter-${filterField}`;
         }
         const filterInput = document.getElementById(filterId);
         if (filterInput) {
@@ -2983,8 +2990,20 @@ let allServices = [];
 let currentServicesGroupBy = 'provider';
 
 async function loadServices(repoId) {
+    console.log('[SERVICES] loadServices called for repo:', repoId);
     // Use unified loader
-    await loadEntityList('service', repoId, (id) => api.getServices(id), 'services-list', (items, repoData) => {
+    await loadEntityList('service', repoId, async (id) => {
+        console.log('[SERVICES] Calling API for services:', id);
+        try {
+            const services = await api.getServices(id);
+            console.log('[SERVICES] API returned', services?.length || 0, 'services');
+            return services;
+        } catch (error) {
+            console.error('[SERVICES] API call failed:', error);
+            throw error;
+        }
+    }, 'services-list', (items, repoData) => {
+        console.log('[SERVICES] Filter setup callback called with', items?.length || 0, 'items');
         // Populate filter dropdowns
         const providerFilter = document.getElementById('services-filter-provider');
         const typeFilter = document.getElementById('services-filter-type');
@@ -3023,6 +3042,9 @@ async function loadServices(repoId) {
         if (providerFilter) providerFilter.onchange = renderFn;
         if (typeFilter) typeFilter.onchange = renderFn;
         if (groupBySelect) groupBySelect.onchange = renderFn;
+        
+        // Initial render
+        renderFn();
     });
 }
 
