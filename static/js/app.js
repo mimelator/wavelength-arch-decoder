@@ -898,7 +898,7 @@ async function loadDashboard() {
         let totalServices = 0;
         let totalSecurity = 0;
         
-        for (const repo of repos.slice(0, 5)) {
+        for (const repo of repos.slice(0, 10)) {
             try {
                 const deps = await api.getDependencies(repo.id);
                 totalDeps += deps.length || 0;
@@ -917,8 +917,8 @@ async function loadDashboard() {
         document.getElementById('stat-services').textContent = totalServices;
         document.getElementById('stat-security').textContent = totalSecurity;
         
-        // Show recent repositories
-        const recentRepos = repos.slice(0, 5);
+        // Show recent repositories (up to 10)
+        const recentRepos = repos.slice(0, 10);
         displayRepositories(recentRepos, 'recent-repos');
     } catch (error) {
         console.error('Failed to load dashboard:', error);
