@@ -2176,11 +2176,223 @@ window.analyzeRepository = async function(repoId) {
     
     try {
         console.log(`Starting analysis for repository ${repoId}...`);
-        const result = await api.analyzeRepository(repoId);
-        console.log('Analysis API response:', result);
+        // Start analysis - fire and forget, don't wait for response
+        // The analysis runs in a blocking thread pool, so we start polling immediately
+        fetch(`/api/v1/repositories/${repoId}/analyze`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ repository_id: repoId })
+        }).then(async (response) => {
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`Failed to start analysis: ${response.status} - ${errorText}`);
+                showAnalysisError(new Error(`Failed to start analysis: ${errorText}`), statusDiv, analyzeBtn);
+            } else {
+                console.log('Analysis request sent successfully');
+            }
+        }).catch((error) => {
+            console.error('Failed to send analysis request:', error);
+            showAnalysisError(error, statusDiv, analyzeBtn);
+        });
         
-        // Show completion results
-        if (result && result.results) {
+        // Start polling immediately - don't wait for the analyze endpoint to respond
+        // Poll for progress updates (every 2 seconds to reduce server log noise)
+        const progressInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/api/v1/repositories/${repoId}/progress`);
+                
+                if (response.status === 404) {
+                    console.log('Progress not found (analysis may have completed)');
+                    clearInterval(progressInterval);
+                    // Check if analysis completed
+                    setTimeout(async () => {
+                        try {
+                            const finalResult = await api.analyzeRepository(repoId);
+                            showAnalysisComplete(finalResult, statusDiv, analyzeBtn, repoId);
+                        } catch (err) {
+                            console.error('Failed to get final results:', err);
+                            showAnalysisError(err, statusDiv, analyzeBtn);
+                        }
+                    }, 1000);
+                    return;
+                }
+                
+                if (!response.ok) {
+                    const contentType = response.headers.get('content-type');
+                    let errorMsg = `HTTP ${response.status}`;
+                    if (contentType && contentType.includes('application/json')) {
+                        try {
+                            const text = await response.text();
+                            const error = JSON.parse(text);
+                            errorMsg = error.error || errorMsg;
+                        } catch (e) {
+                            // Already read text, can't read again
+                        }
+                    }
+                    console.error(`Failed to get progress: ${errorMsg}`);
+                    return;
+                }
+                
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    console.warn(`Progress endpoint returned non-JSON: ${contentType}`);
+                    return;
+                }
+                
+                const text = await response.text();
+                if (!text.trim()) {
+                    console.log('Progress endpoint returned empty response');
+                    return;
+                }
+                
+                let progress;
+                try {
+                    progress = JSON.parse(text);
+                } catch (e) {
+                    console.error(`Failed to parse progress JSON: ${e.message}`);
+                    console.error(`Response: ${text.substring(0, 200)}`);
+                    return;
+                }
+                
+                if (progress) {
+                    updateAnalysisProgress(progress, statusDiv);
+                    
+                    // Check if analysis is complete
+                    if (progress.progress_percent >= 100 || progress.step_name === 'Complete') {
+                        clearInterval(progressInterval);
+                        console.log('Analysis completed!');
+                        // Wait a moment then fetch final results
+                        setTimeout(async () => {
+                            try {
+                                const finalResult = await api.analyzeRepository(repoId);
+                                showAnalysisComplete(finalResult, statusDiv, analyzeBtn, repoId);
+                            } catch (error) {
+                                console.error('Failed to get final results:', error);
+                                showAnalysisError(error, statusDiv, analyzeBtn);
+                            }
+                        }, 1000);
+                    } else if (progress.step_name === 'Failed') {
+                        clearInterval(progressInterval);
+                        showAnalysisError(new Error(progress.status_message), statusDiv, analyzeBtn);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to get progress:', error);
+                // Continue polling - don't stop on transient errors
+            }
+        }, 2000); // Poll every 2 seconds
+        
+        // Show initial progress (poll immediately after a short delay)
+        setTimeout(async () => {
+            try {
+                const response = await fetch(`/api/v1/repositories/${repoId}/progress`);
+                if (response.ok) {
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        const text = await response.text();
+                        if (text.trim()) {
+                            try {
+                                const initialProgress = JSON.parse(text);
+                                if (initialProgress) {
+                                    updateAnalysisProgress(initialProgress, statusDiv);
+                                }
+                            } catch (e) {
+                                // Invalid JSON, ignore
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                // Progress may not be available yet
+            }
+        }, 500);
+        
+    } catch (error) {
+        console.error('Failed to start analysis:', error);
+        showAnalysisError(error, statusDiv, analyzeBtn);
+    }
+}
+
+function updateAnalysisProgress(progress, statusDiv) {
+    if (!statusDiv) return;
+    
+    const percent = Math.min(Math.round(progress.progress_percent || 0), 100);
+    const stepInfo = `Step ${progress.current_step || 0}/${progress.total_steps || 11}`;
+    const stepName = progress.step_name || 'Analyzing...';
+    
+    // Make sure status div is visible
+    statusDiv.style.display = 'block';
+    statusDiv.style.visibility = 'visible';
+    statusDiv.style.opacity = '1';
+    
+    statusDiv.innerHTML = `
+        <div class="analysis-progress">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                ${stepName === 'Complete' ? 
+                    '<span style="font-size: 1.2rem;">✓</span>' : 
+                    '<div class="spinner" style="width: 16px; height: 16px; border: 2px solid rgba(37, 99, 235, 0.3); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>'
+                }
+                <strong>${escapeHtml(stepName)}</strong>
+            </div>
+            <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                ${stepInfo}
+            </div>
+            <div class="progress-bar" style="width: 100%; height: 24px; background: rgba(37, 99, 235, 0.1); border-radius: 12px; overflow: hidden; margin-bottom: 0.5rem;">
+                <div class="progress-fill" style="width: ${percent}%; height: 100%; background: linear-gradient(90deg, var(--primary-color), #3b82f6); transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: 600;">
+                    ${percent}%
+                </div>
+            </div>
+            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                ${escapeHtml(progress.status_message || 'Processing...')}
+            </div>
+            ${progress.details ? `
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem; opacity: 0.8; padding: 0.5rem; background: rgba(0,0,0,0.05); border-radius: 4px;">
+                    ${JSON.stringify(progress.details, null, 2)}
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+function showAnalysisError(error, statusDiv, analyzeBtn) {
+    if (statusDiv) {
+        statusDiv.innerHTML = `
+            <div class="analysis-error" style="background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #ef4444; padding: 1rem; border-radius: 0.5rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <span style="font-size: 1.5rem;">❌</span>
+                    <strong style="font-size: 1.1rem;">Analysis Failed</strong>
+                </div>
+                <div style="font-size: 0.9rem; margin-top: 0.5rem;">
+                    ${escapeHtml(error.message || 'Unknown error occurred')}
+                </div>
+            </div>
+        `;
+        statusDiv.style.display = 'block';
+        statusDiv.style.visibility = 'visible';
+        statusDiv.style.opacity = '1';
+    }
+    
+    if (analyzeBtn) {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = 'Analyze';
+    }
+}
+
+function showAnalysisComplete(result, statusDiv, analyzeBtn, repoId) {
+    if (!result || !result.results) {
+        // If no results, try to reload the repository to get updated stats
+        if (repoId && currentRepoId === repoId) {
+            setTimeout(() => {
+                loadRepositoryOverview(repoId);
+            }, 1000);
+        }
+        return;
+    }
+    
+    // Show completion results
+    if (result && result.results) {
             console.log('Results found:', result.results);
             if (statusDiv) {
                 // Ensure we display numbers, not objects or arrays
@@ -2302,39 +2514,7 @@ window.analyzeRepository = async function(repoId) {
         }
         
         console.log('Analysis response processed:', result);
-    } catch (error) {
-        console.error('Analysis error:', error);
-        
-        if (statusDiv) {
-            statusDiv.innerHTML = `
-                <div class="analysis-error">
-                    <strong>✗ Analysis Failed</strong>
-                    <div class="error-details">${escapeHtml(error.message)}</div>
-                </div>
-            `;
-            statusDiv.style.display = 'block';
-            statusDiv.style.visibility = 'visible';
-        }
-        
-        if (analyzeBtn) {
-            analyzeBtn.disabled = false;
-            // Keep "Re-Analyze" text if on detail page, otherwise "Analyze"
-            if (document.getElementById('btn-analyze-detail') === analyzeBtn) {
-                analyzeBtn.textContent = 'Re-Analyze';
-            } else {
-                analyzeBtn.textContent = 'Analyze';
-            }
-            
-            // Hide the info text when analysis fails
-            const infoText = analyzeBtn.parentElement?.querySelector('.analyze-info-text');
-            if (infoText) {
-                infoText.style.display = 'none';
-            }
-        }
-        
-        alert('Failed to start analysis: ' + error.message);
-    }
-};
+}
 
 window.viewRepository = async function(repoId, initialTab = null) {
     console.log('[VIEW] viewRepository called:', { repoId, initialTab });

@@ -114,6 +114,7 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
             .service(web::resource("/").route(web::get().to(index_handler)))
             .service(
                 web::scope("/api/v1")
+                    .app_data(api_state.clone())
                     // Health and version endpoints
                     .route("/version", web::get().to(version))
                     // Plugin endpoints

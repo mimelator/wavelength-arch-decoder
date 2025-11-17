@@ -878,6 +878,9 @@ except Exception as e:
         return Err(anyhow::anyhow!("Failed to update repository: {}", e));
     }
 
+    // Mark analysis as complete
+    state.progress_tracker.complete_analysis(&repository_id);
+    
     log::info!("✓ Analysis complete for repository: {}", repo.name);
     Ok(AnalysisResult {
         message: "Repository analyzed successfully".to_string(),

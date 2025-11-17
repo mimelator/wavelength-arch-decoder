@@ -136,7 +136,15 @@ class WavelengthAPI {
     }
 
     async getAnalysisProgress(repoId) {
-        return this.request(`/repositories/${repoId}/progress`);
+        try {
+            return await this.request(`/repositories/${repoId}/progress`);
+        } catch (error) {
+            // If 404, return null instead of throwing (analysis may have completed)
+            if (error.message && error.message.includes('404')) {
+                return null;
+            }
+            throw error;
+        }
     }
 
     async getReport(repoId) {

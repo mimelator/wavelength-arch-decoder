@@ -3,9 +3,16 @@
   "version": "1.0.0",
   "description": "Validation scripts for repository tabs",
   "scripts": {
-    "validate-tabs": "node validate-tabs.js"
+    "validate-tabs": "node validate-tabs.js",
+    "test:playwright": "node test-ui-playwright.js",
+    "test:playwright:visible": "node test-ui-playwright.js --headless=false",
+    "test:analysis-progress": "node test-analysis-progress-playwright.js",
+    "test:analysis-progress:visible": "node test-analysis-progress-playwright.js --headless=false",
+    "test:main-app-progress": "node test-main-app-progress.js",
+    "test:main-app-progress:visible": "node test-main-app-progress.js --headless=false"
   },
   "dependencies": {
-    "puppeteer": "^21.11.0"
+    "puppeteer": "^21.11.0",
+    "playwright": "^1.56.1"
   }
 }

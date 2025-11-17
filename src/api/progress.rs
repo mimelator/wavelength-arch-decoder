@@ -4,24 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 
-fn serialize_datetime<S>(dt: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&dt.to_rfc3339())
-}
-
-fn deserialize_datetime<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    DateTime::parse_from_rfc3339(&s)
-        .map(|dt| dt.with_timezone(&Utc))
-        .map_err(serde::de::Error::custom)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct AnalysisProgress {
     pub repository_id: String,
     pub current_step: u32,
@@ -30,10 +13,150 @@ pub struct AnalysisProgress {
     pub progress_percent: f64,
     pub status_message: String,
     pub details: Option<serde_json::Value>,
-    #[serde(serialize_with = "serialize_datetime", deserialize_with = "deserialize_datetime")]
     pub started_at: DateTime<Utc>,
-    #[serde(serialize_with = "serialize_datetime", deserialize_with = "deserialize_datetime")]
     pub last_updated: DateTime<Utc>,
+}
+
+// Custom serialization to handle DateTime properly
+impl Serialize for AnalysisProgress {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("AnalysisProgress", 9)?;
+        state.serialize_field("repository_id", &self.repository_id)?;
+        state.serialize_field("current_step", &self.current_step)?;
+        state.serialize_field("total_steps", &self.total_steps)?;
+        state.serialize_field("step_name", &self.step_name)?;
+        state.serialize_field("progress_percent", &self.progress_percent)?;
+        state.serialize_field("status_message", &self.status_message)?;
+        state.serialize_field("details", &self.details)?;
+        state.serialize_field("started_at", &self.started_at.to_rfc3339())?;
+        state.serialize_field("last_updated", &self.last_updated.to_rfc3339())?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for AnalysisProgress {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::{self, MapAccess, Visitor};
+        use std::fmt;
+
+        struct AnalysisProgressVisitor;
+
+        impl<'de> Visitor<'de> for AnalysisProgressVisitor {
+            type Value = AnalysisProgress;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("struct AnalysisProgress")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<AnalysisProgress, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let mut repository_id = None;
+                let mut current_step = None;
+                let mut total_steps = None;
+                let mut step_name = None;
+                let mut progress_percent = None;
+                let mut status_message = None;
+                let mut details = None;
+                let mut started_at = None;
+                let mut last_updated = None;
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        "repository_id" => {
+                            if repository_id.is_some() {
+                                return Err(de::Error::duplicate_field("repository_id"));
+                            }
+                            repository_id = Some(map.next_value()?);
+                        }
+                        "current_step" => {
+                            if current_step.is_some() {
+                                return Err(de::Error::duplicate_field("current_step"));
+                            }
+                            current_step = Some(map.next_value()?);
+                        }
+                        "total_steps" => {
+                            if total_steps.is_some() {
+                                return Err(de::Error::duplicate_field("total_steps"));
+                            }
+                            total_steps = Some(map.next_value()?);
+                        }
+                        "step_name" => {
+                            if step_name.is_some() {
+                                return Err(de::Error::duplicate_field("step_name"));
+                            }
+                            step_name = Some(map.next_value()?);
+                        }
+                        "progress_percent" => {
+                            if progress_percent.is_some() {
+                                return Err(de::Error::duplicate_field("progress_percent"));
+                            }
+                            progress_percent = Some(map.next_value()?);
+                        }
+                        "status_message" => {
+                            if status_message.is_some() {
+                                return Err(de::Error::duplicate_field("status_message"));
+                            }
+                            status_message = Some(map.next_value()?);
+                        }
+                        "details" => {
+                            if details.is_some() {
+                                return Err(de::Error::duplicate_field("details"));
+                            }
+                            details = Some(map.next_value()?);
+                        }
+                        "started_at" => {
+                            if started_at.is_some() {
+                                return Err(de::Error::duplicate_field("started_at"));
+                            }
+                            let s: String = map.next_value()?;
+                            started_at = Some(
+                                DateTime::parse_from_rfc3339(&s)
+                                    .map(|dt| dt.with_timezone(&Utc))
+                                    .map_err(de::Error::custom)?
+                            );
+                        }
+                        "last_updated" => {
+                            if last_updated.is_some() {
+                                return Err(de::Error::duplicate_field("last_updated"));
+                            }
+                            let s: String = map.next_value()?;
+                            last_updated = Some(
+                                DateTime::parse_from_rfc3339(&s)
+                                    .map(|dt| dt.with_timezone(&Utc))
+                                    .map_err(de::Error::custom)?
+                            );
+                        }
+                        _ => {
+                            let _ = map.next_value::<de::IgnoredAny>()?;
+                        }
+                    }
+                }
+
+                Ok(AnalysisProgress {
+                    repository_id: repository_id.ok_or_else(|| de::Error::missing_field("repository_id"))?,
+                    current_step: current_step.ok_or_else(|| de::Error::missing_field("current_step"))?,
+                    total_steps: total_steps.ok_or_else(|| de::Error::missing_field("total_steps"))?,
+                    step_name: step_name.ok_or_else(|| de::Error::missing_field("step_name"))?,
+                    progress_percent: progress_percent.ok_or_else(|| de::Error::missing_field("progress_percent"))?,
+                    status_message: status_message.ok_or_else(|| de::Error::missing_field("status_message"))?,
+                    details,
+                    started_at: started_at.ok_or_else(|| de::Error::missing_field("started_at"))?,
+                    last_updated: last_updated.ok_or_else(|| de::Error::missing_field("last_updated"))?,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(AnalysisProgressVisitor)
+    }
 }
 
 pub struct ProgressTracker {
@@ -113,6 +236,26 @@ impl ProgressTracker {
         let mut progress_map = self.progress.lock().unwrap();
         progress_map.remove(repository_id);
     }
+    
+    /// Keep completed analyses for a period of time (5 minutes) before clearing
+    pub fn cleanup_old_progress(&self, max_age_seconds: i64) {
+        let mut progress_map = self.progress.lock().unwrap();
+        let now = Utc::now();
+        let mut to_remove = Vec::new();
+        
+        for (repo_id, progress) in progress_map.iter() {
+            let age = now.signed_duration_since(progress.last_updated);
+            // Only remove completed or failed analyses that are old
+            if (progress.step_name == "Complete" || progress.step_name == "Failed") 
+                && age.num_seconds() > max_age_seconds {
+                to_remove.push(repo_id.clone());
+            }
+        }
+        
+        for repo_id in to_remove {
+            progress_map.remove(&repo_id);
+        }
+    }
 }
 
 impl Default for ProgressTracker {
@@ -122,10 +265,11 @@ impl Default for ProgressTracker {
 }
 
 pub async fn get_analysis_progress(
-    state: web::Data<ProgressTracker>,
+    api_state: web::Data<crate::api::ApiState>,
     _req: HttpRequest,
     path: web::Path<String>,
 ) -> impl Responder {
+    let state = &api_state.progress_tracker;
     let repository_id = path.into_inner();
     
     if repository_id.is_empty() {
@@ -150,6 +294,7 @@ pub async fn get_analysis_progress(
                 progress.last_updated
             );
             
+            // Serialize using our custom Serialize implementation
             match serde_json::to_value(&progress) {
                 Ok(json_value) => {
                     log::info!("Successfully serialized progress for repository: {}", repository_id);
@@ -157,28 +302,17 @@ pub async fn get_analysis_progress(
                 },
                 Err(e) => {
                     log::error!("Failed to serialize progress for repository {}: {}", repository_id, e);
-                    log::error!("Serialization error type: {:?}", e.classify());
-                    log::error!("Serialization error message: {}", e);
-                    log::error!("Progress struct: repository_id={}, current_step={}, total_steps={}", 
-                        progress.repository_id, 
-                        progress.current_step, 
-                        progress.total_steps
-                    );
-                    log::error!("DateTime fields: started_at={:?}, last_updated={:?}", 
-                        progress.started_at, 
-                        progress.last_updated
-                    );
-                    
-                    // Try to serialize just the DateTime fields to see if that's the issue
-                    match serde_json::to_value(&progress.started_at.to_rfc3339()) {
-                        Ok(_) => log::debug!("started_at serializes fine"),
-                        Err(e2) => log::error!("started_at serialization test failed: {}", e2),
-                    }
-                    
-                    HttpResponse::InternalServerError().json(serde_json::json!({
-                        "error": format!("Failed to serialize progress: {}", e),
-                        "error_type": format!("{:?}", e.classify()),
-                        "repository_id": repository_id
+                    // Fallback: return a simplified version
+                    HttpResponse::Ok().json(serde_json::json!({
+                        "repository_id": progress.repository_id,
+                        "current_step": progress.current_step,
+                        "total_steps": progress.total_steps,
+                        "step_name": progress.step_name,
+                        "progress_percent": progress.progress_percent,
+                        "status_message": progress.status_message,
+                        "details": progress.details,
+                        "started_at": progress.started_at.to_rfc3339(),
+                        "last_updated": progress.last_updated.to_rfc3339()
                     }))
                 }
             }
