@@ -9,7 +9,9 @@
     "test:analysis-progress": "node test-analysis-progress-playwright.js",
     "test:analysis-progress:visible": "node test-analysis-progress-playwright.js --headless=false",
     "test:main-app-progress": "node test-main-app-progress.js",
-    "test:main-app-progress:visible": "node test-main-app-progress.js --headless=false"
+    "test:main-app-progress:visible": "node test-main-app-progress.js --headless=false",
+    "test:repository-detail": "node test-repository-detail-analyze.js",
+    "test:repository-detail:visible": "node test-repository-detail-analyze.js --headless=false"
   },
   "dependencies": {
     "puppeteer": "^21.11.0",

@@ -563,7 +563,11 @@ impl GraphBuilder {
     }
 
     /// Store graph in database
-    pub fn store_graph(&self, repository_id: &str, graph: &KnowledgeGraph) -> Result<()> {
+    pub fn store_graph<F1, F2>(&self, repository_id: &str, graph: &KnowledgeGraph, node_progress_callback: Option<F1>, edge_progress_callback: Option<F2>) -> Result<()>
+    where
+        F1: Fn(u32, u32), // callback(stored, total) for nodes
+        F2: Fn(u32, u32), // callback(stored, total) for edges
+    {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
 
@@ -614,6 +618,9 @@ impl GraphBuilder {
             if stored_nodes % batch_size == 0 || stored_nodes == total_nodes {
                 let percent = (stored_nodes as f64 / total_nodes as f64 * 100.0) as u32;
                 log::info!("  Stored {}/{} nodes ({}%)...", stored_nodes, total_nodes, percent);
+                if let Some(ref callback) = node_progress_callback {
+                    callback(stored_nodes as u32, total_nodes as u32);
+                }
             }
         }
         log::info!("✓ Successfully stored all {} nodes", total_nodes);
@@ -643,6 +650,9 @@ impl GraphBuilder {
             if stored_edges % batch_size == 0 || stored_edges == total_edges {
                 let percent = (stored_edges as f64 / total_edges as f64 * 100.0) as u32;
                 log::info!("  Stored {}/{} edges ({}%)...", stored_edges, total_edges, percent);
+                if let Some(ref callback) = edge_progress_callback {
+                    callback(stored_edges as u32, total_edges as u32);
+                }
             }
         }
         log::info!("✓ Successfully stored all {} edges", total_edges);

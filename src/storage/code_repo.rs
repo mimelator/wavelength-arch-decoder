@@ -15,7 +15,10 @@ impl CodeElementRepository {
         CodeElementRepository { db }
     }
 
-    pub fn store_elements(&self, repository_id: &str, elements: &[CodeElement]) -> Result<()> {
+    pub fn store_elements<F>(&self, repository_id: &str, elements: &[CodeElement], progress_callback: Option<F>) -> Result<()>
+    where
+        F: Fn(u32, u32), // callback(stored, total)
+    {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
@@ -64,6 +67,9 @@ impl CodeElementRepository {
             if stored % batch_size == 0 || stored == total {
                 let percent = (stored as f64 / total as f64 * 100.0) as u32;
                 log::info!("  Stored {}/{} elements ({}%)...", stored, total, percent);
+                if let Some(ref callback) = progress_callback {
+                    callback(stored as u32, total as u32);
+                }
             }
         }
         
@@ -71,7 +77,10 @@ impl CodeElementRepository {
         Ok(())
     }
 
-    pub fn store_calls(&self, repository_id: &str, calls: &[CodeCall]) -> Result<()> {
+    pub fn store_calls<F>(&self, repository_id: &str, calls: &[CodeCall], progress_callback: Option<F>) -> Result<()>
+    where
+        F: Fn(u32, u32), // callback(stored, total)
+    {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
         
@@ -113,6 +122,9 @@ impl CodeElementRepository {
             if stored % batch_size == 0 || stored == total {
                 let percent = (stored as f64 / total as f64 * 100.0) as u32;
                 log::info!("  Stored {}/{} calls ({}%)...", stored, total, percent);
+                if let Some(ref callback) = progress_callback {
+                    callback(stored as u32, total as u32);
+                }
             }
         }
         

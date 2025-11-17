@@ -200,7 +200,7 @@ fn perform_analysis(
     // API key validation removed for local tool simplicity
     // Get repository
     state.progress_tracker.update_progress(&repository_id, 1, "Fetching repository information", "Loading repository details...", None);
-    log::info!("Step 1/10: Fetching repository information...");
+    log::info!("Step 1/11: Fetching repository information...");
     let repo = match state.repo_repo.find_by_id(&repository_id) {
         Ok(Some(repo)) => {
             log::info!("Found repository: {} ({})", repo.name, repo.url);
@@ -220,7 +220,7 @@ fn perform_analysis(
 
     // Clone/update repository
     state.progress_tracker.update_progress(&repository_id, 2, "Initializing crawler", "Setting up repository crawler...", None);
-    log::info!("Step 2/10: Initializing repository crawler...");
+    log::info!("Step 2/11: Initializing repository crawler...");
     let storage_config = StorageConfig {
         repository_cache_path: "./cache/repos".to_string(),
         max_cache_size: "10GB".to_string(),
@@ -245,7 +245,7 @@ fn perform_analysis(
             format!("Fetching repository from {}...", repo.url)
         }.as_str(), 
         Some(serde_json::json!({"url": repo.url, "branch": repo.branch, "is_local": crate::ingestion::crawler::RepositoryCrawler::is_local_path(&repo.url)})));
-    log::info!("Step 3/10: Preparing repository from {} (branch: {})...", repo.url, repo.branch);
+    log::info!("Step 3/11: Preparing repository from {} (branch: {})...", repo.url, repo.branch);
     let credentials = repo.auth_type.as_ref().and_then(|auth_type| {
         repo.auth_value.as_ref().map(|auth_value| {
             match auth_type.as_str() {
@@ -301,7 +301,7 @@ fn perform_analysis(
 
     // Extract dependencies
     state.progress_tracker.update_progress(&repository_id, 4, "Extracting dependencies", "Scanning package.json, requirements.txt, Cargo.toml, and other manifest files...", None);
-    log::info!("Step 4/10: Extracting dependencies from repository...");
+    log::info!("Step 4/11: Extracting dependencies from repository...");
     let extractor = DependencyExtractor::new();
     let manifests = match extractor.extract_from_repository(&repo_path) {
         Ok(m) => {
@@ -337,7 +337,7 @@ fn perform_analysis(
 
     // Detect services
     state.progress_tracker.update_progress(&repository_id, 5, "Detecting external services", "Scanning for AWS, Firebase, Clerk, AI services, and other integrations...", None);
-    log::info!("Step 5/10: Detecting external services...");
+    log::info!("Step 5/11: Detecting external services...");
     // Load plugins from config/plugins directory if it exists
     let plugin_dir = Path::new("config/plugins");
     let detector = if plugin_dir.exists() && plugin_dir.is_dir() {
@@ -380,7 +380,7 @@ fn perform_analysis(
 
     // Detect developer tools and scripts
     state.progress_tracker.update_progress(&repository_id, 6, "Detecting developer tools", "Scanning for build tools, test frameworks, linters, and scripts...", None);
-    log::info!("Step 6/10: Detecting developer tools...");
+    log::info!("Step 6/11: Detecting developer tools...");
     let tool_detector = ToolDetector::new();
     let tools = match tool_detector.detect_tools(&repo_path) {
         Ok(t) => {
@@ -408,7 +408,7 @@ fn perform_analysis(
 
     // Build and store knowledge graph
     state.progress_tracker.update_progress(&repository_id, 7, "Building knowledge graph", "Creating relationships between repositories, dependencies, services, and code elements...", None);
-    log::info!("Step 7/10: Building knowledge graph...");
+    log::info!("Step 7/11: Building knowledge graph...");
     let graph_builder = GraphBuilder::new(
         state.repo_repo.db.clone(),
         state.repo_repo.clone(),
@@ -436,9 +436,32 @@ fn perform_analysis(
                 graph.nodes.len(), node_type_summary.join(", "), graph.edges.len());
             
             log::info!("Storing knowledge graph in database...");
-            if let Err(e) = graph_builder.store_graph(&repo.id, &graph) {
-                log::error!("✗ Failed to store graph: {}", e);
-                return Err(anyhow::anyhow!("Failed to store graph: {}", e));
+            {
+                let progress_tracker_nodes = state.progress_tracker.clone();
+                let progress_tracker_edges = state.progress_tracker.clone();
+                let repository_id_clone = repository_id.clone();
+                let repository_id_clone2 = repository_id.clone();
+                if let Err(e) = graph_builder.store_graph(
+                    &repo.id, 
+                    &graph,
+                    Some(move |stored, total| {
+                        let percent = (stored as f64 / total as f64 * 100.0) as u32;
+                        progress_tracker_nodes.update_status_message(
+                            &repository_id_clone,
+                            &format!("Storing graph nodes: {}/{} ({}%)...", stored, total, percent)
+                        );
+                    }),
+                    Some(move |stored, total| {
+                        let percent = (stored as f64 / total as f64 * 100.0) as u32;
+                        progress_tracker_edges.update_status_message(
+                            &repository_id_clone2,
+                            &format!("Storing graph edges: {}/{} ({}%)...", stored, total, percent)
+                        );
+                    })
+                ) {
+                    log::error!("✗ Failed to store graph: {}", e);
+                    return Err(anyhow::anyhow!("Failed to store graph: {}", e));
+                }
             }
             log::info!("✓ Successfully stored knowledge graph");
         }
@@ -586,7 +609,7 @@ except Exception as e:
 
     // Analyze code structure
     state.progress_tracker.update_progress(&repository_id, 8, "Analyzing code structure", "Scanning source files and extracting functions, classes, modules, and their relationships...", None);
-    log::info!("Step 8/10: Analyzing code structure...");
+    log::info!("Step 8/11: Analyzing code structure...");
     log::info!("Scanning repository for source code files (this may take a while for large repositories)...");
     let code_analyzer = CodeAnalyzer::new();
     let code_structure = match code_analyzer.analyze_repository(&repo_path) {
@@ -642,20 +665,123 @@ except Exception as e:
 
     // Store code elements and calls
     log::info!("Storing {} code elements in database...", all_code_elements.len());
-    if let Err(e) = state.code_repo.store_elements(&repo.id, &all_code_elements) {
-        log::error!("✗ Failed to store code elements: {}", e);
-        state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to store code elements: {}", e));
-        return Err(anyhow::anyhow!("Failed to store code elements: {}", e));
+    {
+        let progress_tracker = state.progress_tracker.clone();
+        let repository_id_clone = repository_id.clone();
+        if let Err(e) = state.code_repo.store_elements(
+            &repo.id, 
+            &all_code_elements,
+            Some(move |stored, total| {
+                let percent = (stored as f64 / total as f64 * 100.0) as u32;
+                progress_tracker.update_status_message(
+                    &repository_id_clone,
+                    &format!("Storing code elements: {}/{} ({}%)...", stored, total, percent)
+                );
+            })
+        ) {
+            log::error!("✗ Failed to store code elements: {}", e);
+            state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to store code elements: {}", e));
+            return Err(anyhow::anyhow!("Failed to store code elements: {}", e));
+        }
     }
     log::info!("✓ Stored {} code elements", all_code_elements.len());
     
     log::info!("Storing {} code calls in database...", code_structure.calls.len());
-    if let Err(e) = state.code_repo.store_calls(&repo.id, &code_structure.calls) {
-        log::error!("✗ Failed to store code calls: {}", e);
-        state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to store code calls: {}", e));
-        return Err(anyhow::anyhow!("Failed to store code calls: {}", e));
+    {
+        let progress_tracker = state.progress_tracker.clone();
+        let repository_id_clone = repository_id.clone();
+        if let Err(e) = state.code_repo.store_calls(
+            &repo.id, 
+            &code_structure.calls,
+            Some(move |stored, total| {
+                let percent = (stored as f64 / total as f64 * 100.0) as u32;
+                progress_tracker.update_status_message(
+                    &repository_id_clone,
+                    &format!("Storing code calls: {}/{} ({}%)...", stored, total, percent)
+                );
+            })
+        ) {
+            log::error!("✗ Failed to store code calls: {}", e);
+            state.progress_tracker.fail_analysis(&repository_id, &format!("Failed to store code calls: {}", e));
+            return Err(anyhow::anyhow!("Failed to store code calls: {}", e));
+        }
     }
     log::info!("✓ Stored {} code calls", code_structure.calls.len());
+
+    // Detect relationships between code elements and services/dependencies (part of step 8)
+    state.progress_tracker.update_status_message(&repository_id, "Detecting relationships between code elements and services/dependencies...");
+    log::info!("Detecting relationships between code elements and services/dependencies...");
+    use crate::analysis::CodeRelationshipDetector;
+    let relationship_detector = CodeRelationshipDetector::new(&repo_path);
+    
+    // Get stored services and dependencies for relationship detection
+    log::info!("  Loading {} service(s) and dependencies for relationship detection...", services.len());
+    let stored_services = match state.service_repo.get_by_repository(&repo.id) {
+        Ok(s) => {
+            log::info!("  Loaded {} service(s) from database", s.len());
+            s
+        },
+        Err(e) => {
+            log::warn!("⚠ Failed to get services for relationship detection: {}", e);
+            Vec::new()
+        }
+    };
+    
+    let stored_deps_vec = match state.dep_repo.get_by_repository(&repo.id) {
+        Ok(d) => {
+            log::info!("  Loaded {} dependencies from database", d.len());
+            d
+        },
+        Err(e) => {
+            log::warn!("⚠ Failed to get dependencies for relationship detection: {}", e);
+            Vec::new()
+        }
+    };
+    
+    log::info!("  Analyzing {} code element(s) for relationships to {} service(s) and {} dependencies...", 
+        all_code_elements.len(), stored_services.len(), stored_deps_vec.len());
+    let code_relationships = match relationship_detector.detect_relationships(&code_structure, &stored_services, &stored_deps_vec) {
+        Ok(rels) => {
+            if !rels.is_empty() {
+                log::info!("✓ Detected {} code-to-service/dependency relationship(s)", rels.len());
+            } else {
+                log::info!("✓ No code relationships detected");
+            }
+            rels
+        },
+        Err(e) => {
+            log::error!("✗ Failed to detect code relationships: {}", e);
+            Vec::new() // Continue even if relationship detection fails
+        }
+    };
+    
+    // Combine regular code relationships with plugin relationships
+    let mut all_code_relationships = code_relationships;
+    all_code_relationships.extend(plugin_relationships);
+    
+    // Store code relationships (still part of step 8)
+    if !all_code_relationships.is_empty() {
+        log::info!("Storing {} code relationship(s) in database...", all_code_relationships.len());
+        {
+            let progress_tracker = state.progress_tracker.clone();
+            let repository_id_clone = repository_id.clone();
+            if let Err(e) = state.code_relationship_repo.store_relationships(
+                &repo.id, 
+                &all_code_relationships,
+                Some(move |stored, total| {
+                    let percent = (stored as f64 / total as f64 * 100.0) as u32;
+                    progress_tracker.update_status_message(
+                        &repository_id_clone,
+                        &format!("Storing code relationships: {}/{} ({}%)...", stored, total, percent)
+                    );
+                })
+            ) {
+                log::error!("✗ Failed to store code relationships: {}", e);
+            } else {
+                log::info!("✓ Successfully stored {} code relationship(s)", all_code_relationships.len());
+            }
+        }
+    }
 
     // Detect tests
     state.progress_tracker.update_progress(&repository_id, 9, "Detecting tests", "Scanning for test files and test functions...", None);
@@ -709,66 +835,6 @@ except Exception as e:
         log::info!("✓ No tests detected");
     }
 
-    // Detect relationships between code elements and services/dependencies
-    log::info!("Detecting relationships between code elements and services/dependencies...");
-    use crate::analysis::CodeRelationshipDetector;
-    let relationship_detector = CodeRelationshipDetector::new(&repo_path);
-    
-    // Get stored services and dependencies for relationship detection
-    log::info!("  Loading {} service(s) and dependencies for relationship detection...", services.len());
-    let stored_services = match state.service_repo.get_by_repository(&repo.id) {
-        Ok(s) => {
-            log::info!("  Loaded {} service(s) from database", s.len());
-            s
-        },
-        Err(e) => {
-            log::warn!("⚠ Failed to get services for relationship detection: {}", e);
-            Vec::new()
-        }
-    };
-    
-    let stored_deps_vec = match state.dep_repo.get_by_repository(&repo.id) {
-        Ok(d) => {
-            log::info!("  Loaded {} dependencies from database", d.len());
-            d
-        },
-        Err(e) => {
-            log::warn!("⚠ Failed to get dependencies for relationship detection: {}", e);
-            Vec::new()
-        }
-    };
-    
-    log::info!("  Analyzing {} code element(s) for relationships to {} service(s) and {} dependencies...", 
-        all_code_elements.len(), stored_services.len(), stored_deps_vec.len());
-    let code_relationships = match relationship_detector.detect_relationships(&code_structure, &stored_services, &stored_deps_vec) {
-        Ok(rels) => {
-            if !rels.is_empty() {
-                log::info!("✓ Detected {} code-to-service/dependency relationship(s)", rels.len());
-            } else {
-                log::info!("✓ No code relationships detected");
-            }
-            rels
-        },
-        Err(e) => {
-            log::error!("✗ Failed to detect code relationships: {}", e);
-            Vec::new() // Continue even if relationship detection fails
-        }
-    };
-    
-    // Combine regular code relationships with plugin relationships
-    let mut all_code_relationships = code_relationships;
-    all_code_relationships.extend(plugin_relationships);
-    
-    // Store code relationships
-    if !all_code_relationships.is_empty() {
-        log::info!("Storing {} code relationship(s) in database...", all_code_relationships.len());
-        if let Err(e) = state.code_relationship_repo.store_relationships(&repo.id, &all_code_relationships) {
-            log::error!("✗ Failed to store code relationships: {}", e);
-        } else {
-            log::info!("✓ Successfully stored {} code relationship(s)", all_code_relationships.len());
-        }
-    }
-
     // Analyze security configuration
     state.progress_tracker.update_progress(&repository_id, 10, "Analyzing security configuration", "Scanning configuration files and source code for security entities, API keys, and vulnerabilities...", None);
     log::info!("Step 10/11: Analyzing security configuration...");
@@ -787,7 +853,7 @@ except Exception as e:
                 .collect();
             log::info!("✓ Security analysis complete: {} entities ({}), {} relationships, {} vulnerabilities", 
                 analysis.entities.len(), entity_summary.join(", "), analysis.relationships.len(), analysis.vulnerabilities.len());
-            state.progress_tracker.update_progress(&repository_id, 9, "Analyzing security configuration", 
+            state.progress_tracker.update_progress(&repository_id, 10, "Analyzing security configuration", 
                 format!("Found {} security entities, {} relationships, {} vulnerabilities", 
                     analysis.entities.len(), analysis.relationships.len(), analysis.vulnerabilities.len()).as_str(),
                 Some(serde_json::json!({
@@ -851,7 +917,7 @@ except Exception as e:
     match doc_indexer.index_repository(&repo_path, &repo.id) {
         Ok(docs) => {
             log::info!("✓ Indexed {} documentation files", docs.len());
-            state.progress_tracker.update_progress(&repository_id, 10, "Indexing developer documentation", 
+            state.progress_tracker.update_progress(&repository_id, 11, "Indexing developer documentation", 
                 format!("Indexed {} documentation files", docs.len()).as_str(),
                 Some(serde_json::json!({
                     "documentation_files": docs.len()

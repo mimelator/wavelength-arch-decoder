@@ -207,6 +207,20 @@ impl ProgressTracker {
         }
     }
 
+    /// Update only the status message without changing the step number
+    /// Useful for batch operations that want to show progress within a step
+    pub fn update_status_message(
+        &self,
+        repository_id: &str,
+        status_message: &str,
+    ) {
+        let mut progress_map = self.progress.lock().unwrap();
+        if let Some(progress) = progress_map.get_mut(repository_id) {
+            progress.status_message = status_message.to_string();
+            progress.last_updated = Utc::now();
+        }
+    }
+
     pub fn get_progress(&self, repository_id: &str) -> Option<AnalysisProgress> {
         let progress_map = self.progress.lock().unwrap();
         progress_map.get(repository_id).cloned()

@@ -14,7 +14,10 @@ impl CodeRelationshipRepository {
         CodeRelationshipRepository { db }
     }
 
-    pub fn store_relationships(&self, repository_id: &str, relationships: &[CodeRelationship]) -> Result<()> {
+    pub fn store_relationships<F>(&self, repository_id: &str, relationships: &[CodeRelationship], progress_callback: Option<F>) -> Result<()>
+    where
+        F: Fn(u32, u32), // callback(stored, total)
+    {
         let conn = self.db.get_connection();
         let conn = conn.lock().unwrap();
 
@@ -61,6 +64,9 @@ impl CodeRelationshipRepository {
             if stored % batch_size == 0 || stored == total {
                 let percent = (stored as f64 / total as f64 * 100.0) as u32;
                 log::info!("  Stored {}/{} relationships ({}%)...", stored, total, percent);
+                if let Some(ref callback) = progress_callback {
+                    callback(stored as u32, total as u32);
+                }
             }
         }
 
