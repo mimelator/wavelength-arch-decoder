@@ -9,6 +9,8 @@ use crate::api::repositories::{
     delete_repository,
 };
 use crate::api::services::{get_services, search_services_by_provider};
+use crate::api::ports::{get_ports, search_ports_by_port};
+use crate::api::endpoints::{get_endpoints, search_endpoints};
 use crate::api::tools::{get_tools, get_tool_scripts, search_tools};
 use crate::api::graph::{get_graph, get_graph_statistics, get_node_neighbors};
 use crate::api::code::{get_code_elements, get_code_calls, get_code_relationships};
@@ -22,7 +24,7 @@ use crate::api::tests::{get_tests, get_tests_by_framework};
 use crate::api::plugins::get_plugins;
 use crate::crawler::webhooks::{handle_github_webhook, handle_gitlab_webhook};
 use crate::config::Config;
-use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository, DocumentationRepository, TestRepository};
+use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository, DocumentationRepository, TestRepository, PortRepository, EndpointRepository};
 use crate::api::progress::ProgressTracker;
 use std::sync::Arc;
 use actix_web::HttpResponse;
@@ -51,6 +53,8 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
     let tool_repo = ToolRepository::new(db.clone());
     let documentation_repo = DocumentationRepository::new(db.clone());
     let test_repo = TestRepository::new(db.clone());
+    let port_repo = PortRepository::new(db.clone());
+    let endpoint_repo = EndpointRepository::new(db.clone());
     
     // Initialize progress tracker
     let progress_tracker = Arc::new(ProgressTracker::new());
@@ -66,6 +70,8 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
         tool_repo: tool_repo.clone(),
         documentation_repo: documentation_repo.clone(),
         test_repo: test_repo.clone(),
+        port_repo: port_repo.clone(),
+        endpoint_repo: endpoint_repo.clone(),
         progress_tracker: progress_tracker.clone(),
     });
     
@@ -97,8 +103,12 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
             .body(async_graphql::http::GraphiQLSource::build().endpoint("/graphql").finish())
     }
 
+    // Build server URL
+    let server_url = format!("http://{}:{}", config.server.host, config.server.port);
+    let server_url_clone = server_url.clone();
+    
     // Start HTTP server
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .app_data(api_state.clone())
             .app_data(progress_state.clone())
@@ -132,6 +142,12 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     // Service endpoints
                     .route("/repositories/{id}/services", web::get().to(get_services))
                     .route("/services/search", web::get().to(search_services_by_provider))
+                    // Port endpoints
+                    .route("/repositories/{id}/ports", web::get().to(get_ports))
+                    .route("/ports/search", web::get().to(search_ports_by_port))
+                    // Endpoint endpoints
+                    .route("/repositories/{id}/endpoints", web::get().to(get_endpoints))
+                    .route("/endpoints/search", web::get().to(search_endpoints))
                     // Tool endpoints
                     .route("/repositories/{id}/tools", web::get().to(get_tools))
                     .route("/repositories/{repo_id}/tools/{tool_id}/scripts", web::get().to(get_tool_scripts))
@@ -170,8 +186,25 @@ pub async fn start_server(config: Config) -> std::io::Result<()> {
                     .route("/webhooks/gitlab", web::post().to(handle_gitlab_webhook))
             )
     })
-    .bind(format!("{}:{}", config.server.host, config.server.port))?
-    .run()
-    .await
+    .bind(format!("{}:{}", config.server.host, config.server.port))?;
+    
+    // Spawn a task to open browser after server starts
+    let server_url_for_browser = server_url_clone.clone();
+    actix_web::rt::spawn(async move {
+        // Wait a moment for server to be ready
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        
+        // Try to open browser (ignore errors if it fails)
+        if let Err(e) = open::that(&server_url_for_browser) {
+            log::warn!("Failed to open browser automatically: {}. You can manually open: {}", e, server_url_for_browser);
+        } else {
+            log::info!("🌐 Opened browser to {}", server_url_for_browser);
+        }
+    });
+    
+    log::info!("🚀 Server starting on {}", server_url);
+    log::info!("📱 Opening browser automatically...");
+    
+    server.run().await
 }
 

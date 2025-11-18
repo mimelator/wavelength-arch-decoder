@@ -1,0 +1,28 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Test API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/users": {
+      "get": {
+        "summary": "Get users"
+      },
+      "post": {
+        "summary": "Create user"
+      }
+    },
+    "/api/users/{id}": {
+      "get": {
+        "summary": "Get user by ID"
+      },
+      "put": {
+        "summary": "Update user"
+      },
+      "delete": {
+        "summary": "Delete user"
+      }
+    }
+  }
+}

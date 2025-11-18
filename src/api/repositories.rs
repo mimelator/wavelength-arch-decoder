@@ -148,8 +148,8 @@ pub async fn analyze_repository(
     let repository_id = body.repository_id.clone();
     log::info!("Starting analysis for repository ID: {}", repository_id);
     
-    // Start progress tracking (11 steps including test detection and documentation indexing)
-    state.progress_tracker.start_analysis(&repository_id, 11);
+    // Start progress tracking (13 steps including port/endpoint detection, test detection and documentation indexing)
+    state.progress_tracker.start_analysis(&repository_id, 13);
     
     // Clone state for the blocking task
     let state_clone = state.clone();
@@ -417,6 +417,8 @@ fn perform_analysis(
         state.tool_repo.clone(),
         state.code_relationship_repo.clone(),
         state.test_repo.clone(),
+        state.port_repo.clone(),
+        state.endpoint_repo.clone(),
     );
     
     log::info!("Building knowledge graph from stored data (dependencies, services, code elements)...");
@@ -687,6 +689,68 @@ except Exception as e:
     log::info!("✓ Stored {} code elements", all_code_elements.len());
     
     log::info!("Storing {} code calls in database...", code_structure.calls.len());
+
+    // Detect ports
+    state.progress_tracker.update_progress(&repository_id, 9, "Detecting ports", "Scanning for server ports, database ports, and network configuration...", None);
+    log::info!("Step 9/13: Detecting ports...");
+    let port_detector = crate::analysis::PortDetector::new();
+    let ports = match port_detector.detect_ports(&repo_path) {
+        Ok(p) => {
+            if !p.is_empty() {
+                let port_list: Vec<String> = p.iter().map(|port| format!("{} ({:?})", port.port, port.port_type)).collect();
+                log::info!("✓ Detected {} port(s): {}", p.len(), port_list.join(", "));
+            } else {
+                log::info!("✓ No ports detected");
+            }
+            p
+        },
+        Err(e) => {
+            log::error!("✗ Failed to detect ports: {}", e);
+            return Err(anyhow::anyhow!("Failed to detect ports: {}", e));
+        }
+    };
+
+    // Store ports
+    log::info!("Storing {} port(s) in database...", ports.len());
+    if let Err(e) = state.port_repo.store_ports(&repo.id, &ports) {
+        log::error!("✗ Failed to store ports: {}", e);
+        return Err(anyhow::anyhow!("Failed to store ports: {}", e));
+    }
+    log::info!("✓ Successfully stored {} port(s)", ports.len());
+
+    // Detect endpoints
+    state.progress_tracker.update_progress(&repository_id, 10, "Detecting API endpoints", "Scanning for API routes, REST endpoints, and HTTP handlers...", None);
+    log::info!("Step 10/13: Detecting API endpoints...");
+    let endpoint_detector = crate::analysis::EndpointDetector::new();
+    let endpoints = match endpoint_detector.detect_endpoints(&repo_path) {
+        Ok(e) => {
+            if !e.is_empty() {
+                let endpoint_summary: Vec<String> = e.iter()
+                    .take(10)
+                    .map(|ep| format!("{:?} {}", ep.method, ep.path))
+                    .collect();
+                let more = if e.len() > 10 { format!(" and {} more", e.len() - 10) } else { String::new() };
+                log::info!("✓ Detected {} endpoint(s): {}{}", e.len(), endpoint_summary.join(", "), more);
+            } else {
+                log::info!("✓ No endpoints detected");
+            }
+            e
+        },
+        Err(e) => {
+            log::error!("✗ Failed to detect endpoints: {}", e);
+            return Err(anyhow::anyhow!("Failed to detect endpoints: {}", e));
+        }
+    };
+
+    // Store endpoints
+    log::info!("Storing {} endpoint(s) in database...", endpoints.len());
+    if let Err(e) = state.endpoint_repo.store_endpoints(&repo.id, &endpoints) {
+        log::error!("✗ Failed to store endpoints: {}", e);
+        return Err(anyhow::anyhow!("Failed to store endpoints: {}", e));
+    }
+    log::info!("✓ Successfully stored {} endpoint(s)", endpoints.len());
+    
+    log::info!("Storing {} code calls in database...", code_structure.calls.len());
     {
         let progress_tracker = state.progress_tracker.clone();
         let repository_id_clone = repository_id.clone();
@@ -784,8 +848,8 @@ except Exception as e:
     }
 
     // Detect tests
-    state.progress_tracker.update_progress(&repository_id, 9, "Detecting tests", "Scanning for test files and test functions...", None);
-    log::info!("Step 9/11: Detecting tests...");
+    state.progress_tracker.update_progress(&repository_id, 11, "Detecting tests", "Scanning for test files and test functions...", None);
+    log::info!("Step 11/13: Detecting tests...");
     log::info!("Scanning repository for test files (this may take a while for large repositories)...");
     let test_detector = TestDetector::new();
     let tests = match test_detector.detect_tests(&repo_path) {
@@ -806,7 +870,7 @@ except Exception as e:
                 .collect();
             log::info!("✓ Test detection complete: {} test(s) ({}), languages: {}", 
                 t.len(), framework_summary.join(", "), language_summary.join(", "));
-            state.progress_tracker.update_progress(&repository_id, 9, "Detecting tests", 
+            state.progress_tracker.update_progress(&repository_id, 11, "Detecting tests", 
                 format!("Found {} test(s) using {}", t.len(), framework_summary.join(", ")).as_str(),
                 Some(serde_json::json!({
                     "tests": t.len(),
@@ -836,8 +900,8 @@ except Exception as e:
     }
 
     // Analyze security configuration
-    state.progress_tracker.update_progress(&repository_id, 10, "Analyzing security configuration", "Scanning configuration files and source code for security entities, API keys, and vulnerabilities...", None);
-    log::info!("Step 10/11: Analyzing security configuration...");
+    state.progress_tracker.update_progress(&repository_id, 12, "Analyzing security configuration", "Scanning configuration files and source code for security entities, API keys, and vulnerabilities...", None);
+    log::info!("Step 12/13: Analyzing security configuration...");
     log::info!("Scanning repository for security entities (API keys, secrets, IAM roles, etc.)...");
     let security_analyzer = SecurityAnalyzer::new();
     let security_analysis = match security_analyzer.analyze_repository(&repo_path, Some(&code_structure), Some(&services)) {
@@ -853,7 +917,7 @@ except Exception as e:
                 .collect();
             log::info!("✓ Security analysis complete: {} entities ({}), {} relationships, {} vulnerabilities", 
                 analysis.entities.len(), entity_summary.join(", "), analysis.relationships.len(), analysis.vulnerabilities.len());
-            state.progress_tracker.update_progress(&repository_id, 10, "Analyzing security configuration", 
+            state.progress_tracker.update_progress(&repository_id, 12, "Analyzing security configuration", 
                 format!("Found {} security entities, {} relationships, {} vulnerabilities", 
                     analysis.entities.len(), analysis.relationships.len(), analysis.vulnerabilities.len()).as_str(),
                 Some(serde_json::json!({
@@ -910,14 +974,14 @@ except Exception as e:
     log::info!("✓ Stored {} security vulnerabilities", security_analysis.vulnerabilities.len());
 
     // Index documentation files (experimental - may be removed)
-    state.progress_tracker.update_progress(&repository_id, 11, "Indexing developer documentation", "Scanning for README, API docs, and other documentation files...", None);
-    log::info!("Step 11/11: Indexing developer documentation...");
+    state.progress_tracker.update_progress(&repository_id, 13, "Indexing developer documentation", "Scanning for README, API docs, and other documentation files...", None);
+    log::info!("Step 13/13: Indexing developer documentation...");
     use crate::analysis::DocumentationIndexer;
     let doc_indexer = DocumentationIndexer::new();
     match doc_indexer.index_repository(&repo_path, &repo.id) {
         Ok(docs) => {
             log::info!("✓ Indexed {} documentation files", docs.len());
-            state.progress_tracker.update_progress(&repository_id, 11, "Indexing developer documentation", 
+            state.progress_tracker.update_progress(&repository_id, 13, "Indexing developer documentation", 
                 format!("Indexed {} documentation files", docs.len()).as_str(),
                 Some(serde_json::json!({
                     "documentation_files": docs.len()

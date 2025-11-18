@@ -3,7 +3,8 @@ use chrono::Utc;
 use crate::storage::{
     RepositoryRepository, DependencyRepository, ServiceRepository,
     CodeElementRepository, CodeRelationshipRepository, SecurityRepository,
-    ToolRepository, Repository, StoredDependency, StoredService,
+    ToolRepository, PortRepository, EndpointRepository,
+    Repository, StoredDependency, StoredService, StoredPort, StoredEndpoint,
 };
 use crate::graph::GraphBuilder;
 
@@ -15,6 +16,8 @@ pub struct ReportGenerator {
     code_relationship_repo: CodeRelationshipRepository,
     security_repo: SecurityRepository,
     tool_repo: ToolRepository,
+    port_repo: PortRepository,
+    endpoint_repo: EndpointRepository,
     graph_builder: GraphBuilder,
 }
 
@@ -27,6 +30,8 @@ impl ReportGenerator {
         code_relationship_repo: CodeRelationshipRepository,
         security_repo: SecurityRepository,
         tool_repo: ToolRepository,
+        port_repo: PortRepository,
+        endpoint_repo: EndpointRepository,
         graph_builder: GraphBuilder,
     ) -> Self {
         ReportGenerator {
@@ -37,6 +42,8 @@ impl ReportGenerator {
             code_relationship_repo,
             security_repo,
             tool_repo,
+            port_repo,
+            endpoint_repo,
             graph_builder,
         }
     }
@@ -54,6 +61,8 @@ impl ReportGenerator {
         let security_entities = self.security_repo.get_entities(repository_id)?;
         let security_vulnerabilities = self.security_repo.get_vulnerabilities(repository_id)?;
         let tools = self.tool_repo.get_tools_by_repository(repository_id)?;
+        let ports = self.port_repo.get_by_repository(repository_id)?;
+        let endpoints = self.endpoint_repo.get_by_repository(repository_id)?;
 
         // Get graph statistics
         let graph = self.graph_builder.build_for_repository(repository_id)?;
@@ -69,6 +78,8 @@ impl ReportGenerator {
             &security_entities,
             &security_vulnerabilities,
             &tools,
+            &ports,
+            &endpoints,
             &graph,
             &graph_stats,
         )?;
@@ -86,6 +97,8 @@ impl ReportGenerator {
         security_entities: &[crate::security::SecurityEntity],
         security_vulnerabilities: &[crate::security::SecurityVulnerability],
         tools: &[crate::storage::tool_repo::StoredTool],
+        ports: &[StoredPort],
+        endpoints: &[StoredEndpoint],
         graph: &crate::graph::graph::KnowledgeGraph,
         graph_stats: &crate::graph::graph::GraphStatistics,
     ) -> Result<String> {
@@ -316,6 +329,14 @@ impl ReportGenerator {
                 <h3>{}</h3>
                 <p>Vulnerabilities</p>
             </div>
+            <div class="stat-card">
+                <h3>{}</h3>
+                <p>Ports</p>
+            </div>
+            <div class="stat-card">
+                <h3>{}</h3>
+                <p>Endpoints</p>
+            </div>
         </div>
 
         <div class="section">
@@ -336,6 +357,8 @@ impl ReportGenerator {
             graph.nodes.len(),
             graph.edges.len(),
             security_vulnerabilities.len(),
+            ports.len(),
+            endpoints.len(),
             dependencies.len(),
         );
 
@@ -591,6 +614,143 @@ impl ReportGenerator {
             ));
         }
         html.push_str("                </tbody>\n            </table>\n        </div>");
+
+        // Add ports section
+        html.push_str(&format!(
+            r#"
+        <div class="section">
+            <h2>🔌 Ports</h2>
+            <p>Total ports detected: <strong>{}</strong></p>
+"#,
+            ports.len()
+        ));
+
+        if !ports.is_empty() {
+            // Group ports by type
+            let mut ports_by_type: std::collections::HashMap<String, Vec<&StoredPort>> = std::collections::HashMap::new();
+            for port in ports {
+                ports_by_type
+                    .entry(port.port_type.clone())
+                    .or_insert_with(Vec::new)
+                    .push(port);
+            }
+
+            for (port_type, port_list) in ports_by_type.iter() {
+                html.push_str(&format!(
+                    r#"
+            <div class="group-header">{} ({})</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Port</th>
+                        <th>Framework</th>
+                        <th>Environment</th>
+                        <th>File</th>
+                        <th>Context</th>
+                    </tr>
+                </thead>
+                <tbody>
+"#,
+                    port_type, port_list.len()
+                ));
+                for port in port_list.iter().take(50) {
+                    html.push_str(&format!(
+                        r#"                    <tr>
+                        <td><strong>{}</strong></td>
+                        <td>{}</td>
+                        <td>{}</td>
+                        <td><code>{}</code></td>
+                        <td><code>{}</code></td>
+                    </tr>
+"#,
+                        port.port,
+                        port.framework.as_ref().map(|s| s.as_str()).unwrap_or("N/A"),
+                        port.environment.as_ref().map(|s| s.as_str()).unwrap_or("N/A"),
+                        port.file_path,
+                        if port.context.len() > 60 { format!("{}...", &port.context[..60]) } else { port.context.clone() }
+                    ));
+                }
+                if port_list.len() > 50 {
+                    html.push_str(&format!(
+                        r#"                    <tr><td colspan="5"><em>... and {} more</em></td></tr>"#,
+                        port_list.len() - 50
+                    ));
+                }
+                html.push_str("                </tbody>\n            </table>\n");
+            }
+        } else {
+            html.push_str("<p><em>No ports detected.</em></p>");
+        }
+        html.push_str("        </div>");
+
+        // Add endpoints section
+        html.push_str(&format!(
+            r#"
+        <div class="section">
+            <h2>🌐 API Endpoints</h2>
+            <p>Total endpoints detected: <strong>{}</strong></p>
+"#,
+            endpoints.len()
+        ));
+
+        if !endpoints.is_empty() {
+            // Group endpoints by framework
+            let mut endpoints_by_framework: std::collections::HashMap<String, Vec<&StoredEndpoint>> = std::collections::HashMap::new();
+            for endpoint in endpoints {
+                let framework = endpoint.framework.as_ref().map(|s| s.as_str()).unwrap_or("Unknown");
+                endpoints_by_framework
+                    .entry(framework.to_string())
+                    .or_insert_with(Vec::new)
+                    .push(endpoint);
+            }
+
+            for (framework, endpoint_list) in endpoints_by_framework.iter() {
+                html.push_str(&format!(
+                    r#"
+            <div class="group-header">{} ({})</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Method</th>
+                        <th>Path</th>
+                        <th>Handler</th>
+                        <th>Parameters</th>
+                        <th>File</th>
+                    </tr>
+                </thead>
+                <tbody>
+"#,
+                    framework, endpoint_list.len()
+                ));
+                for endpoint in endpoint_list.iter().take(100) {
+                    html.push_str(&format!(
+                        r#"                    <tr>
+                        <td><span class="badge badge-primary">{}</span></td>
+                        <td><code>{}</code></td>
+                        <td>{}</td>
+                        <td>{}</td>
+                        <td><code>{}</code></td>
+                    </tr>
+"#,
+                        endpoint.method,
+                        endpoint.path,
+                        endpoint.handler.as_ref().map(|s| s.as_str()).unwrap_or("N/A"),
+                        if endpoint.parameters.is_empty() { "None".to_string() } else { endpoint.parameters.join(", ") },
+                        endpoint.file_path
+                    ));
+                }
+                if endpoint_list.len() > 100 {
+                    html.push_str(&format!(
+                        r#"                    <tr><td colspan="5"><em>... and {} more</em></td></tr>"#,
+                        endpoint_list.len() - 100
+                    ));
+                }
+                html.push_str("                </tbody>\n            </table>\n");
+            }
+        } else {
+            html.push_str("<p><em>No endpoints detected.</em></p>");
+        }
+        html.push_str("        </div>");
 
         // Add graph statistics
         html.push_str(&format!(

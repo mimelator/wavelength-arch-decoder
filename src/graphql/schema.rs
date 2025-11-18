@@ -168,6 +168,8 @@ impl QueryRoot {
             state.tool_repo.clone(),
             state.code_relationship_repo.clone(),
             state.test_repo.clone(),
+            state.port_repo.clone(),
+            state.endpoint_repo.clone(),
         );
         
         let graph = graph_builder.build_for_repository(&repository_id)?;
@@ -205,6 +207,8 @@ impl QueryRoot {
             state.tool_repo.clone(),
             state.code_relationship_repo.clone(),
             state.test_repo.clone(),
+            state.port_repo.clone(),
+            state.endpoint_repo.clone(),
         );
         
         let graph = graph_builder.build_for_repository(&repository_id)?;
@@ -255,6 +259,56 @@ impl QueryRoot {
         // GraphQL search - global search across all repositories
         let services = state.service_repo.get_by_provider(&provider, None)?;
         Ok(services.into_iter().map(ServiceType::from).collect())
+    }
+
+    /// Get ports for a repository
+    async fn ports(
+        &self,
+        ctx: &Context<'_>,
+        repository_id: String,
+        filter: Option<PortFilter>,
+    ) -> GraphQLResult<Vec<PortType>> {
+        let state = ctx.data::<ApiState>()?;
+        let mut ports = state.port_repo.get_by_repository(&repository_id)?;
+        
+        if let Some(f) = filter {
+            if let Some(port_num) = f.port {
+                ports.retain(|p| p.port == port_num as u16);
+            }
+            if let Some(port_type) = f.port_type {
+                ports.retain(|p| p.port_type == port_type);
+            }
+            if let Some(framework) = f.framework {
+                ports.retain(|p| p.framework.as_ref().map(|s| s.as_str()) == Some(framework.as_str()));
+            }
+        }
+        
+        Ok(ports.into_iter().map(PortType::from).collect())
+    }
+
+    /// Get endpoints for a repository
+    async fn endpoints(
+        &self,
+        ctx: &Context<'_>,
+        repository_id: String,
+        filter: Option<EndpointFilter>,
+    ) -> GraphQLResult<Vec<EndpointType>> {
+        let state = ctx.data::<ApiState>()?;
+        let mut endpoints = state.endpoint_repo.get_by_repository(&repository_id)?;
+        
+        if let Some(f) = filter {
+            if let Some(path_pattern) = f.path {
+                endpoints.retain(|e| e.path.contains(&path_pattern));
+            }
+            if let Some(method) = f.method {
+                endpoints.retain(|e| e.method.to_uppercase() == method.to_uppercase());
+            }
+            if let Some(framework) = f.framework {
+                endpoints.retain(|e| e.framework.as_ref().map(|s| s.as_str()) == Some(framework.as_str()));
+            }
+        }
+        
+        Ok(endpoints.into_iter().map(EndpointType::from).collect())
     }
 }
 

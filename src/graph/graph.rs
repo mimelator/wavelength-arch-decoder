@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, ToolRepository, CodeRelationshipRepository, TestRepository};
+use crate::storage::{Database, RepositoryRepository, DependencyRepository, ServiceRepository, ToolRepository, CodeRelationshipRepository, TestRepository, PortRepository, EndpointRepository};
 use crate::analysis::RelationshipTargetType;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -17,6 +17,8 @@ pub enum NodeType {
     SecurityEntity,
     Test,
     TestFramework,
+    Port,
+    Endpoint,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +46,9 @@ pub enum EdgeType {
     HasTest,            // Repository -> Test
     TestUsesFramework,  // Test -> TestFramework
     TestTestsCode,      // Test -> CodeElement
+    HasPort,            // Repository -> Port
+    HasEndpoint,        // Repository -> Endpoint
+    EndpointUsesPort,   // Endpoint -> Port (if endpoint handler uses a port)
     RelatedTo,          // Generic relationship
 }
 
@@ -70,6 +75,8 @@ pub struct GraphBuilder {
     tool_repo: ToolRepository,
     code_relationship_repo: CodeRelationshipRepository,
     test_repo: TestRepository,
+    port_repo: PortRepository,
+    endpoint_repo: EndpointRepository,
 }
 
 impl GraphBuilder {
@@ -81,6 +88,8 @@ impl GraphBuilder {
         tool_repo: ToolRepository,
         code_relationship_repo: CodeRelationshipRepository,
         test_repo: TestRepository,
+        port_repo: PortRepository,
+        endpoint_repo: EndpointRepository,
     ) -> Self {
         GraphBuilder {
             db,
@@ -90,6 +99,8 @@ impl GraphBuilder {
             tool_repo,
             code_relationship_repo,
             test_repo,
+            port_repo,
+            endpoint_repo,
         }
     }
 
@@ -559,6 +570,112 @@ impl GraphBuilder {
             }
         }
 
+        // Get ports
+        let ports = self.port_repo.get_by_repository(repository_id)?;
+        let mut port_node_ids: HashMap<u16, String> = HashMap::new();
+        
+        for port in &ports {
+            let port_key = format!("port:{}", port.port);
+            let port_node_id = if let Some(id) = node_map.get(&port_key) {
+                id.clone()
+            } else {
+                let id = Uuid::new_v4().to_string();
+                let mut port_props = HashMap::new();
+                port_props.insert("port".to_string(), port.port.to_string());
+                port_props.insert("port_type".to_string(), port.port_type.clone());
+                port_props.insert("context".to_string(), port.context.clone());
+                port_props.insert("file_path".to_string(), port.file_path.clone());
+                if let Some(framework) = &port.framework {
+                    port_props.insert("framework".to_string(), framework.clone());
+                }
+                if let Some(env) = &port.environment {
+                    port_props.insert("environment".to_string(), env.clone());
+                }
+                port_props.insert("is_config".to_string(), port.is_config.to_string());
+                
+                nodes.push(GraphNode {
+                    id: id.clone(),
+                    node_type: NodeType::Port,
+                    name: format!("Port {}", port.port),
+                    properties: port_props,
+                    repository_id: Some(repository_id.to_string()),
+                });
+                node_map.insert(port_key, id.clone());
+                port_node_ids.insert(port.port, id.clone());
+                id
+            };
+            
+            // Repository has port
+            edges.push(GraphEdge {
+                id: Uuid::new_v4().to_string(),
+                source_node_id: repo_node_id.clone(),
+                target_node_id: port_node_id.clone(),
+                edge_type: EdgeType::HasPort,
+                properties: HashMap::new(),
+            });
+        }
+
+        // Get endpoints
+        let endpoints = self.endpoint_repo.get_by_repository(repository_id)?;
+        
+        for endpoint in &endpoints {
+            let endpoint_key = format!("endpoint:{}:{}", endpoint.method, endpoint.path);
+            let endpoint_node_id = if let Some(id) = node_map.get(&endpoint_key) {
+                id.clone()
+            } else {
+                let id = Uuid::new_v4().to_string();
+                let mut endpoint_props = HashMap::new();
+                endpoint_props.insert("path".to_string(), endpoint.path.clone());
+                endpoint_props.insert("method".to_string(), endpoint.method.clone());
+                endpoint_props.insert("file_path".to_string(), endpoint.file_path.clone());
+                if let Some(handler) = &endpoint.handler {
+                    endpoint_props.insert("handler".to_string(), handler.clone());
+                }
+                if let Some(framework) = &endpoint.framework {
+                    endpoint_props.insert("framework".to_string(), framework.clone());
+                }
+                if !endpoint.parameters.is_empty() {
+                    endpoint_props.insert("parameters".to_string(), endpoint.parameters.join(", "));
+                }
+                
+                nodes.push(GraphNode {
+                    id: id.clone(),
+                    node_type: NodeType::Endpoint,
+                    name: format!("{} {}", endpoint.method, endpoint.path),
+                    properties: endpoint_props,
+                    repository_id: Some(repository_id.to_string()),
+                });
+                node_map.insert(endpoint_key, id.clone());
+                id
+            };
+            
+            // Repository has endpoint
+            edges.push(GraphEdge {
+                id: Uuid::new_v4().to_string(),
+                source_node_id: repo_node_id.clone(),
+                target_node_id: endpoint_node_id.clone(),
+                edge_type: EdgeType::HasEndpoint,
+                properties: HashMap::new(),
+            });
+            
+            // Try to link endpoint to port if handler file matches port file
+            // This is a heuristic - if endpoint and port are in the same file, they might be related
+            for port in &ports {
+                if port.file_path == endpoint.file_path {
+                    if let Some(port_node_id) = port_node_ids.get(&port.port) {
+                        edges.push(GraphEdge {
+                            id: Uuid::new_v4().to_string(),
+                            source_node_id: endpoint_node_id.clone(),
+                            target_node_id: port_node_id.clone(),
+                            edge_type: EdgeType::EndpointUsesPort,
+                            properties: HashMap::new(),
+                        });
+                        break; // Only link to one port per endpoint
+                    }
+                }
+            }
+        }
+
         Ok(KnowledgeGraph { nodes, edges })
     }
 
@@ -730,6 +847,8 @@ impl GraphBuilder {
             NodeType::SecurityEntity => "security_entity",
             NodeType::Test => "test",
             NodeType::TestFramework => "test_framework",
+            NodeType::Port => "port",
+            NodeType::Endpoint => "endpoint",
         }.to_string()
     }
 
@@ -745,6 +864,8 @@ impl GraphBuilder {
             "security_entity" => NodeType::SecurityEntity,
             "test" => NodeType::Test,
             "test_framework" => NodeType::TestFramework,
+            "port" => NodeType::Port,
+            "endpoint" => NodeType::Endpoint,
             _ => NodeType::Repository,
         }
     }
@@ -765,6 +886,9 @@ impl GraphBuilder {
             EdgeType::HasTest => "has_test",
             EdgeType::TestUsesFramework => "test_uses_framework",
             EdgeType::TestTestsCode => "test_tests_code",
+            EdgeType::HasPort => "has_port",
+            EdgeType::HasEndpoint => "has_endpoint",
+            EdgeType::EndpointUsesPort => "endpoint_uses_port",
             EdgeType::RelatedTo => "related_to",
         }.to_string()
     }
@@ -785,6 +909,9 @@ impl GraphBuilder {
             "has_test" => EdgeType::HasTest,
             "test_uses_framework" => EdgeType::TestUsesFramework,
             "test_tests_code" => EdgeType::TestTestsCode,
+            "has_port" => EdgeType::HasPort,
+            "has_endpoint" => EdgeType::HasEndpoint,
+            "endpoint_uses_port" => EdgeType::EndpointUsesPort,
             "related_to" => EdgeType::RelatedTo,
             _ => EdgeType::RelatedTo,
         }

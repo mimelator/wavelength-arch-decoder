@@ -5,6 +5,8 @@ pub mod code_relationships;
 pub mod tool_detector;
 pub mod documentation;
 pub mod test_detector;
+pub mod port_detector;
+pub mod endpoint_detector;
 pub mod utils;
 
 pub use dependencies::{DependencyExtractor, PackageDependency, PackageManager};
@@ -13,3 +15,5 @@ pub use code_relationships::{CodeRelationshipDetector, CodeRelationship, Relatio
 pub use tool_detector::{ToolDetector, DetectedTool, ToolType, ToolCategory};
 pub use documentation::DocumentationIndexer;
 pub use test_detector::{TestDetector, DetectedTest, TestFramework};
+pub use port_detector::{PortDetector, DetectedPort, PortType};
+pub use endpoint_detector::{EndpointDetector, DetectedEndpoint, HttpMethod};

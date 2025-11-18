@@ -140,6 +140,8 @@
                     <button class="repo-tab" data-tab="tools" data-entity-type="tools">Tools</button>
                     <button class="repo-tab" data-tab="tests" data-entity-type="tests">Tests</button>
                     <button class="repo-tab" data-tab="documentation" data-entity-type="documentation">📄 Documentation</button>
+                    <button class="repo-tab" data-tab="ports" data-entity-type="ports">🔌 Ports</button>
+                    <button class="repo-tab" data-tab="endpoints" data-entity-type="endpoints">🌐 Endpoints</button>
                     <button class="repo-tab" data-tab="graph">Graph</button>
                 </div>
                 <div class="repo-detail-content">
@@ -201,6 +203,16 @@
                                     <div class="detail-stat-card clickable-stat" data-entity-type="documentation" onclick="switchTab('documentation', currentRepoId)">
                                         <h4 id="stat-docs-count">0</h4>
                                         <p>Documentation</p>
+                                        <span class="stat-link">View all →</span>
+                                    </div>
+                                    <div class="detail-stat-card clickable-stat" data-entity-type="ports" onclick="switchTab('ports', currentRepoId)">
+                                        <h4 id="stat-ports-count">0</h4>
+                                        <p>Ports</p>
+                                        <span class="stat-link">View all →</span>
+                                    </div>
+                                    <div class="detail-stat-card clickable-stat" data-entity-type="endpoints" onclick="switchTab('endpoints', currentRepoId)">
+                                        <h4 id="stat-endpoints-count">0</h4>
+                                        <p>Endpoints</p>
                                         <span class="stat-link">View all →</span>
                                     </div>
                                 </div>
@@ -396,6 +408,63 @@
                         </div>
                         <div id="documentation-list" class="detail-list">
                             <p class="loading-text">Loading documentation...</p>
+                        </div>
+                    </div>
+                    <div id="tab-ports" class="repo-tab-content">
+                        <div class="code-filters">
+                            <div class="filter-row">
+                                <input type="text" id="ports-search" placeholder="Search ports..." class="search-input" style="flex: 1;">
+                                <select id="ports-group-by" class="select-input">
+                                    <option value="type">Group by Type</option>
+                                    <option value="framework">Group by Framework</option>
+                                    <option value="file">Group by File</option>
+                                    <option value="none">No Grouping</option>
+                                </select>
+                                <select id="ports-filter-type" class="select-input">
+                                    <option value="">All Types</option>
+                                    <option value="HttpServer">HTTP Server</option>
+                                    <option value="Database">Database</option>
+                                    <option value="Cache">Cache</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                                <select id="ports-filter-framework" class="select-input">
+                                    <option value="">All Frameworks</option>
+                                </select>
+                            </div>
+                            <div class="filter-info" id="ports-filter-info"></div>
+                        </div>
+                        <div id="ports-list" class="detail-list">
+                            <p class="loading-text">Loading ports...</p>
+                        </div>
+                    </div>
+                    <div id="tab-endpoints" class="repo-tab-content">
+                        <div class="code-filters">
+                            <div class="filter-row">
+                                <input type="text" id="endpoints-search" placeholder="Search endpoints..." class="search-input" style="flex: 1;">
+                                <select id="endpoints-group-by" class="select-input">
+                                    <option value="framework">Group by Framework</option>
+                                    <option value="method">Group by Method</option>
+                                    <option value="file">Group by File</option>
+                                    <option value="none">No Grouping</option>
+                                </select>
+                                <select id="endpoints-filter-method" class="select-input">
+                                    <option value="">All Methods</option>
+                                    <option value="GET">GET</option>
+                                    <option value="POST">POST</option>
+                                    <option value="PUT">PUT</option>
+                                    <option value="DELETE">DELETE</option>
+                                    <option value="PATCH">PATCH</option>
+                                    <option value="OPTIONS">OPTIONS</option>
+                                    <option value="HEAD">HEAD</option>
+                                </select>
+                                <select id="endpoints-filter-framework" class="select-input">
+                                    <option value="">All Frameworks</option>
+                                </select>
+                            </div>
+                            <div class="filter-info" id="endpoints-filter-info"></div>
+                        </div>
+                        <div id="endpoints-list" class="detail-list">
+                            <p class="loading-text">Loading endpoints...</p>
                         </div>
                     </div>
                     <div id="tab-graph" class="repo-tab-content">

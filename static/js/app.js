@@ -361,6 +361,116 @@ const ENTITY_CONFIGS = {
             }
             return html;
         }
+    },
+    port: {
+        entityType: 'port',
+        detailEntityType: null,
+        nameField: 'port',
+        idField: 'id',
+        searchFields: ['port', 'port_type', 'framework', 'file_path', 'context'],
+        badgeFields: ['port_type', 'framework'],
+        metaFields: ['port_type', 'framework', 'environment'],
+        fileField: 'file_path',
+        lineNumberField: 'line_number',
+        groupByOptions: {
+            'type': (item) => item.port_type || 'Other',
+            'framework': (item) => item.framework || 'Unknown',
+            'file': (item) => {
+                const path = item.file_path || '';
+                if (!path) return 'unknown';
+                const parts = path.split('/');
+                return parts.length > 1 ? parts.slice(0, -1).join('/') : 'root';
+            },
+            'none': null
+        },
+        filterFields: {
+            'type': (item, value) => !value || item.port_type === value,
+            'framework': (item, value) => !value || item.framework === value
+        },
+        renderBadges: (item) => {
+            const badges = [];
+            badges.push(`<span class="detail-badge">${escapeHtml(item.port_type || 'Unknown')}</span>`);
+            if (item.framework) badges.push(`<span class="detail-badge">${escapeHtml(item.framework)}</span>`);
+            if (item.is_config) badges.push('<span class="badge badge-secondary">Config</span>');
+            return badges.join('');
+        },
+        renderMeta: (item, repoData) => {
+            let html = '';
+            html += `<div class="detail-meta"><strong>Port:</strong> <strong style="font-size: 1.1em;">${item.port}</strong></div>`;
+            if (item.framework) {
+                html += `<div class="detail-meta"><strong>Framework:</strong> ${escapeHtml(item.framework)}</div>`;
+            }
+            if (item.environment) {
+                html += `<div class="detail-meta"><strong>Environment:</strong> ${escapeHtml(item.environment)}</div>`;
+            }
+            if (item.file_path) {
+                html += `<p class="detail-meta"><strong>File:</strong> <code>${escapeHtml(item.file_path)}</code>${item.line_number ? `:${item.line_number}` : ''}${createFileLink(item.file_path, item.line_number, repoData)}</p>`;
+            }
+            if (item.context) {
+                const context = item.context.length > 80 ? item.context.substring(0, 80) + '...' : item.context;
+                html += `<p class="detail-meta"><strong>Context:</strong> <code style="font-size: 0.85em;">${escapeHtml(context)}</code></p>`;
+            }
+            return html;
+        }
+    },
+    endpoint: {
+        entityType: 'endpoint',
+        detailEntityType: null,
+        nameField: 'path',
+        idField: 'id',
+        searchFields: ['path', 'method', 'handler', 'framework', 'file_path'],
+        badgeFields: ['method', 'framework'],
+        metaFields: ['method', 'framework'],
+        fileField: 'file_path',
+        lineNumberField: 'line_number',
+        groupByOptions: {
+            'framework': (item) => item.framework || 'Unknown',
+            'method': (item) => item.method || 'ANY',
+            'file': (item) => {
+                const path = item.file_path || '';
+                if (!path) return 'unknown';
+                const parts = path.split('/');
+                return parts.length > 1 ? parts.slice(0, -1).join('/') : 'root';
+            },
+            'none': null
+        },
+        filterFields: {
+            'method': (item, value) => !value || item.method.toUpperCase() === value.toUpperCase(),
+            'framework': (item, value) => !value || item.framework === value
+        },
+        renderBadges: (item) => {
+            const badges = [];
+            const methodColors = {
+                'GET': 'badge-primary',
+                'POST': 'badge-success',
+                'PUT': 'badge-warning',
+                'DELETE': 'badge-danger',
+                'PATCH': 'badge-info',
+                'OPTIONS': 'badge-secondary',
+                'HEAD': 'badge-secondary'
+            };
+            const methodColor = methodColors[item.method.toUpperCase()] || 'badge-secondary';
+            badges.push(`<span class="badge ${methodColor}">${escapeHtml(item.method.toUpperCase())}</span>`);
+            if (item.framework) badges.push(`<span class="detail-badge">${escapeHtml(item.framework)}</span>`);
+            return badges.join('');
+        },
+        renderMeta: (item, repoData) => {
+            let html = '';
+            html += `<div class="detail-meta"><strong>Path:</strong> <code style="font-size: 1em;">${escapeHtml(item.path)}</code></div>`;
+            if (item.handler) {
+                html += `<div class="detail-meta"><strong>Handler:</strong> <code>${escapeHtml(item.handler)}</code></div>`;
+            }
+            if (item.framework) {
+                html += `<div class="detail-meta"><strong>Framework:</strong> ${escapeHtml(item.framework)}</div>`;
+            }
+            if (item.parameters && item.parameters.length > 0) {
+                html += `<div class="detail-meta"><strong>Parameters:</strong> ${item.parameters.map(p => `<code>${escapeHtml(p)}</code>`).join(', ')}</div>`;
+            }
+            if (item.file_path) {
+                html += `<p class="detail-meta"><strong>File:</strong> <code>${escapeHtml(item.file_path)}</code>${item.line_number ? `:${item.line_number}` : ''}${createFileLink(item.file_path, item.line_number, repoData)}</p>`;
+            }
+            return html;
+        }
     }
 };
 
@@ -2925,6 +3035,14 @@ function switchTab(tabName, repoId, updateHistory = true) {
             console.log('[TAB] Loading documentation');
             loadDocumentation(repoId);
             break;
+        case 'ports':
+            console.log('[TAB] Loading ports');
+            loadPorts(repoId);
+            break;
+        case 'endpoints':
+            console.log('[TAB] Loading endpoints');
+            loadEndpoints(repoId);
+            break;
         case 'graph':
             console.log('[TAB] Loading graph');
             loadRepositoryGraph(repoId);
@@ -2936,7 +3054,7 @@ function switchTab(tabName, repoId, updateHistory = true) {
 
 async function loadRepositoryOverview(repoId) {
     try {
-        const [repo, deps, services, code, security, tools, tests, docs] = await Promise.all([
+        const [repo, deps, services, code, security, tools, tests, docs, ports, endpoints] = await Promise.all([
             api.getRepository(repoId).catch(() => null),
             api.getDependencies(repoId).catch(() => []),
             api.getServices(repoId).catch(() => []),
@@ -2944,7 +3062,9 @@ async function loadRepositoryOverview(repoId) {
             api.getSecurityEntities(repoId).catch(() => []),
             api.getTools(repoId).catch(() => []),
             api.getTests(repoId).catch(() => []),
-            api.getDocumentation(repoId).catch(() => [])
+            api.getDocumentation(repoId).catch(() => []),
+            api.getPorts(repoId).catch(() => []),
+            api.getEndpoints(repoId).catch(() => [])
         ]);
         
         // Update repository information
@@ -2970,6 +3090,8 @@ async function loadRepositoryOverview(repoId) {
         document.getElementById('stat-tools-count').textContent = tools.length || 0;
         document.getElementById('stat-tests-count').textContent = tests.length || 0;
         document.getElementById('stat-docs-count').textContent = docs.length || 0;
+        document.getElementById('stat-ports-count').textContent = ports.length || 0;
+        document.getElementById('stat-endpoints-count').textContent = endpoints.length || 0;
     } catch (error) {
         console.error('Failed to load overview:', error);
     }
@@ -5585,4 +5707,88 @@ window.viewTest = function(testId) {
     modal.classList.add('active');
     modal.style.display = 'flex';
 };
+
+// Store ports and endpoints for filtering
+let allPorts = [];
+let allEndpoints = [];
+
+async function loadPorts(repoId) {
+    await loadEntityList('port', repoId, (id) => api.getPorts(id), 'ports-list', (items, repoData) => {
+        allPorts = items;
+        window.allPorts = items;
+        
+        // Populate filter dropdowns
+        const typeFilter = document.getElementById('ports-filter-type');
+        const frameworkFilter = document.getElementById('ports-filter-framework');
+        
+        if (frameworkFilter) {
+            const frameworks = [...new Set(items.map(p => p.framework).filter(Boolean))].sort();
+            const existingFrameworks = Array.from(frameworkFilter.options).map(opt => opt.value);
+            frameworks.forEach(framework => {
+                if (!existingFrameworks.includes(framework)) {
+                    const option = document.createElement('option');
+                    option.value = framework;
+                    option.textContent = framework;
+                    frameworkFilter.appendChild(option);
+                }
+            });
+        }
+        
+        // Setup filter event listeners
+        const searchInput = document.getElementById('ports-search');
+        const groupBy = document.getElementById('ports-group-by');
+        
+        const renderFn = () => {
+            renderEntityListUnified('port', allPorts, 'ports-list', repoData || currentRepoData);
+        };
+        
+        if (searchInput) searchInput.oninput = renderFn;
+        if (typeFilter) typeFilter.onchange = renderFn;
+        if (frameworkFilter) frameworkFilter.onchange = renderFn;
+        if (groupBy) groupBy.onchange = renderFn;
+        
+        // Initial render
+        renderFn();
+    });
+}
+
+async function loadEndpoints(repoId) {
+    await loadEntityList('endpoint', repoId, (id) => api.getEndpoints(id), 'endpoints-list', (items, repoData) => {
+        allEndpoints = items;
+        window.allEndpoints = items;
+        
+        // Populate filter dropdowns
+        const methodFilter = document.getElementById('endpoints-filter-method');
+        const frameworkFilter = document.getElementById('endpoints-filter-framework');
+        
+        if (frameworkFilter) {
+            const frameworks = [...new Set(items.map(e => e.framework).filter(Boolean))].sort();
+            const existingFrameworks = Array.from(frameworkFilter.options).map(opt => opt.value);
+            frameworks.forEach(framework => {
+                if (!existingFrameworks.includes(framework)) {
+                    const option = document.createElement('option');
+                    option.value = framework;
+                    option.textContent = framework;
+                    frameworkFilter.appendChild(option);
+                }
+            });
+        }
+        
+        // Setup filter event listeners
+        const searchInput = document.getElementById('endpoints-search');
+        const groupBy = document.getElementById('endpoints-group-by');
+        
+        const renderFn = () => {
+            renderEntityListUnified('endpoint', allEndpoints, 'endpoints-list', repoData || currentRepoData);
+        };
+        
+        if (searchInput) searchInput.oninput = renderFn;
+        if (methodFilter) methodFilter.onchange = renderFn;
+        if (frameworkFilter) frameworkFilter.onchange = renderFn;
+        if (groupBy) groupBy.onchange = renderFn;
+        
+        // Initial render
+        renderFn();
+    });
+}
 

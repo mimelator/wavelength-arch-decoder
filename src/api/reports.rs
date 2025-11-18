@@ -20,6 +20,8 @@ pub async fn generate_report(
         state.tool_repo.clone(),
         state.code_relationship_repo.clone(),
         state.test_repo.clone(),
+        state.port_repo.clone(),
+        state.endpoint_repo.clone(),
     );
     
     // Create report generator
@@ -31,6 +33,8 @@ pub async fn generate_report(
         state.code_relationship_repo.clone(),
         state.security_repo.clone(),
         state.tool_repo.clone(),
+        state.port_repo.clone(),
+        state.endpoint_repo.clone(),
         graph_builder,
     );
     

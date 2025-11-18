@@ -1,6 +1,7 @@
-use wavelength_arch_decoder::analysis::{DependencyExtractor, DependencyGraph, PackageDependency, PackageManager};
+use wavelength_arch_decoder::analysis::{DependencyExtractor, PackageDependency, PackageManager, PortDetector, EndpointDetector};
 use tempfile::TempDir;
 use std::fs;
+use std::path::Path;
 
 #[test]
 fn test_npm_extraction() {
@@ -334,3 +335,192 @@ fn test_maven_extraction() {
     assert!(manifest.dependencies.iter().any(|d| d.name == "jackson-databind"));
 }
 
+#[test]
+fn test_port_and_endpoint_detection_spring_petclinic() {
+    let repo_path = Path::new("./cache/repos/spring-petclinic");
+    
+    if !repo_path.exists() {
+        println!("⚠️  Repository not found at {:?}, skipping test", repo_path);
+        return;
+    }
+    
+    println!("🔍 Testing port detection on Spring PetClinic...");
+    let port_detector = PortDetector::new();
+    
+    match port_detector.detect_ports(repo_path) {
+        Ok(ports) => {
+            println!("✓ Found {} port(s)", ports.len());
+            for port in ports.iter().take(10) {
+                println!("  - Port {} ({:?}) in {}:{}", 
+                    port.port, 
+                    port.port_type,
+                    port.file_path,
+                    port.line_number.unwrap_or(0)
+                );
+            }
+            // Spring Boot typically uses port 8080, but may not be explicitly set
+            // So we just check that detection runs without error
+            println!("Port detection completed successfully");
+        }
+        Err(e) => {
+            eprintln!("❌ Error detecting ports: {}", e);
+            panic!("Port detection failed: {}", e);
+        }
+    }
+    
+    println!("\n🔍 Testing endpoint detection on Spring PetClinic...");
+    let endpoint_detector = EndpointDetector::new();
+    
+    match endpoint_detector.detect_endpoints(repo_path) {
+        Ok(endpoints) => {
+            println!("✓ Found {} endpoint(s)", endpoints.len());
+            for endpoint in endpoints.iter().take(10) {
+                println!("  - {:?} {} ({:?}) in {}:{}", 
+                    endpoint.method,
+                    endpoint.path,
+                    endpoint.framework,
+                    endpoint.file_path,
+                    endpoint.line_number.unwrap_or(0)
+                );
+            }
+            // Spring PetClinic should have endpoints like /owners, /vets, etc.
+            assert!(endpoints.len() > 0, "Should detect at least one endpoint");
+            assert!(endpoints.iter().any(|e| e.path.contains("/owners") || e.path.contains("/vets")), 
+                "Should detect Spring Boot endpoints");
+        }
+        Err(e) => {
+            eprintln!("❌ Error detecting endpoints: {}", e);
+            panic!("Endpoint detection failed: {}", e);
+        }
+    }
+}
+
+
+#[test]
+fn test_port_detection_express() {
+    let temp_dir = TempDir::new().unwrap();
+    let server_file = temp_dir.path().join("server.js");
+    
+    fs::write(&server_file, r#"
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/api/users', (req, res) => {
+  res.json({ users: [] });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+"#).unwrap();
+
+    let detector = PortDetector::new();
+    let ports = detector.detect_ports(temp_dir.path()).unwrap();
+    
+    // Should detect port 3000 from app.listen(PORT)
+    assert!(ports.iter().any(|p| p.port == 3000), "Should detect port 3000");
+    println!("✓ Detected ports: {:?}", ports.iter().map(|p| p.port).collect::<Vec<_>>());
+}
+
+#[test]
+fn test_port_detection_env_file() {
+    let temp_dir = TempDir::new().unwrap();
+    let env_file = temp_dir.path().join(".env");
+    
+    fs::write(&env_file, r#"
+PORT=8080
+DATABASE_URL=postgresql://localhost:5432/mydb
+REDIS_URL=redis://localhost:6379
+"#).unwrap();
+
+    let detector = PortDetector::new();
+    let ports = detector.detect_ports(temp_dir.path()).unwrap();
+    
+    // Should detect ports from .env file
+    assert!(ports.iter().any(|p| p.port == 8080), "Should detect PORT=8080");
+    assert!(ports.iter().any(|p| p.port == 5432), "Should detect postgres port");
+    assert!(ports.iter().any(|p| p.port == 6379), "Should detect redis port");
+    println!("✓ Detected ports from .env: {:?}", ports.iter().map(|p| (p.port, &p.port_type)).collect::<Vec<_>>());
+}
+
+#[test]
+fn test_endpoint_detection_express() {
+    let temp_dir = TempDir::new().unwrap();
+    let server_file = temp_dir.path().join("server.js");
+    
+    fs::write(&server_file, r#"
+const express = require('express');
+const app = express();
+
+app.get('/api/users', (req, res) => {
+  res.json({ users: [] });
+});
+
+app.post('/api/users', (req, res) => {
+  res.json({ id: 1 });
+});
+
+app.get('/api/users/:id', (req, res) => {
+  res.json({ id: req.params.id });
+});
+"#).unwrap();
+
+    let detector = EndpointDetector::new();
+    let endpoints = detector.detect_endpoints(temp_dir.path()).unwrap();
+    
+    // Should detect at least 3 endpoints
+    assert!(endpoints.len() >= 3, "Should detect at least 3 endpoints");
+    
+    // Check for specific endpoints
+    use wavelength_arch_decoder::analysis::HttpMethod;
+    assert!(endpoints.iter().any(|e| e.path == "/api/users" && matches!(e.method, HttpMethod::Get)), 
+            "Should detect GET /api/users");
+    assert!(endpoints.iter().any(|e| e.path == "/api/users" && matches!(e.method, HttpMethod::Post)), 
+            "Should detect POST /api/users");
+    assert!(endpoints.iter().any(|e| e.path == "/api/users/:id" && matches!(e.method, HttpMethod::Get)), 
+            "Should detect GET /api/users/:id");
+    
+    println!("✓ Detected endpoints:");
+    for ep in &endpoints {
+        println!("  {:?} {} (framework: {:?})", ep.method, ep.path, ep.framework);
+    }
+}
+
+#[test]
+fn test_endpoint_detection_flask() {
+    let temp_dir = TempDir::new().unwrap();
+    let app_file = temp_dir.path().join("app.py");
+    
+    fs::write(&app_file, r#"
+from flask import Flask, jsonify
+app = Flask(__name__)
+
+@app.route('/api/posts', methods=['GET'])
+def get_posts():
+    return jsonify([])
+
+@app.route('/api/posts', methods=['POST'])
+def create_post():
+    return jsonify({'id': 1})
+
+@app.route('/api/posts/<int:post_id>', methods=['GET'])
+def get_post(post_id):
+    return jsonify({'id': post_id})
+"#).unwrap();
+
+    let detector = EndpointDetector::new();
+    let endpoints = detector.detect_endpoints(temp_dir.path()).unwrap();
+    
+    // Should detect Flask endpoints
+    assert!(endpoints.len() >= 2, "Should detect Flask endpoints");
+    assert!(endpoints.iter().any(|e| e.path == "/api/posts"), "Should detect /api/posts");
+    assert!(endpoints.iter().any(|e| e.framework.as_ref().map(|s| s.as_str()) == Some("flask")), 
+            "Should identify Flask framework");
+    
+    println!("✓ Detected Flask endpoints:");
+    for ep in &endpoints {
+        println!("  {:?} {} (framework: {:?}, handler: {:?})", 
+            ep.method, ep.path, ep.framework, ep.handler);
+    }
+}

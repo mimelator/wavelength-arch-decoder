@@ -13,6 +13,8 @@ pub mod security_repo;
 pub mod tool_repo;
 pub mod documentation_repo;
 pub mod test_repo;
+pub mod port_repo;
+pub mod endpoint_repo;
 // UserRepository and ApiKeyRepository kept for database schema but not exported (auth removed)
 pub use repository_repo::{RepositoryRepository, DependencyRepository, Repository, StoredDependency};
 pub use service_repo::{ServiceRepository, StoredService};
@@ -22,6 +24,8 @@ pub use security_repo::SecurityRepository;
 pub use tool_repo::ToolRepository;
 pub use documentation_repo::DocumentationRepository;
 pub use test_repo::TestRepository;
+pub use port_repo::{PortRepository, StoredPort};
+pub use endpoint_repo::{EndpointRepository, StoredEndpoint};
 
 #[derive(Clone)]
 pub struct Database {
@@ -369,6 +373,44 @@ impl Database {
             [],
         )?;
 
+        // Ports table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ports (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                port_type TEXT NOT NULL,
+                context TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                line_number INTEGER,
+                framework TEXT,
+                environment TEXT,
+                is_config INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        // Endpoints table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS endpoints (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                method TEXT NOT NULL,
+                handler TEXT,
+                file_path TEXT NOT NULL,
+                line_number INTEGER,
+                framework TEXT,
+                middleware TEXT NOT NULL,
+                parameters TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
         // Create indexes
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_graph_nodes_repository ON graph_nodes(repository_id)",
@@ -504,6 +546,34 @@ impl Database {
         )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_security_vulnerabilities_severity ON security_vulnerabilities(severity)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ports_repository ON ports(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ports_port ON ports(port)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ports_type ON ports(port_type)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_endpoints_repository ON endpoints(repository_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_endpoints_path ON endpoints(path)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_endpoints_method ON endpoints(method)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_endpoints_framework ON endpoints(framework)",
             [],
         )?;
 

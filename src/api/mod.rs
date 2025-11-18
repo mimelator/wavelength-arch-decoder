@@ -1,6 +1,6 @@
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
-use crate::storage::{RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository, DocumentationRepository, TestRepository};
+use crate::storage::{RepositoryRepository, DependencyRepository, ServiceRepository, CodeElementRepository, CodeRelationshipRepository, SecurityRepository, ToolRepository, DocumentationRepository, TestRepository, PortRepository, EndpointRepository};
 use std::sync::Arc;
 
 pub mod server;
@@ -18,6 +18,8 @@ pub mod documentation;
 pub mod tests;
 pub mod version_check;
 pub mod plugins;
+pub mod ports;
+pub mod endpoints;
 
 pub struct ApiState {
     pub repo_repo: RepositoryRepository,
@@ -29,6 +31,8 @@ pub struct ApiState {
     pub tool_repo: ToolRepository,
     pub documentation_repo: DocumentationRepository,
     pub test_repo: TestRepository,
+    pub port_repo: PortRepository,
+    pub endpoint_repo: EndpointRepository,
     pub progress_tracker: Arc<progress::ProgressTracker>,
 }
 

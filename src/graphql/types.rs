@@ -1,5 +1,5 @@
 use async_graphql::{SimpleObject, InputObject};
-use crate::storage::{Repository, StoredDependency, StoredService};
+use crate::storage::{Repository, StoredDependency, StoredService, StoredPort, StoredEndpoint};
 use crate::analysis::{CodeElement, CodeCall};
 use crate::security::{SecurityEntity, SecurityVulnerability, SecurityRelationship};
 
@@ -260,6 +260,80 @@ pub struct SecurityEntityFilter {
 pub struct VulnerabilityFilter {
     pub severity: Option<String>,
     pub vulnerability_type: Option<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct PortType {
+    pub id: String,
+    pub port: i32,
+    #[graphql(name = "type")]
+    pub port_type: String,
+    pub context: String,
+    pub file_path: String,
+    pub line_number: Option<i32>,
+    pub framework: Option<String>,
+    pub environment: Option<String>,
+    pub is_config: bool,
+}
+
+impl From<StoredPort> for PortType {
+    fn from(port: StoredPort) -> Self {
+        PortType {
+            id: port.id,
+            port: port.port as i32,
+            port_type: port.port_type,
+            context: port.context,
+            file_path: port.file_path,
+            line_number: port.line_number.map(|n| n as i32),
+            framework: port.framework,
+            environment: port.environment,
+            is_config: port.is_config,
+        }
+    }
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct EndpointType {
+    pub id: String,
+    pub path: String,
+    pub method: String,
+    pub handler: Option<String>,
+    pub file_path: String,
+    pub line_number: Option<i32>,
+    pub framework: Option<String>,
+    pub middleware: Vec<String>,
+    pub parameters: Vec<String>,
+}
+
+impl From<StoredEndpoint> for EndpointType {
+    fn from(endpoint: StoredEndpoint) -> Self {
+        EndpointType {
+            id: endpoint.id,
+            path: endpoint.path,
+            method: endpoint.method,
+            handler: endpoint.handler,
+            file_path: endpoint.file_path,
+            line_number: endpoint.line_number.map(|n| n as i32),
+            framework: endpoint.framework,
+            middleware: endpoint.middleware,
+            parameters: endpoint.parameters,
+        }
+    }
+}
+
+#[derive(InputObject)]
+pub struct PortFilter {
+    pub port: Option<i32>,
+    #[graphql(name = "type")]
+    pub port_type: Option<String>,
+    pub framework: Option<String>,
+}
+
+#[derive(InputObject)]
+pub struct EndpointFilter {
+    pub path: Option<String>,
+    pub method: Option<String>,
+    pub framework: Option<String>,
 }
 
 #[derive(SimpleObject)]
